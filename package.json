@@ -1,0 +1,49 @@
+{
+  "name": "qdata",
+  "version": "0.1.0",
+
+  "description": "High performance and extensible data processing library, including schema builder, data validator, and sanitizer.",
+  "keywords": [
+    "data",
+    "json",
+    "metadata",
+    "object",
+    "sanitize",
+    "sanity",
+    "schema",
+    "validation",
+    "validator"
+  ],
+
+  "homepage": "https://github.com/jshq/qdata",
+  "bugs": {
+    "url": "https://github.com/jshq/qdata/issues"
+  },
+
+  "contributors": [{
+    "name": "Petr Kobalicek",
+    "email": "kobalicek.petr@gmail.com",
+    "url": "http://kobalicek.com"
+  }],
+
+  "license": "Unlicense",
+
+  "main": "qdata.js",
+
+  "dependencies": {
+    "qclass": "*"
+  },
+
+  "devDependencies": {
+    "mocha": "*"
+  },
+
+  "repository" : {
+    "type": "git",
+    "url": "https://github.com/jshq/qdata.git"
+  },
+
+  "scripts": {
+    "test": "mocha qdata-spec.js"
+  }
+}
