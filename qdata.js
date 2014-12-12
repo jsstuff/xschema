@@ -18,6 +18,13 @@ var qdata = {};
 // Version information in a "major.minor.patch" form.
 qdata.VERSION = "0.1.0";
 
+// `qdata.kNoOptions`
+//
+// No data processing options. This constant has been added so the code that
+// is using data processing can be more clear in cases where no options are
+// used.
+var kNoOptions = qdata.kNoOptions = 0x0000;
+
 // `qdata.kExtractTopFields`
 //
 // Extract top fields from the source object.
@@ -92,8 +99,8 @@ var reIdentifier = /[^A-Za-z0-9_\$]/g;
 
 // \internal
 //
-// Test if the given key is a qdata property "$" or "$...".
-var reFieldIsProperty = /^\$(?:[^\$]|$)/;
+// Used to unescape property name.
+var reEscapeProperty = /\\(.)/g;
 
 // \internal
 //
@@ -107,10 +114,24 @@ var reFieldIsArray = /\[\]$/;
 
 // \internal
 //
+// Get whether the string `s` is a qdata property (ie it starts with "$").
+function isPropertyName(s) {
+  return s.charCodeAt(0) === 36;
+}
+
+// \internal
+//
+// Unescape a given field name `s` to a real name.
+function unescapeFieldName(s) {
+  return s.replace(reEscapeProperty, "$1");
+}
+
+// \internal
+//
 // Escapre a string `s` so it can be used in regexp to match it.
 function escapeRegExp(s) {
   return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
-};
+}
 
 // ============================================================================
 // [Regular Expressions]
@@ -527,7 +548,7 @@ qclass({
   _makeUniqueName: function() {
     return "_" + (++this._uniqueName);
   },
-  
+
   // Add an argument to the function.
   arg: function(name) {
     this._args.push(name);
@@ -644,11 +665,16 @@ qclass({
       body = this.serialize();
       fn = new Function(this._dataName, body);
 
+      //console.log(body);
       return fn(this._data);
     }
     catch (ex) {
+      console.log("=========================================");
+      console.log("INVALID CODE:");
       console.log(body);
+      console.log("EXCEPTION:");
       console.log(ex);
+
       throw new RuntimeError("Invalid code generated", {
         body   : body,
         message: ex.message
@@ -667,6 +693,7 @@ function SchemaCompiler(env, options) {
 
   this._env = env;          // Schema environment (`qdata` or customized).
   this._options = options;  // Schema validation options.
+  this._extract = false;    // Whether to extract properties from this level.
 
   this._nestedLevel = 0;    // Level of the current scope.
   this._ifLevel = 0;        // Count of IFs in the current scope.
@@ -686,9 +713,11 @@ qclass({
     this.declareGlobal("SchemaError", "qdata.SchemaError");
     this.declareVariable("err", "null");
 
-    if (this.hasOption(kAccumulateErrors)) {
+    if (this.hasOption(kAccumulateErrors))
       this.declareVariable("details", "[]");
-    }
+
+    if (this.hasOption(kExtractTopFields) || this.hasOption(kExtractAllFields))
+      this.setExtract(true);
 
     var vIn = "input";
     var vOut = this.compileType(vIn, def);
@@ -718,17 +747,9 @@ qclass({
 
     this.emitNewLine();
     this.emit("if (err !== null) {");
-    this.emit("err.path = " + this.path() + ";");
-
-    if (this.hasOption(kAccumulateErrors)) {
-      this.emit("details.push(err);");
-      this.emit("err = null;");
-    }
-    else {
-      this.emit("throw new SchemaError(err);");
-    }
-
+    this.emitErrorCase();
     this.emit("}");
+
     return vOut;
   },
 
@@ -828,6 +849,20 @@ qclass({
     return this;
   },
 
+  emitErrorCase: function() {
+    this.emit("err.path = " + this.path() + ";");
+
+    if (this.hasOption(kAccumulateErrors)) {
+      this.emit("details.push(err);");
+      this.emit("err = null;");
+    }
+    else {
+      this.emit("throw new SchemaError(err);");
+    }
+
+    return this;
+  },
+
   addLocal: function(name, mangledTypeName) {
     return this.declareVariable("_" + this._nestedLevel + (mangledTypeName || "") + "_" + name);
   },
@@ -872,10 +907,14 @@ qclass({
     return this.emitIf(cond, code);
   },
 
+  getPath: function() {
+    return this._path;
+  },
+
   setPath: function(path) {
-    var oldPath = this._path;
+    var prev = this._path;
     this._path = path;
-    return oldPath;
+    return prev;
   },
 
   addPath: function(sep, code) {
@@ -883,6 +922,16 @@ qclass({
     if (p !== '""' && sep)
       p = mergePath(p, sep);
     return this.setPath(mergePath(p, code));
+  },
+
+  getExtract: function() {
+    return this._extract;
+  },
+
+  setExtract: function(value) {
+    var prev = this._extract;
+    this._extract = value;
+    return prev;
   },
 
   path: function() {
@@ -1250,7 +1299,7 @@ function checkDateFixedStrategy(obj) {
   c.emit("if (year >= " + kYearMin + ") {");
 
   var ok = "return null;";
-  
+
   if (M) {
     c.emit("var month = " + inlineParseInt("s", M.strIndex, M.strLen) + ";");
     c.emit("if (month >= 1 && month <= 12) {");
@@ -1452,21 +1501,8 @@ function getDateParser(form) {
 }
 
 // ============================================================================
-// [Interface - Schema Building]
+// [Schema Building]
 // ============================================================================
-
-// \internal
-//
-// Convert a possibly escaped property name `s` into an unescaped property name.
-function unescapeProperty(s) {
-  // If the field name starts with "$$..." then we unescape to "$...". This is
-  // because "$..." is considered private, but "$$" can be used to define data
-  // fields that start with "$".
-  if (s.length > 1 && s.charCodeAt(0) === 36 && s.charCodeAt(1) === 36)
-    return s.substr(1);
-  else
-    return s;
-}
 
 // \internal
 //
@@ -1485,6 +1521,10 @@ function unfold(def, priv) {
   if (reFieldIsOptional.test(defType)) {
     defType = defType.substr(0, defType.length - 1);
     defNull = true;
+
+    // Prevent from having invalid type that contains for example "??" by mistake.
+    if (reFieldIsOptional.test(defType))
+      throw new RuntimeError("Invalid type '" + def.$type + "'.");
   }
 
   // If the $type ends with "[]" it implies `{ $type: "array", $data: ... }`.
@@ -1526,8 +1566,8 @@ function unfold(def, priv) {
         // Properties are stored in `obj` itself, however, object fields are
         // stored always in `obj.$data`. This is just a way to distinguish
         // properties from object fields.
-        if (!reFieldIsProperty.test(k))
-          $data[unescapeProperty(k)] = unfold.call(this, kDef, null);
+        if (!isPropertyName(k))
+          $data[unescapeFieldName(k)] = unfold.call(this, kDef, null);
         else if (!hasOwnProperty.call(obj, k))
           obj[k] = kDef;
       }
@@ -1544,7 +1584,7 @@ function unfold(def, priv) {
     }
     else {
       for (k in def) {
-        if (!reFieldIsProperty.test(k))
+        if (!isPropertyName(k))
           throw new RuntimeError("Data field '" + k + "'can't be used by '" + defType + "' type.");
 
         if (!hasOwnProperty.call(obj, k))
@@ -1588,7 +1628,7 @@ function schema(def) {
 qdata.schema = schema;
 
 // ============================================================================
-// [Interface - Schema Processing]
+// [Schema Processing]
 // ============================================================================
 
 // \function `qdata.compile(def, options)`
@@ -1634,7 +1674,7 @@ function process(data, def, options, access) {
 qdata.process = process;
 
 // ============================================================================
-// [Interface - Customize]
+// [Customization]
 // ============================================================================
 
 // \object `qdata.types`
@@ -1793,7 +1833,7 @@ qdata.customize = customize;
 // [Built-In Types]
 // ============================================================================
 
-// Boolean types.
+// Bool types.
 qdata.addType({
   names: ["boolean", "bool"],
   mangle: "b",
@@ -1808,7 +1848,7 @@ qdata.addType({
   }
 });
 
-// Integer and Double types.
+// Int and Double types.
 qdata.addType({
   names: [
     // Double types.
@@ -1903,7 +1943,7 @@ qdata.addType({
   }
 });
 
-// Character type.
+// Char type.
 qdata.addType({
   names: ["char"],
   mangle: "s",
@@ -1945,18 +1985,17 @@ qdata.addType({
   }
 });
 
-// Date and DateTime types.
+// Date, Time, and DateTime types.
 qdata.addType({
   names: ["date", "datetime", "datetime-ms", "datetime-us"],
   mangle: "s",
 
   compile: function(c, v, def) {
     var type = def.$type;
-    var form = def.$form || this.typeToForm[type];
-
+    var form = def.$form || this.forms[type];
     var vErr = "err";
-    c.emitNullOrUndefinedCheck(def, v, v);
 
+    c.emitNullOrUndefinedCheck(def, v, v);
     c.failIf("typeof " + v + " !== \"string\"",
       c.error(c.str("DateCheckFailure")));
 
@@ -1975,7 +2014,7 @@ qdata.addType({
       getDateParser(form);
   },
 
-  typeToForm: {
+  forms: {
     "date"       : "YYYY-MM-DD",
     "datetime"   : "YYYY-MM-DD HH:mm:ss",
     "datetime-ms": "YYYY-MM-DD HH:mm:ss.SSS",
@@ -1990,13 +2029,14 @@ qdata.addType({
 
   compile: function(c, v, def) {
     var vOut = c.addLocal("out", this.mangle);
+    var vLen = "";
+
     var toString = c.declareGlobal("toString", "Object.prototype.toString");
 
     // Type of null/{} is "object". So if "null" nor "undefined" types are allowed
     // this condition catches them both. We don't have to worry about these in
     // case that one of them is allowed as in such case it will be caught by
-    // `emitNullOrUndefinedCheck()` and such value would have never reached this
-    // check.
+    // `emitNullOrUndefinedCheck()` and input would have never reached here.
     c.emitNullOrUndefinedCheck(def, vOut, v);
     c.failIf(toString + ".call(" + v + ") !== \"[object Object]\"",
       c.error(c.str("ObjectCheckFailure")));
@@ -2011,59 +2051,76 @@ qdata.addType({
 
     var eKey, eDef, eMangledType;
     var eIn, eOut;
-    var i = 0;
 
+    var i;
+    var path = c.getPath();
+    var extract = c.setExtract(c.hasOption(kExtractAllFields));
+
+    // Collect information regarding mandatory and optional keys.
     for (eKey in fields) {
       eDef = fields[eKey];
 
       if (eDef == null || typeof eDef !== "object")
         throw new RuntimeError("Invalid field definition, expected object, got " + typeOf(eDef) + ".");
 
-      // Just once.
-      if (i === 0) {
-        c.declareGlobal("hasOwnProperty", "Object.prototype.hasOwnProperty");
-        i++;
-      }
-
-      if (eDef.$optional) {
+      if (eDef.$optional)
         optionalFields.push(eKey);
-      }
-      else {
+      else
+        mandatoryFields.push(eKey);
+    }
+
+    if (mandatoryFields.length + optionalFields.length !== 0)
+      c.declareGlobal("hasOwnProperty", "Object.prototype.hasOwnProperty");
+
+    // If the extraction mode is off we have to make sure that there are no
+    // properties in the source object that are not defined by the schema.
+    if (!extract) {
+      vLen = c.addLocal("kl", "_");
+      c.emit(vLen + " = 0;");
+    }
+
+    if (mandatoryFields.length) {
+      var mandatoryVars = [];
+
+      for (i = 0; i < mandatoryFields.length; i++) {
+        eKey = mandatoryFields[i];
+        eDef = fields[eKey];
+
         eMangledType = c.mangledType(eDef);
         eIn = c.addLocal(eKey, eMangledType);
 
-        var oldPath = c.addPath('"."', c.str(eKey));
-
+        c.addPath('"."', c.str(eKey));
         c.emit("if (hasOwnProperty.call(" + v + ", " + c.str(eKey) + ")) {");
+
+        if (!extract)
+          c.emit(vLen + "++;");
+
         c.emit(eIn + " = " + v + "[" + c.str(eKey) + "];");
 
+        if (!extract)
+          c.emitNewLine();
+
         eOut = c.compileType(eIn, eDef);
+        mandatoryVars.push(eOut);
 
         c.emit("}");
         c.emit("else {");
         c.emit("err = " + c.error(c.str("RequiredField")) + ";");
+        c.emitErrorCase();
         c.emit("}");
 
         c.emitNewLine();
-        c.setPath(oldPath);
+        c.setPath(path);
         c.done();
-
-        mandatoryFields.push(eKey);
-        mandatoryFields.push(eOut);
       }
-    }
-
-    if (mandatoryFields.length) {
-      i = 0;
 
       c.emit(vOut + " = {");
-      do {
-        eKey = mandatoryFields[i + 0];
-        eOut = mandatoryFields[i + 1];
+      for (i = 0; i < mandatoryFields.length; i++) {
+        eKey = mandatoryFields[i];
+        eOut = mandatoryVars[i];
 
-        i += 2;
-        c.emit(c.str(eKey) + ": " + eOut + (i < mandatoryFields.length ? "," : ""));
-      } while (i < mandatoryFields.length);
+        c.emit(c.str(eKey) + ": " + eOut + (i + 1 < mandatoryFields.length ? "," : ""));
+      }
       c.emit("};");
     }
     else {
@@ -2071,8 +2128,7 @@ qdata.addType({
     }
 
     if (optionalFields.length) {
-      i = 0;
-      do {
+      for (i = 0; i < optionalFields.length; i++) {
         eKey = optionalFields[i];
 
         c.emitNewLine();
@@ -2081,24 +2137,52 @@ qdata.addType({
         eMangledType = c.mangledType(eDef);
         eIn = c.addLocal(eKey, eMangledType);
 
+        if (!extract)
+          c.emit(vLen + "++;");
+
         c.emit(eIn + " = " + v + "[" + c.str(eKey) + "];");
+        c.addPath('"."', c.str(eKey));
 
-        var oldPath = c.addPath('"."', c.str(eKey));
         eOut = c.compileType(eIn, eDef);
-        c.setPath(oldPath);
 
+        c.setPath(path);
         c.emit(vOut + "[" + c.str(eKey) + "] = " + eOut + ";");
         c.emit("}");
 
         c.done();
-      } while (++i < optionalFields.length);
+      }
+    }
+
+    if (!extract) {
+      var fn = c.declareData("extractionFailed", this.extractionFailed);
+
+      c.emitNewLine();
+      c.emit("if (Object.getOwnPropertyNames(" + v + ").length !== " + vLen + ") {");
+      c.emit("err = " + fn + "(" + vOut + ", " + v + ");");
+      c.emit("}");
     }
 
     c.denest();
     // c.emit("} while(false);");
     c.endSection();
+    c.setExtract(extract);
 
     return vOut;
+  },
+
+  // Called from compiled code to generate a list containing all invalid
+  // properties.
+  extractionFailed: function(dst, src) {
+    var list = [];
+
+    for (var k in src)
+      if (!hasOwnProperty.call(dst, k))
+        list.push(k);
+
+    return {
+      code: "InvalidProperty",
+      list: list
+    };
   }
 });
 
@@ -2153,12 +2237,12 @@ qdata.addType({
 
     c.emit(eIn + " = " + v + "[" + vIdx + "];");
 
-    var oldPath = c.addPath("", '"[" + ' + vIdx + ' + "]"');
+    var prevPath = c.addPath("", '"[" + ' + vIdx + ' + "]"');
     var eOut = c.compileType(eIn, eDef);
 
     c.emit(vOut + ".push(" + eOut + ");");
-    c.setPath(oldPath);
     c.emit("}");
+    c.setPath(prevPath);
 
     if (cond.length) {
       c.endSection();

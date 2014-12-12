@@ -11,7 +11,7 @@ function assertThrow(fn) {
     return;
   }
 
-  throw new Error("Should have thrown.");
+  throw new Error("Should have thrown exception.");
 }
 
 var deepCopy = qdata.deepCopy;
@@ -406,7 +406,6 @@ describe("QData", function() {
     assertThrow(function() { process("20110101 ", schema); });
   });
 
-
   it("should validate date - valid custom format D.M.Y", function() {
     var schema = qdata.schema({ $type: "date", $form: "D.M.Y" });
 
@@ -492,6 +491,44 @@ describe("QData", function() {
 
     assert(deepEqual(qdata.process(none, def), none));
     assert(deepEqual(qdata.process(data, def), data));
+  });
+
+  it("should validate object - escaped fields", function() {
+    var def = qdata.schema({
+      "\\$type"  : { $type: "string" },
+      "\\\\value": { $type: "string" }
+    });
+
+    var data = { "$type": "int", "\\value": "13" };
+    assert(deepEqual(qdata.process(data, def), data));
+  });
+
+  it("should validate object - strict/extract", function() {
+    var def = qdata.schema({
+      a: { $type: "bool" },
+      nested: {
+        b: { $type: "int" }
+      }
+    });
+
+    var data = {
+      a: true,
+      nested: {
+        b: 1
+      }
+    };
+
+    var noise1 = deepCopy(data);
+    noise1.someNoise = true;
+
+    var noise2 = deepCopy(noise1);
+    noise2.nested.anotherNoise = true;
+
+    assert(deepEqual(qdata.process(noise1, def, qdata.kExtractTopFields), data));
+    assert(deepEqual(qdata.process(noise2, def, qdata.kExtractAllFields), data));
+
+    assertThrow(function() { qdata.process(noise1, def, qdata.kNoOptions);        });
+    assertThrow(function() { qdata.process(noise2, def, qdata.kExtractTopFields); });
   });
 
   it("should validate array - nested values", function() {
@@ -597,6 +634,79 @@ describe("QData", function() {
     assertThrow(function() { qdata.process([0, 1, 2], defMax2); });
   });
 
+  it("should properly handle type ending with '?'", function() {
+    var def = qdata.schema({
+      a: { $type: "int"  },
+      b: { $type: "int?" }
+    });
+
+    assert(deepEqual(qdata.process({ a: 0, b: 1    }, def), { a: 0, b: 1    }));
+    assert(deepEqual(qdata.process({ a: 0, b: null }, def), { a: 0, b: null }));
+
+    assertThrow(function() { qdata.process({ a: 0               }, def); });
+    assertThrow(function() { qdata.process({ a: null, b: 1      }, def); });
+    assertThrow(function() { qdata.process({ a: 0, b: undefined }, def); });
+    assertThrow(function() { qdata.process({ a: 0, b: "string"  }, def); });
+  });
+
+  it("should properly handle type ending with '[]'", function() {
+    var def = qdata.schema({
+      a: { $type: "int"   },
+      b: { $type: "int[]" }
+    });
+
+    assert(deepEqual(qdata.process({ a: 0, b: [0] }, def), { a: 0, b: [0] }));
+
+    assertThrow(function() { qdata.process({ a: 0           }, def); });
+    assertThrow(function() { qdata.process({ a: null, b: [] }, def); });
+    assertThrow(function() { qdata.process({ a: 0, b: null  }, def); });
+    assertThrow(function() { qdata.process({ a: 0, b: "s"   }, def); });
+    assertThrow(function() { qdata.process({ a: 0, b: ["s"] }, def); });
+  });
+
+  it("should properly handle type ending with '[]?'", function() {
+    var def = qdata.schema({
+      a: { $type: "int"    },
+      b: { $type: "int[]?" }
+    });
+
+    assert(deepEqual(qdata.process({ a: 0, b: []   }, def), { a: 0, b: []   }));
+    assert(deepEqual(qdata.process({ a: 0, b: [0]  }, def), { a: 0, b: [0]  }));
+    assert(deepEqual(qdata.process({ a: 0, b: null }, def), { a: 0, b: null }));
+
+    assertThrow(function() { qdata.process({ a: 0               }, def); });
+    assertThrow(function() { qdata.process({ a: null, b: []     }, def); });
+    assertThrow(function() { qdata.process({ a: 0, b: undefined }, def); });
+    assertThrow(function() { qdata.process({ a: 0, b: "s"       }, def); });
+    assertThrow(function() { qdata.process({ a: 0, b: ["s"]     }, def); });
+  });
+
+  it("should properly handle type ending with '?[]?'", function() {
+    var def = qdata.schema({
+      a: { $type: "int"     },
+      b: { $type: "int?[]?" }
+    });
+
+    assert(deepEqual(qdata.process({ a: 0, b: []     }, def), { a: 0, b: []     }));
+    assert(deepEqual(qdata.process({ a: 0, b: [0]    }, def), { a: 0, b: [0]    }));
+    assert(deepEqual(qdata.process({ a: 0, b: null   }, def), { a: 0, b: null   }));
+    assert(deepEqual(qdata.process({ a: 0, b: [null] }, def), { a: 0, b: [null] }));
+
+    assertThrow(function() { qdata.process({ a: 0               }, def); });
+    assertThrow(function() { qdata.process({ a: null, b: []     }, def); });
+    assertThrow(function() { qdata.process({ a: 0, b: undefined }, def); });
+    assertThrow(function() { qdata.process({ a: 0, b: "s"       }, def); });
+    assertThrow(function() { qdata.process({ a: 0, b: ["s"]     }, def); });
+  });
+
+  it("should properly handle invalid type ending", function() {
+    assertThrow(function() { qdata.schema({ $type: "int??"    }); });
+    assertThrow(function() { qdata.schema({ $type: "int??[]"  }); });
+    assertThrow(function() { qdata.schema({ $type: "int[]??"  }); });
+    assertThrow(function() { qdata.schema({ $type: "int?[]??" }); });
+    assertThrow(function() { qdata.schema({ $type: "int??[]?" }); });
+  });
+
   it("should accumulate errors", function() {
     var def = qdata.schema({
       a: { $type: "bool"   },
@@ -639,6 +749,6 @@ describe("QData", function() {
     }
 
     if (out)
-      throw new Error("Should have thrown.");
+      throw new Error("Should have thrown exception.");
   });
 });
