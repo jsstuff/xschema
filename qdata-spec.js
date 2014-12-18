@@ -406,16 +406,47 @@ describe("QData", function() {
     assertThrow(function() { process("20110101 ", schema); });
   });
 
+  it("should validate date - valid custom format YYYYMMDD HHmmss", function() {
+    var schema = qdata.schema({ $type: "date", $form: "YYYYMMDD HHmmss" });
+
+    assert(process("19990101 013030", schema) === "19990101 013030");
+    assert(process("20041213 013030", schema) === "20041213 013030");
+
+    assertThrow(function() { process("invalid"         , schema); });
+    assertThrow(function() { process("19990101 253030" , schema); });
+    assertThrow(function() { process("19990101 016030" , schema); });
+    assertThrow(function() { process("19990101 013060" , schema); });
+    assertThrow(function() { process("2011312 013030"  , schema); });
+    assertThrow(function() { process("20111312 013030" , schema); });
+    assertThrow(function() { process("20140132 013030" , schema); });
+    assertThrow(function() { process("20110101 013030 ", schema); });
+  });
+
   it("should validate date - valid custom format D.M.Y", function() {
     var schema = qdata.schema({ $type: "date", $form: "D.M.Y" });
 
-    assert(process("1.1.455", schema) === "1.1.455");
-    assert(process("2.8.2004", schema) === "2.8.2004");
+    assert(process("1.1.455"   , schema) === "1.1.455"   );
+    assert(process("2.8.2004"  , schema) === "2.8.2004"  );
     assert(process("20.12.2004", schema) === "20.12.2004");
 
-    assertThrow(function() { process("32.1.2004", schema); });
-    assertThrow(function() { process("20.13.2004", schema); });
+    assertThrow(function() { process("32.1.2004"  , schema); });
+    assertThrow(function() { process("20.13.2004" , schema); });
     assertThrow(function() { process("20.13.10000", schema); });
+  });
+
+  it("should validate date - valid custom format D.M.Y H:m:s", function() {
+    var schema = qdata.schema({ $type: "date", $form: "D.M.Y H:m:s" });
+
+    assert(process("1.1.455 1:30:30"   , schema) === "1.1.455 1:30:30"   );
+    assert(process("2.8.2004 1:30:30"  , schema) === "2.8.2004 1:30:30"  );
+    assert(process("20.12.2004 1:30:30", schema) === "20.12.2004 1:30:30");
+
+    assertThrow(function() { process("1.1.1999 25:30:30"  , schema); });
+    assertThrow(function() { process("1.1.1999 1:60:30"   , schema); });
+    assertThrow(function() { process("1.1.1999 1:30:60"   , schema); });
+    assertThrow(function() { process("32.1.2004 1:30:30"  , schema); });
+    assertThrow(function() { process("20.13.2004 1:30:30" , schema); });
+    assertThrow(function() { process("20.13.10000 1:30:30", schema); });
   });
 
   it("should validate date - invalid custom format", function() {

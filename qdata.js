@@ -58,8 +58,10 @@ var kExtractAllFields = qdata.kExtractAllFields = 0x0002;
 var kAccumulateErrors = qdata.kAccumulateErrors = 0x0004;
 
 // Min/Max safe integer limits - 53 bits.
-var kIntMin = qdata.kIntMin = -9007199254740992;
-var kIntMax = qdata.kIntMax =  9007199254740992;
+//
+// NOTE: These should be fully compliant with ES6 `Number.isSafeInteger()`
+var kIntMin = qdata.kIntMin = -9007199254740991;
+var kIntMax = qdata.kIntMax =  9007199254740991;
 
 // Min/Max year that can be used in date/datetime.
 var kYearMin = qdata.kYearMin = 1;
@@ -69,14 +71,7 @@ var kYearMax = qdata.kYearMax = 9999;
 // [Internals]
 // ============================================================================
 
-// \internal
-//
-// Link to `Array.isArray`
 var isArray = Array.isArray;
-
-// \internal
-//
-// Link to `Object.prototype.hasOwnProperty`.
 var hasOwnProperty = Object.prototype.hasOwnProperty;
 
 // \internal
@@ -172,7 +167,7 @@ var qdata_re = qdata.re = {
 };
 
 // ============================================================================
-// [Errors]
+// [Core - Errors]
 // ============================================================================
 
 // \class RuntimeError
@@ -230,7 +225,7 @@ qdata.SchemaError = qclass({
 });
 
 // ============================================================================
-// [Core Utilities]
+// [Core - Utilities]
 // ============================================================================
 
 // \function `qdata.typeOf(val)`
@@ -407,33 +402,34 @@ function mergePath(a, b) {
 }
 
 // ============================================================================
-// [SimpleCompiler]
+// [Core - Compiler]
 // ============================================================================
 
-// \class `qdata.SimpleCompiler`
+// \class `qdata.CoreCompiler`
 //
-// Base class used for compiling JS code. The reason there is `SimpleCompiler`
-// and not just `SchemaCompiler` is that `SimpleCompiler` is used by other
+// Base class used for compiling JS code. The reason there is `CoreCompiler`
+// and not just `SchemaCompiler` is that `CoreCompiler` is used by other
 // functions to compile much simpler JS code, like code for date parsing.
 //
-// SimpleCompiler has been designed as a lightweight class that can be used to
+// CoreCompiler has been designed as a lightweight class that can be used to
 // serialize JS code into one string, by providing an interface for indentation
 // and declaring local variables at the beginning of the function.
 //
 // The following snippet demonstrates the desired functionality:
 //
 // ```
-// var c = new SimpleCompiler();
+// var c = new CoreCompiler();
 //
 // c.arg("array");
 // c.declareVariable("i", "0");
 // c.declareVariable("len", "array.length");
 //
-// c.emit("do {");
+// c.emit("while (i < len) {");
 // c.declareVariable("element");
 // c.emit("element = array[i]");
 // c.emit("...");
-// c.emit("} while (++i < len);";
+// c.emit("i++;");
+// c.emit("}";
 //
 // c.toFunction();
 // ```
@@ -445,10 +441,11 @@ function mergePath(a, b) {
 // function($$_data) {
 //   return function(array) {
 //     var i = 0, len = array.length, element;
-//     do {
+//     while (i < len) {
 //       element = array[i];
 //       ...
-//     } while (++i < len);
+//       i++;
+//     }
 //   }
 // }
 // ```
@@ -457,7 +454,7 @@ function mergePath(a, b) {
 // the generated function and the function that contains the body constructed
 // by using `emit()` and others to emit JS code. Passing data is easy through
 // `data(data)` method or more high level `declareData(name, data)` method.
-function SimpleCompiler() {
+function CoreCompiler() {
   this._debug = false;        // Whether to output debug code and comments.
   this._indentation = "  ";   // Indentation, see `indent()` and `deindent()`.
 
@@ -473,7 +470,7 @@ function SimpleCompiler() {
   this._dataToVar = {};       // Mapping of global data index and variables.
 }
 qclass({
-  $construct: SimpleCompiler,
+  $construct: CoreCompiler,
 
   // Declare a new local variable and put the declaration at the beginning of
   // the function.
@@ -663,6 +660,10 @@ qclass({
 
     try {
       body = this.serialize();
+
+      //if (this instanceof DateCompiler)
+      //  console.log(body);
+
       fn = new Function(this._dataName, body);
 
       //console.log(body);
@@ -684,12 +685,516 @@ qclass({
 });
 
 // ============================================================================
-// [SchemaCompiler]
+// [Date - Utilities]
+// ============================================================================
+
+// \namespace `qdata.date`
+var qdata_date = qdata.date = {};
+
+// Days in a month, leap years have to be handled separately.
+//                (JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC)
+var daysInMonth = [ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+// Leap seconds data.
+//
+// Every year has it's own data that is stored in a single number in a form 0xXY,
+// where X represents a leap second in June-30 and Y represents Dec-31.
+var leapSecondDates = {
+  start: 1972,
+  array: [
+    /* 1972: */ 0x11, /* 1973: */ 0x01, /* 1974: */ 0x01, /* 1975: */ 0x01,
+    /* 1976: */ 0x01, /* 1977: */ 0x01, /* 1978: */ 0x01, /* 1979: */ 0x01,
+    /* 1980: */ 0x00, /* 1981: */ 0x10, /* 1982: */ 0x10, /* 1983: */ 0x10,
+    /* 1984: */ 0x00, /* 1985: */ 0x10, /* 1986: */ 0x00, /* 1987: */ 0x01,
+    /* 1988: */ 0x00, /* 1989: */ 0x01, /* 1990: */ 0x01, /* 1991: */ 0x00,
+    /* 1992: */ 0x10, /* 1993: */ 0x10, /* 1994: */ 0x10, /* 1995: */ 0x01,
+    /* 1996: */ 0x00, /* 1997: */ 0x10, /* 1998: */ 0x01, /* 1999: */ 0x00,
+    /* 2000: */ 0x00, /* 2001: */ 0x00, /* 2002: */ 0x00, /* 2003: */ 0x00,
+    /* 2004: */ 0x00, /* 2005: */ 0x01, /* 2006: */ 0x00, /* 2007: */ 0x00,
+    /* 2008: */ 0x01, /* 2009: */ 0x00, /* 2010: */ 0x00, /* 2011: */ 0x00,
+    /* 2012: */ 0x10, /* 2013: */ 0x00, /* 2014: */ 0x00
+  ]
+};
+qdata_date.leapSecondDates = leapSecondDates;
+
+// \function `data.date.isLeapYear(year)`
+//
+// Get whether the `year` is a leap year (ie it has 29th February).
+function isLeapYear(year) {
+  return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+}
+qdata_date.isLeapYear = isLeapYear;
+
+// \function `data.date.hasLeapSecond(year, month, day)`
+//
+// Get whether a date defined by `year`, `month`, and `day` has a leap second.
+// Please note that it's impossible to guess leap second in the future. This
+// function is mainly included to validate whether a date that has already
+// passed or is in a near future has a leap second defined.
+function isLeapSecondDate(year, month, date) {
+  var msk = 0x00;
+
+  if (month === 6 && date === 30)
+    msk = 0x10;
+  else if (month === 12 && date === 31)
+    msk = 0x01;
+  else
+    return false;
+
+  var data = leapSecondDates;
+  var start = data.start;
+  var array = data.array;
+  var index = year - start;
+
+  if (index < 0 || index >= array.length)
+    return 0;
+
+  return (array[index] & msk) !== 0;
+}
+qdata_date.isLeapSecondDate = isLeapSecondDate;
+
+// \internal
+var dateParts = {
+  Y     : { len:-4, msk: 0x01 },
+  YY    : { len: 2, msk: 0x01 },
+  YYYY  : { len: 4, msk: 0x01 },
+  M     : { len:-2, msk: 0x02 },
+  MM    : { len: 2, msk: 0x02 },
+  D     : { len:-2, msk: 0x04 },
+  DD    : { len: 2, msk: 0x04 },
+  H     : { len:-2, msk: 0x08 },
+  HH    : { len: 2, msk: 0x08 },
+  m     : { len:-2, msk: 0x10 },
+  mm    : { len: 2, msk: 0x10 },
+  s     : { len:-2, msk: 0x20 },
+  ss    : { len: 2, msk: 0x20 },
+  S     : { len: 1, msk: 0x40 },
+  SS    : { len: 2, msk: 0x40 },
+  SSS   : { len: 3, msk: 0x40 },
+  SSSSSS: { len: 6, msk: 0x40 }
+};
+
+// \internal
+//
+// A mapping between a date form and date validator and parser functions.
+var dateCache = {};
+
+// \internal
+//
+// Get whether the given charcode is a date component (ie it can be parsed as
+// year, month, date, etc...). Please note that not all alphanumeric characters
+// are considered as date components.
+function isDateComponent(c) {
+  return (c === 0x59) | // 'Y' - Year.
+         (c === 0x4D) | // 'M' - Month.
+         (c === 0x44) | // 'D' - Day.
+         (c === 0x48) | // 'H' - Hour.
+         (c === 0x6D) | // 'm' - Minute.
+         (c === 0x73) | // 's' - Second.
+         (c === 0x53) ; // 'S' - Fractions of second.
+}
+
+// \internal
+//
+// Inspects a date format passed as `form`. If the form is valid and
+// non-ambiguous it returns an object that contains:
+//
+//   'Y', 'M', 'D', 'H', 'm', 's', 'S' - Information about date parts parsed in
+//     a form of object having `{ part, index, len }` properties.
+//
+//   'parts' - Date components and separators.
+//
+//   'fixed' - Whether ALL date components have fixed length (0 or 1).
+//
+//   'minLength' - Minimum length of a string to be considered valid and to be
+//     processed.
+function inspectDateForm(form) {
+  var i = 0;
+  var len = form.length;
+
+  // Split date components and separators, for example "YYYY-MM-DD" string
+  // would be split into ["YYYY", "-", "MM", "-", "DD"] components.
+  var parts = [];
+  do {
+    var start = i;
+    var symb = form.charCodeAt(i);
+
+    if (isDateComponent(symb)) {
+      // Merge component chars, like "Y", "YY", "YYYY".
+      while (++i < len && form.charCodeAt(i) === symb)
+        continue;
+    }
+    else {
+      // Parse anything that is not a date component.
+      while (++i < len && !isDateComponent(form.charCodeAt(i)))
+        continue;
+    }
+
+    parts.push(form.substring(start, i));
+  } while (i < len);
+
+  var index = 0;   // Component/Part string index, -1 if not usable.
+  var fixed = 1;   // All components have fixed length.
+
+  var msk = 0|0;   // Mask of parsed components.
+  var sep = false; // Whether the current/next component has to be a separator.
+
+  var result = {
+    parts: null,
+    fixed: 0,
+    minLength: len
+  };
+
+  for (i = 0, len = parts.length; i < len; i++) {
+    var part = parts[i];
+
+    if (hasOwnProperty.call(dateParts, part)) {
+      var data = dateParts[part];
+      var symb = part.charAt(0);
+
+      // Fail if one component appears multiple times or if the separator is
+      // required at this point.
+      if ((msk & data.msk) !== 0 || sep)
+        throw new RuntimeError("Invalid date form '" + form + "'.");
+      msk |= data.msk;
+
+      // Store the information about this date component. We always use the
+      // format symbol `symb` as a key as it's always "Y" for all of "Y", "YY",
+      // and "YYYY", for example.
+      result[symb] = {
+        part : part,
+        index: fixed ? index : -1,
+        len  : data.len
+      };
+
+      // Require the next component to be a separator if the component doesn't
+      // have a fixed length. This prevents from ambiguities and one component
+      // running through another in case of "YMD" for example.
+      sep = data.len <= 0;
+
+      // Update `fixed` flag in case this component's length is not fixed.
+      fixed &= !sep;
+    }
+    else {
+      // Reset the separator flag and add escaped part sequence into the regexp.
+      sep = false;
+    }
+
+    index += part.length;
+  }
+
+  if (((msk + 1) & msk) !== 0)
+    throw new RuntimeError("Invalid date form '" + form + "'.");
+
+  result.parts = parts;
+  result.fixed = fixed;
+
+  return result;
+}
+
+function DateCompiler() {
+  CoreCompiler.call(this);
+}
+qclass({
+  $extend: CoreCompiler,
+  $construct: DateCompiler,
+
+  compile: function(form, inspected) {
+    var parts = inspected.parts;
+    var fixed = inspected.fixed;
+
+    var Y = inspected.Y;
+    var M = inspected.M;
+    var D = inspected.D;
+    var H = inspected.H;
+    var m = inspected.m;
+    var s = inspected.s;
+
+    var index = 0;
+    var i, j;
+
+    this.arg("input");
+    this.arg("hasLeapSecond");
+
+    this.declareVariable("len", "input.length");
+    this.declareVariable("cp");
+
+    this._debug = true;
+    this.emitComment("Date form: " + form);
+
+    this.emit("do {");
+
+    this.emit("if (len " + (fixed ? "!==" : "<") + " " + inspected.minLength + ") break;");
+    this.emitNewLine();
+
+    for (i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      var symb = part.charAt(0);
+
+      if (hasOwnProperty.call(inspected, symb)) {
+        var data = inspected[symb];
+        var jLen = data.len;
+
+        // Generate code that parses the number and assigns its value into
+        // a variable `symb`.
+        this.declareVariable(symb);
+
+        // If this component has a variable length we have to fix the parser
+        // in a way that all consecutive components will use relative indexing.
+        if (jLen <= 0 && index >= 0) {
+          this.declareVariable("index", String(index));
+          index = -1;
+        }
+
+        if (jLen > 0) {
+          if (index < 0)
+            this.emit("if (index + " + String(jLen) + " > len) break;");
+
+          for (j = 0; j < jLen; j++) {
+            var v = (j === 0) ? symb : "cp";
+            var sIndex = (index >= 0) ? String(index + j) : "index + " + j;
+
+            this.emit("if ((" + v + " = input.charCodeAt(" + sIndex + ")) < 48 || (" + v + " -= 48) >= 10) break;");
+
+            if (j !== 0)
+              this.emit(symb + " = " + symb + " * 10 + " + v);
+          }
+
+          if (index >= 0)
+            index += jLen;
+        }
+        else {
+          j = -jLen;
+
+          this.declareVariable("limit");
+
+          this.emit("if (index >= len) break;");
+          this.emit("if ((" + symb + " = input.charCodeAt(index)) < 48 || (" + symb + " -= 48) >= 10) break;");
+
+          this.emitNewLine();
+          this.emit("limit = Math.min(len, index + " + j + ");");
+
+          this.emit("while (++index < limit && (cp = input.charCodeAt(index)) >= 48 && (cp -= 48) < 10) {");
+          this.emit(symb += " = " + symb + " * 10 + cp;");
+          this.emit("}");
+        }
+      }
+      else {
+        // Generate code that checks if the separator sequence is correct.
+        var cond = [];
+        var jLen = part.length;
+
+        if (index >= 0) {
+          for (j = 0; j < jLen; j++)
+            cond.push("input.charCodeAt(" + (index + j) + ") === " + part.charCodeAt(j));
+          index += jLen;
+        }
+        else {
+          cond.push("index + " + jLen + " <= len");
+          for (j = 0; j < jLen; j++)
+            cond.push("input.charCodeAt(index + " + j + ") === " + part.charCodeAt(j));
+        }
+
+        this.emit("if (!(" + cond.join(" && ") + ")) break;");
+
+        if (index < 0)
+          this.emit("index += " + jLen + ";");
+      }
+
+      this.emitNewLine();
+    }
+
+    if (Y) {
+      this.emit("if (Y < " + kYearMin + ") break;");
+      if (M) {
+        this.emit("if (M < 1 || M > 12) break;");
+        if (D) {
+          this.declareData("daysInMonth", daysInMonth);
+          this.declareData("isLeapYear", isLeapYear);
+          this.emit("if (D < 1 || D > daysInMonth[M - 1] + ((M === 2 && D === 29) ? isLeapYear(Y) : 0)) break;");
+        }
+      }
+    }
+
+    if (H) {
+      this.emit("if (H > 23) break;");
+      if (m) {
+        this.emit("if (m > 59) break;");
+        if (s) {
+          this.declareData("isLeapSecondDate", isLeapSecondDate);
+          this.emit("if (s > 59 && !(s === 60 && hasLeapSecond && isLeapSecondDate(Y, M, D))) break;");
+        }
+      }
+    }
+
+    this.emit("return null;");
+    this.emit("} while (false);");
+
+    this.emitNewLine();
+    this.emit("return { code: \"DateCheckFailure\", form: this.form };");
+
+    return this.toFunction();
+  }
+});
+
+// \internal
+//
+// Get a date parser based on format passed as `form`. The object returned has
+// `form`, which is the same as `form` passed and `func`, which is a compiled
+// validation function. The result is cached and every `form` is checked and
+// compiled only once.
+function getDateParser(form) {
+  var cache = dateCache;
+  if (hasOwnProperty.call(cache, form))
+    return cache[form];
+
+  var inspected = inspectDateForm(form);
+  var obj = {
+    form: form,
+    func: (new DateCompiler()).compile(form, inspected)
+  };
+
+  cache[form] = obj;
+  return obj;
+}
+
+// ============================================================================
+// [Schema - Builder]
+// ============================================================================
+
+// \internal
+//
+// Translate a given schema definition into internal format that can be used
+// by `qdata` library. This function is called for root type and all children
+// it contains, basically per recognized type.
+function _build(def, priv) {
+  // Safe defaults.
+  var name = def.$type || "object";
+  var defData = def.$data;
+
+  var hasNull = false;
+  var hasUndef = false;
+
+  var obj, k;
+
+  // If the $type ends with "?" it implies `{ $null: true }` definition.
+  if (reFieldIsOptional.test(name)) {
+    name = name.substr(0, name.length - 1);
+    hasNull = true;
+
+    // Prevent from having invalid type that contains for example "??" by mistake.
+    if (reFieldIsOptional.test(name))
+      throw new RuntimeError("Invalid type '" + def.$type + "'.");
+  }
+
+  // If the $type ends with "[]" it implies `{ $type: "array", $data: ... }`.
+  // In this case all definitions specified in `def` are related to the array
+  // data, not the array itself.
+  if (reFieldIsArray.test(name)) {
+    var nested = copyObject(def);
+    nested.$type = name.substr(0, name.length - 2);
+
+    obj = {
+      $type     : "array",
+      $data     : _build.call(this, nested, null),
+      $null     : hasNull,
+      $undefined: false,
+      $_private : priv
+    };
+  }
+  else {
+    if (typeof def.$null === "boolean")
+      hasNull = def.$null;
+
+    if (typeof def.$undefined === "boolean")
+      hasUndef = def.$undefined;
+
+    obj = {
+      $type     : name,
+      $data     : null,
+      $null     : hasNull,
+      $undefined: hasUndef,
+      $_private : priv
+    };
+
+    if (name === "object") {
+      var $data = obj.$data = {};
+
+      for (k in def) {
+        var kDef = def[k];
+
+        // Properties are stored in `obj` itself, however, object fields are
+        // stored always in `obj.$data`. This is just a way to distinguish
+        // properties from object fields.
+        if (!isPropertyName(k))
+          $data[unescapeFieldName(k)] = _build.call(this, kDef, null);
+        else if (!hasOwnProperty.call(obj, k))
+          obj[k] = kDef;
+      }
+
+      if (defData != null) {
+        if (typeof defData !== "object")
+          throw new RuntimeError("Property '$data' has to be object, not '" + typeOf(defData) + "'.");
+
+        for (k in defData) {
+          kDef = defData[k];
+          $data[k] = _build.call(this, kDef, null);
+        }
+      }
+    }
+    else {
+      for (k in def) {
+        if (!isPropertyName(k))
+          throw new RuntimeError("Data field '" + k + "'can't be used by '" + name + "' type.");
+
+        if (!hasOwnProperty.call(obj, k))
+          obj[k] = def[k];
+      }
+
+      if (defData != null) {
+        if (typeof defData !== "object")
+          throw new RuntimeError("Property '$data' has to be object, not '" + typeOf(defData) + "'.");
+
+        obj.$data = _build.call(this, defData, null);
+      }
+    }
+  }
+
+  // Validate that the postprocessed object is valid and can be compiled.
+  var handler = this.getType(obj.$type);
+  if (!handler)
+    throw new RuntimeError("Unknown type '" + obj.$type + "'.");
+
+  if (typeof handler.handler === "function")
+    handler.handler(obj);
+
+  return obj;
+}
+
+// \function `qdata.schema(def)`
+//
+// Processes the given definition `def` and creates a schema that can be used
+// and compiled by `qdata` library. It basically normalizes the input object
+// and calls `type` and `rule` hooks on it.
+function schema(def) {
+  // All members starting with `$_private` are considered private and used
+  // exclusively by QData library. This is the only reserved prefix so far.
+  var priv = {
+    data : null,
+    funcs: {}
+  };
+
+  return _build.call(this, def, priv);
+}
+qdata.schema = schema;
+
+// ============================================================================
+// [Schema - Compiler]
 // ============================================================================
 
 // \class `qdata.SchemaCompiler`
 function SchemaCompiler(env, options) {
-  SimpleCompiler.call(this);
+  CoreCompiler.call(this);
 
   this._env = env;          // Schema environment (`qdata` or customized).
   this._options = options;  // Schema validation options.
@@ -703,7 +1208,7 @@ function SchemaCompiler(env, options) {
   this._stack = [];         // Used to save state of the previous scope.
 }
 qclass({
-  $extend: SimpleCompiler,
+  $extend: CoreCompiler,
   $construct: SchemaCompiler,
 
   compileFunc: function(def) {
@@ -737,13 +1242,13 @@ qclass({
   },
 
   compileType: function(vIn, def) {
-    var type = def.$type || "object";
-    var handler = this._env.getType(type);
+    var name = def.$type || "object";
+    var type = this._env.getType(name);
 
-    if (!handler)
-      throw new RuntimeError("Couldn't find handler for type " + type + ".");
+    if (!type)
+      throw new RuntimeError("Couldn't find handler for type " + name + ".");
 
-    var vOut = handler.compile(this, vIn, def);
+    var vOut = type.compile(this, vIn, def);
 
     this.emitNewLine();
     this.emit("if (err !== null) {");
@@ -991,644 +1496,7 @@ qclass({
 });
 
 // ============================================================================
-// [Date Utilities]
-// ============================================================================
-
-// \namespace `qdata.date`
-var qdata_date = qdata.date = {};
-
-// Days in a month, leap years have to be handled separately.
-var daysInMonth = [
-  31, // January.
-  28, // February.
-  31, // March.
-  30, // April.
-  31, // May.
-  30, // June.
-  31, // July.
-  31, // August.
-  30, // September.
-  31, // October.
-  30, // November.
-  31  // December.
-];
-
-// Leap seconds data.
-//
-// Every year has it's own data that is stored in a single number in a form 0xXY,
-// where X represents a leap second in June-30 and Y represents Dec-31.
-var leapSecondDates = {
-  start: 1972,
-  array: [
-    0x11, // 1972.
-    0x01, // 1973.
-    0x01, // 1974.
-    0x01, // 1975.
-    0x01, // 1976.
-    0x01, // 1977.
-    0x01, // 1978.
-    0x01, // 1979.
-    0x00, // 1980.
-    0x10, // 1981.
-    0x10, // 1982.
-    0x10, // 1983.
-    0x00, // 1984.
-    0x10, // 1985.
-    0x00, // 1986.
-    0x01, // 1987.
-    0x00, // 1988.
-    0x01, // 1989.
-    0x01, // 1990.
-    0x00, // 1991.
-    0x10, // 1992.
-    0x10, // 1993.
-    0x10, // 1994.
-    0x01, // 1995.
-    0x00, // 1996.
-    0x10, // 1997.
-    0x01, // 1998.
-    0x00, // 1999.
-    0x00, // 2000.
-    0x00, // 2001.
-    0x00, // 2002.
-    0x00, // 2003.
-    0x00, // 2004.
-    0x01, // 2005.
-    0x00, // 2006.
-    0x00, // 2007.
-    0x01, // 2008.
-    0x00, // 2009.
-    0x00, // 2010.
-    0x00, // 2011.
-    0x10, // 2012.
-    0x00, // 2013.
-    0x00  // 2014.
-  ]
-};
-qdata_date.leapSecondDates = leapSecondDates;
-
-// \function `data.date.isLeapYear(year)`
-//
-// Get whether the `year` is a leap year (ie it has 29th February).
-function isLeapYear(year) {
-  return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
-}
-qdata_date.isLeapYear = isLeapYear;
-
-// \function `data.date.hasLeapSecond(year, month, day)`
-//
-// Get whether a date defined by `year`, `month`, and `day` has a leap second.
-// Please note that it's impossible to guess leap second in the future. This
-// function is mainly included to validate whether a date that has already
-// passed or is in a near future has a leap second defined.
-function isLeapSecondDate(year, month, date) {
-  var mask = 0x00;
-
-  if (month === 6 && date === 30)
-    mask = 0x10;
-  else if (month === 12 && date === 31)
-    mask = 0x01;
-  else
-    return false;
-
-  var data = leapSecondDates;
-  var start = data.start;
-  var array = data.array;
-
-  var index = year - start;
-  if (index < 0 || index >= array.length)
-    return 0;
-
-  return (array[index] & mask) !== 0;
-}
-qdata_date.isLeapSecondDate = isLeapSecondDate;
-
-// \internal
-//
-// Date format (like YYYY-MM-DD) to a parser function, which returns an object
-// having `year`, `month`, `date`, `hour`, `minute`, `second`, and `ms` or `us`.
-var dateCache = {};
-
-// \internal
-var dateParts = {
-  Y     : { re: "\\d+"  , len: 0, mask: 0x01 },
-  YY    : { re: "\\d{2}", len: 2, mask: 0x01 },
-  YYYY  : { re: "\\d{4}", len: 4, mask: 0x01 },
-  M     : { re: "\\d+"  , len: 0, mask: 0x02 },
-  MM    : { re: "\\d{2}", len: 2, mask: 0x02 },
-  D     : { re: "\\d+"  , len: 0, mask: 0x04 },
-  DD    : { re: "\\d{2}", len: 2, mask: 0x04 },
-  H     : { re: "\\d+"  , len: 0, mask: 0x08 },
-  HH    : { re: "\\d{2}", len: 2, mask: 0x08 },
-  m     : { re: "\\d+"  , len: 0, mask: 0x10 },
-  mm    : { re: "\\d{2}", len: 2, mask: 0x10 },
-  s     : { re: "\\d+"  , len: 0, mask: 0x20 },
-  ss    : { re: "\\d{2}", len: 2, mask: 0x20 },
-  S     : { re: "\\d{1}", len: 1, mask: 0x40 },
-  SS    : { re: "\\d{2}", len: 2, mask: 0x40 },
-  SSS   : { re: "\\d{3}", len: 3, mask: 0x40 },
-  SSSSSS: { re: "\\d{6}", len: 6, mask: 0x40 }
-};
-
-// \internal
-//
-// Get whether the given charcode is a date component (ie it can be parsed as
-// year, month, date, etc...). Please note that not all alphanumeric characters
-// are considered as date components.
-function isDateComponent(c) {
-  return (c === 0x59) | // 'Y' - Year.
-         (c === 0x4D) | // 'M' - Month.
-         (c === 0x44) | // 'D' - Day.
-         (c === 0x48) | // 'H' - Hour.
-         (c === 0x6D) | // 'm' - Minute.
-         (c === 0x73) | // 's' - Second.
-         (c === 0x53) ; // 'S' - Fractions of second.
-}
-
-// \internal
-//
-// Perform analysis on a date `form`. If the form is valid and non-ambiguous it
-// returns an object, which contains:
-//
-//   'Y', 'M', 'D', 'H', 'm', 's', 'S' - Information about date components
-//     parsed in a form of object.
-//
-//   'parts' - Date components and separators.
-//
-//   'allFixed' - All date components have fixed length (0 or 1).
-function analyzeDateFormat(form) {
-  var i = 0;
-  var len = form.length;
-
-  // Parsed date components and separators, for example "YYYY-MM-DD" string
-  // would be split into ["YYYY", "-", "MM", "-", "DD"] components.
-  var parts = [];
-  do {
-    var start = i;
-    var c = form.charCodeAt(i);
-
-    if (isDateComponent(c)) {
-      // Merge component chars, like "Y", "YY", "YYYY".
-      while (++i < len && form.charCodeAt(i) === c)
-        continue;
-    }
-    else {
-      // Parse anything that is not a date component.
-      while (++i < len && !isDateComponent(form.charCodeAt(i)))
-        continue;
-    }
-
-    parts.push(form.substring(start, i));
-  } while (i < len);
-
-  var allFixed = 1;   // All components have fixed length.
-  var mask = 0|0;     // Mask of parsed components.
-  var sep = false;    // Whether the current/next component has to be a separator.
-
-  var matchIndex = 1; // Component/Part match index, used when `allFixed` is 0.
-  var strIndex = 0;   // Component/Part string index, used when `allFixed` is 1.
-
-  var obj = {
-    parts: null,
-    allFixed: 0
-  };
-
-  for (i = 0, len = parts.length; i < len; i++) {
-    var part = parts[i];
-
-    if (hasOwnProperty.call(dateParts, part)) {
-      // Fail if one component appears multiple times or if the separator is
-      // required at this point.
-      if (obj[part.charAt(0)] || sep)
-        throw new RuntimeError("Detected an invalid date form '" + form + "'.");
-
-      var data = dateParts[part];
-
-      // Mark this component as parsed so it won't repeat. Only the first
-      // character is used as it prevents "Y" and "YY" to appear in one form,
-      // for example.
-      obj[part.charAt(0)] = {
-        part      : part,
-        matchIndex: matchIndex,
-        strIndex  : strIndex,
-        strLen    : data.len
-      };
-
-      // Require the next component to be a separator if the component doesn't
-      // have a fixed length. This prevents from ambiguities and one component
-      // running through another in case of "YMD" for example.
-      sep = (data.len === 0);
-
-      // Update `allFixedLength` flag in case this component doesn't have fixed
-      // length as different parsing strategy is used when all components have
-      // fixed length.
-      allFixed &= !sep;
-
-      mask |= data.mask;
-      matchIndex++;
-    }
-    else {
-      // Reset the separator flag and add escaped part sequence into the regexp.
-      sep = false;
-    }
-
-    strIndex += part.length;
-  }
-
-  if (((mask + 1) & mask) !== 0)
-    throw new RuntimeError("Detected an invalid date form '" + form + "'.");
-
-  obj.parts = parts;
-  obj.allFixed = allFixed;
-
-  return obj;
-}
-
-function newDateRegExp(parts, capture) {
-  var re = "";
-
-  var captureBegin = capture ? "(" : "";
-  var captureEnd   = capture ? ")" : "";
-
-  for (var i = 0, len = parts.length; i < len; i++) {
-    var part = parts[i];
-
-    if (hasOwnProperty.call(dateParts, part))
-      re += captureBegin + dateParts[part].re + captureEnd;
-    else
-      re += escapeRegExp(part);
-  }
-
-  return new RegExp("^" + re + "$");
-}
-
-function inlineParseInt(v, start, len) {
-  var str = "";
-  var mul = 1;
-
-  for (var i = len - 1; i >= 0; i--) {
-    str = "(" + v + ".charCodeAt(" + (start + i) + ") - 48)" +
-      (mul > 1 ? " * " + mul : "") +
-      (str     ? " + " + str : "") ;
-    mul *= 10;
-  }
-
-  return str;
-}
-
-// \internal
-//
-// Generates a new date parser that is using the 'fixed' strategy. Please note
-// that it compiles a function every time this is called that is compatible
-// with `checkDateMatchStrategy()` and uses `this`.
-function checkDateFixedStrategy(obj) {
-  var c = new SimpleCompiler();
-
-  var Y = obj.Y;
-  var M = obj.M;
-  var D = obj.D;
-  var H = obj.H;
-  var m = obj.m;
-  var s = obj.s;
-
-  c.arg("s");
-  c.arg("hasLeapSecond");
-
-  c.emit("if (this.re.test(s)) {");
-  c.emit("var year = " + inlineParseInt("s", Y.strIndex, Y.strLen) + ";");
-  c.emit("if (year >= " + kYearMin + ") {");
-
-  var ok = "return null;";
-
-  if (M) {
-    c.emit("var month = " + inlineParseInt("s", M.strIndex, M.strLen) + ";");
-    c.emit("if (month >= 1 && month <= 12) {");
-
-    if (D) {
-      c.declareData("daysInMonth", daysInMonth);
-      c.declareData("isLeapYear", isLeapYear);
-
-      c.emit("var date = " + inlineParseInt("s", D.strIndex, D.strLen) + ";");
-      c.emit("var maxDate = daysInMonth[month - 1];");
-
-      c.emitNewLine();
-      c.emit("if (month === 2 && date === 29) {")
-        .emit("maxDate += isLeapYear(year);");
-      c.emit("}");
-
-      c.emitNewLine();
-      c.emit("if (date >= 1 && date <= maxDate) {");
-
-      if (H) {
-        c.emit("var hour = " + inlineParseInt("s", H.strIndex, H.strLen) + ";");
-        c.emit("if (hour <= 23) {");
-
-        if (m) {
-          c.emit("var minute = " + inlineParseInt("s", m.strIndex, m.strLen) + ";");
-          c.emit("if (minute <= 59) {");
-
-          if (s) {
-            c.declareData("isLeapSecondDate", isLeapSecondDate);
-            c.emit("var second = " + inlineParseInt("s", s.strIndex, s.strLen) + ";");
-            c.emit("if (second <= 59 || (second === 60 && hasLeapSecond && isLeapSecondDate(year, month, date))) {")
-              .emit(ok);
-            c.emit("}");
-          }
-          else {
-            c.emit(ok);
-          }
-
-          c.emit("}");
-        }
-        else {
-          c.emit(ok);
-        }
-
-        c.emit("}");
-      }
-      else {
-        c.emit(ok);
-      }
-
-      c.emit("}");
-    }
-    else {
-      c.emit(ok);
-    }
-
-    c.emit("}");
-  }
-  else {
-    c.emit(ok);
-  }
-
-  c.emit("}");
-  c.emit("}");
-  c.emit("return { code: \"DateCheckFailure\", form: this.form };");
-
-  return c.toFunction();
-}
-
-// \internal
-//
-// Date parser that uses regular expression matches to parse the components.
-// Used in case of 'match' parsing strategy. Please note that this parser
-// requires `this` to be the object returned by `newDateParser` and used by
-// `dateCache`.
-function checkDateMatchStrategy(s, hasLeapSecond) {
-  var m = this.re.exec(s);
-
-  if (m) {
-    var indexes = this.indexes;
-    var n = indexes.length;
-
-    // Parse year.
-    var year = parseInt(m[indexes[0]]);
-    if (year >= kYearMin && year <= kYearMax) {
-      if (n === 1)
-        return null;
-
-      // Parse month.
-      var month = parseInt(m[indexes[1]]);
-      if (month >= 1 && month <= 12) {
-        if (n === 2)
-          return null;
-
-        // Parse date and handle a possible leap year.
-        var date = parseInt(m[indexes[2]]);
-        var maxDate = daysInMonth[month - 1];
-
-        if (month === 2 && date === 29)
-          maxDate += isLeapYear(year);
-
-        if (date >= 1 && date <= maxDate) {
-          if (n === 3)
-            return null;
-
-          // Parse hour.
-          var hour = parseInt(m[indexes[3]]);
-          if (hour <= 23) {
-            if (n === 4)
-              return null;
-
-            // Parse minute.
-            var minute = parseInt(m[indexes[4]]);
-            if (minute <= 59) {
-              if (n === 5)
-                return null;
-
-              // Parse second and handle possible leap second.
-              var second = parseInt(m[indexes[5]]);
-              if (second <= 59 || (second === 60 && hasLeapSecond && isLeapSecondDate(year, month, date))) {
-                // There is nothing special on milliseconds/microseconds.
-                return null;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return { code: "DateCheckFailure", form: this.form };
-}
-
-// \internal
-//
-// Create a new date parser based on format. The new parser is an object which
-// contains:
-//
-//   'strategy' - Strategy to use to parse the date. See 'parsing strategies'.
-//
-//   're' - Regular expression that validates if the input string has a correct
-//     structure. In case of 'match' strategy matches are used to parse date
-//     components. In case of 'fixed' strategy RegExp.test() should be used
-//     to just validate an input string.
-//
-// Parsing strategies:
-//
-//   'fixed' - All date components have fixed length, use optimized parser.
-//
-//   'match' - One or more date component has variable length, regexp matches
-//     have to be used to get individual components.
-function newDateParser(form) {
-  var obj = analyzeDateFormat(form);
-
-  // Make `indexes` that are used by `checkDateMatchStrategy()`.
-  var indexes = [];
-  var comp;
-
-  if ((comp = obj.Y)) indexes.push(comp.matchIndex);
-  if ((comp = obj.M)) indexes.push(comp.matchIndex);
-  if ((comp = obj.D)) indexes.push(comp.matchIndex);
-  if ((comp = obj.H)) indexes.push(comp.matchIndex);
-  if ((comp = obj.m)) indexes.push(comp.matchIndex);
-  if ((comp = obj.s)) indexes.push(comp.matchIndex);
-  if ((comp = obj.S)) indexes.push(comp.matchIndex);
-
-  // Decide on strategy and assign correct `check` function.
-  var strategy;
-  var check;
-  var re;
-
-  if (obj.allFixed) {
-    strategy = "fixed";
-    check = checkDateFixedStrategy(obj);
-    re = newDateRegExp(obj.parts, false);
-  }
-  else {
-    strategy = "match";
-    check = checkDateMatchStrategy;
-    re = newDateRegExp(obj.parts, true);
-  }
-
-  return {
-    form    : form,
-    strategy: strategy,
-    check   : check,
-    re      : re,
-    indexes : indexes
-  };
-}
-
-function getDateParser(form) {
-  var cache = dateCache;
-
-  if (hasOwnProperty.call(cache, form))
-    return cache[form];
-  else
-    return (cache[form] = newDateParser(form));
-}
-
-// ============================================================================
-// [Schema Building]
-// ============================================================================
-
-// \internal
-//
-// Process a given definition and return an object that can be used.
-function unfold(def, priv) {
-  // Safe defaults.
-  var defType = def.$type || "object";
-  var defData = def.$data;
-
-  var defNull = false;
-  var defUndefined = false;
-
-  var obj, k;
-
-  // If the $type ends with "?" it implies `{ $null: true }` definition.
-  if (reFieldIsOptional.test(defType)) {
-    defType = defType.substr(0, defType.length - 1);
-    defNull = true;
-
-    // Prevent from having invalid type that contains for example "??" by mistake.
-    if (reFieldIsOptional.test(defType))
-      throw new RuntimeError("Invalid type '" + def.$type + "'.");
-  }
-
-  // If the $type ends with "[]" it implies `{ $type: "array", $data: ... }`.
-  // In this case all definitions specified in `def` are related to the array
-  // data, not the array itself.
-  if (reFieldIsArray.test(defType)) {
-    var nested = copyObject(def);
-    nested.$type = defType.substr(0, defType.length - 2);
-
-    obj = {
-      $type     : "array",
-      $data     : unfold.call(this, nested, null),
-      $null     : defNull,
-      $undefined: false,
-      $_private : priv
-    };
-  }
-  else {
-    if (typeof def.$null === "boolean")
-      defNull = def.$null;
-
-    if (typeof def.$undefined === "boolean")
-      defUndefined = def.$undefined;
-
-    obj = {
-      $type     : defType,
-      $data     : null,
-      $null     : defNull,
-      $undefined: defUndefined,
-      $_private : priv
-    };
-
-    if (defType === "object") {
-      var $data = obj.$data = {};
-
-      for (k in def) {
-        var kDef = def[k];
-
-        // Properties are stored in `obj` itself, however, object fields are
-        // stored always in `obj.$data`. This is just a way to distinguish
-        // properties from object fields.
-        if (!isPropertyName(k))
-          $data[unescapeFieldName(k)] = unfold.call(this, kDef, null);
-        else if (!hasOwnProperty.call(obj, k))
-          obj[k] = kDef;
-      }
-
-      if (defData != null) {
-        if (typeof defData !== "object")
-          throw new RuntimeError("Property '$data' has to be object, not '" + typeOf(defData) + "'.");
-
-        for (k in defData) {
-          kDef = defData[k];
-          $data[k] = unfold.call(this, kDef, null);
-        }
-      }
-    }
-    else {
-      for (k in def) {
-        if (!isPropertyName(k))
-          throw new RuntimeError("Data field '" + k + "'can't be used by '" + defType + "' type.");
-
-        if (!hasOwnProperty.call(obj, k))
-          obj[k] = def[k];
-      }
-
-      if (defData != null) {
-        if (typeof defData !== "object")
-          throw new RuntimeError("Property '$data' has to be object, not '" + typeOf(defData) + "'.");
-
-        obj.$data = unfold.call(this, defData, null);
-      }
-    }
-  }
-
-  // Validate that the postprocessed object is valid and can be compiled.
-  var handler = this.getType(obj.$type);
-  if (!handler)
-    throw new RuntimeError("Unknown type '" + obj.$type + "'.");
-
-  if (typeof handler.validate === "function")
-    handler.validate(obj);
-
-  return obj;
-}
-
-// \function `qdata.schema(def)`
-//
-// Processes the given definition `def` and creates a schema that can be used
-// and compiled by `qdata` library.
-function schema(def) {
-  // All members starting with `$_private` are considered private and used
-  // exclusively by QData library. This is the only reserved prefix so far.
-  var priv = {
-    data : null,
-    funcs: {}
-  };
-
-  return unfold.call(this, def, priv);
-}
-qdata.schema = schema;
-
-// ============================================================================
-// [Schema Processing]
+// [Schema - Interface]
 // ============================================================================
 
 // \function `qdata.compile(def, options)`
@@ -1709,7 +1577,7 @@ qdata.getType = getType;
 // ```
 // {
 //   // Type names/aliases, like `["int"]` or `["int", "integer", ...]`,
-//   names  : String[]
+//   name: String[]
 //
 //   // Mangled name of a JS variable type.
 //   mangle: Char
@@ -1731,10 +1599,10 @@ function addType(data) {
 
   for (var i = 0; i < data.length; i++) {
     var type = data[i];
-    var names = type.names;
+    var name = type.name;
 
-    for (var n = 0; n < names.length; n++) {
-      types[names[n]] = type;
+    for (var n = 0; n < name.length; n++) {
+      types[name[n]] = type;
     }
   }
 
@@ -1830,12 +1698,11 @@ function customize(opt) {
 qdata.customize = customize;
 
 // ============================================================================
-// [Built-In Types]
+// [Schema Type - Bool]
 // ============================================================================
 
-// Bool types.
 qdata.addType({
-  names: ["boolean", "bool"],
+  name: ["boolean", "bool"],
   mangle: "b",
 
   compile: function(c, v, def) {
@@ -1848,9 +1715,12 @@ qdata.addType({
   }
 });
 
-// Int and Double types.
+// ============================================================================
+// [Schema Type - Int / Double]
+// ============================================================================
+
 qdata.addType({
-  names: [
+  name: [
     // Double types.
     "double",
     "number",
@@ -1943,9 +1813,12 @@ qdata.addType({
   }
 });
 
-// Char type.
+// ============================================================================
+// [Schema Type - Char]
+// ============================================================================
+
 qdata.addType({
-  names: ["char"],
+  name: ["char"],
   mangle: "s",
 
   compile: function(c, v, def) {
@@ -1958,11 +1831,13 @@ qdata.addType({
   }
 });
 
-// String and Text types.
-//
+// ============================================================================
+// [Schema Type - String / Text]
+// ============================================================================
+
 // NOTE: Text is basically a string with some characters restricted.
 qdata.addType({
-  names: ["string", "text"],
+  name: ["string", "text"],
   mangle: "s",
 
   compile: function(c, v, def) {
@@ -1985,9 +1860,12 @@ qdata.addType({
   }
 });
 
-// Date, Time, and DateTime types.
+// ============================================================================
+// [Schema Type - Date / Time / DateTime]
+// ============================================================================
+
 qdata.addType({
-  names: ["date", "datetime", "datetime-ms", "datetime-us"],
+  name: ["date", "datetime", "datetime-ms", "datetime-us"],
   mangle: "s",
 
   compile: function(c, v, def) {
@@ -2002,11 +1880,11 @@ qdata.addType({
     var obj = c.declareData(null, getDateParser(form));
     var leapSecond = def.$leapSecond ? true : false;
 
-    c.failIf("(" + vErr + " = " + obj + ".check(" + v + ", " + leapSecond + ")" + ")", vErr);
+    c.failIf("(" + vErr + " = " + obj + ".func(" + v + ", " + leapSecond + ")" + ")", vErr);
     return v;
   },
 
-  validate: function(def) {
+  handler: function(def) {
     // Validate that the given form is valid before we return the processed
     // schema to prevent throwing from `compile()` as it can harm consumers.
     var form = def.$form;
@@ -2022,9 +1900,12 @@ qdata.addType({
   }
 });
 
-// Object type.
+// ============================================================================
+// [Schema Type - Object]
+// ============================================================================
+
 qdata.addType({
-  names: ["object"],
+  name: ["object"],
   mangle: "o",
 
   compile: function(c, v, def) {
@@ -2186,9 +2067,12 @@ qdata.addType({
   }
 });
 
-// Array type.
+// ============================================================================
+// [Schema Type - Array]
+// ============================================================================
+
 qdata.addType({
-  names: ["array"],
+  name: ["array"],
   mangle: "a",
 
   compile: function(c, v, def) {
@@ -2257,15 +2141,17 @@ qdata.addType({
 });
 
 // ============================================================================
-// [Built-In Rules]
+// [Schema Rule - Id]
 // ============================================================================
 
-/*
-var IdRule = {
-  name: "id"
-};
-qdata.IdRule = IdRule;
-*/
+// Processes `$pk` and `$fk` properties of `object` type.
+qdata.addRule({
+  name: "id",
+
+  handler: function(def) {
+
+  }
+});
 
 // ============================================================================
 // [Exports]

@@ -84,23 +84,41 @@ catch (ex) {
 })();
 */
 
+(function() {
+  var schema = qdata.schema({ $type: "date" });
+  var date = "2016-02-28";
 
+  Utils.test(function() {
+    for (var i = 0; i < 3000000; i++) {
+      qdata.process(date, schema);
+    }
+  }, "test YYYY-MM-DD");
+})();
+
+(function() {
+  var schema = qdata.schema({ $type: "date", $form: "D.M.Y" });
+  var date = "28.2.2016";
+
+  Utils.test(function() {
+    for (var i = 0; i < 3000000; i++) {
+      qdata.process(date, schema);
+    }
+  }, "test D.M.Y");
+})();
+
+/*
 (function() {
 
 var schema = qdata.schema({
-  a: { $type: "date" },
-  b: { $type: "date" }
+  a: { $type: "int" },
+  b: { $type: "int[]" }
 });
 
-var obj = {
-  a: "2010-01-01",
-  b: "2016-02-29"
-};
-
-Utils.test(function() {
-  for (var i = 0; i < 1000000; i++) {
-    qdata.process(obj, schema);
-  }
-}, "test");
-
+try {
+  var out = qdata.process({ a:0, b:[1] }, schema);
+  console.log(out);
+} catch (ex) {
+  console.log(ex.details);
+}
 })();
+*/
