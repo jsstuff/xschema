@@ -2,7 +2,78 @@
 "use strict";
 
 var assert = require("assert");
+var qclass = require("qclass");
 var qdata = require("./qdata");
+
+var deepCopy = qdata.deepCopy;
+var deepEqual = qdata.deepEqual;
+
+function TestError(message, schema, input, output, expected) {
+  var e = Error(message);
+  var s = "TestError: " + message + "\n";
+
+  if (arguments.length > 1) s += "schema = "   + JSON.stringify(schema  , null, 2) + "\n";
+  if (arguments.length > 2) s += "input = "    + JSON.stringify(input   , null, 2) + "\n";
+  if (arguments.length > 3) s += "output = "   + JSON.stringify(output  , null, 2) + "\n";
+  if (arguments.length > 4) s += "expected = " + JSON.stringify(expected, null, 2) + "\n";
+
+  console.log("\n" + s);
+
+  this.name = "TestError";
+  this.message = s;
+  this.stack = e.stack;
+}
+qclass({
+  $extend: Error,
+  $construct: TestError
+});
+
+function pass(input, schema, options, access, expected) {
+  var output = null;
+  var err = null;
+
+  var fn = null;
+
+  if (err)
+    throw err;
+
+  try {
+    output = qdata.process(input, schema, options, access);
+  }
+  catch (ex) {
+    console.log("Schema Validation Failed:");
+    console.log(JSON.stringify(schema, null, 2));
+    console.log("\n" + fn.toString());
+    err = ex;
+  }
+
+  if (err)
+    throw err;
+
+  if (arguments.length <= 4)
+    expected = input;
+
+  if (!deepEqual(output, expected)) {
+    console.log("\n" + fn.toString());
+    if (arguments.length <= 4)
+      throw new TestError("Result didn't match the input data.", schema, input, output);
+    else
+      throw new TestError("Result didn't match the input data.", schema, input, output, expected);
+  }
+}
+
+function fail(input, schema, options) {
+  var output = null;
+
+  try {
+    output = qdata.process(input, schema, options);
+  }
+  catch (ex) {
+    return;
+  }
+
+  throw new TestError("Validation should have failed", schema, input, output);
+}
 
 function assertThrow(fn) {
   try {
@@ -13,10 +84,6 @@ function assertThrow(fn) {
 
   throw new Error("Should have thrown exception.");
 }
-
-var deepCopy = qdata.deepCopy;
-var deepEqual = qdata.deepEqual;
-var process = qdata.process;
 
 describe("QData", function() {
   it("should test utilities - deep equal", function() {
@@ -151,7 +218,7 @@ describe("QData", function() {
     assert(qdata.util.toCamelCase("THIS_IsSTRING")  === "thisIsString");
   });
 
-  it("should test qdata.enum", function() {
+  it("should test enumeration", function() {
     // Enum - safe, unique, and sequential.
     var AnimalDef = {
       Horse: 0,
@@ -320,89 +387,74 @@ describe("QData", function() {
 
   it("should validate null/undefined", function() {
     ["bool", "int", "number", "string", "text", "date", "datetime", "object"].forEach(function(type) {
-      assert(process(null     , qdata.schema({ $type: type, $null: true, $undefined: true })) === null      );
-      assert(process(undefined, qdata.schema({ $type: type, $null: true, $undefined: true })) === undefined );
+      pass(null     , qdata.schema({ $type: type, $null: true, $undefined: true }));
+      pass(undefined, qdata.schema({ $type: type, $null: true, $undefined: true }));
 
-      assert(process(null     , qdata.schema({ $type: type, $null: true      })) === null      );
-      assert(process(undefined, qdata.schema({ $type: type, $undefined: true })) === undefined );
+      pass(null     , qdata.schema({ $type: type, $null: true      }));
+      pass(undefined, qdata.schema({ $type: type, $undefined: true }));
 
-      assertThrow(function() { process(undefined, qdata.schema({ $type: type, $null: true      })) });
-      assertThrow(function() { process(null     , qdata.schema({ $type: type, $undefined: true })) });
+      fail(undefined, qdata.schema({ $type: type, $null: true      }));
+      fail(null     , qdata.schema({ $type: type, $undefined: true }));
     });
   });
 
   it("should validate bool", function() {
     var Schema = qdata.schema({ $type: "bool" });
 
-    var pass = [false, true];
-    var fail = [0, 1, "", "string", {}, [], Infinity, -Infinity, NaN];
+    var passData = [false, true];
+    var failData = [0, 1, "", "string", {}, [], Infinity, -Infinity, NaN];
 
-    pass.forEach(function(value) {
-      assert(process(value, Schema) === value);
-    });
-
-    fail.forEach(function(value) {
-      assertThrow(function() { process(value, Schema); });
-    });
+    passData.forEach(function(value) { pass(value, Schema); });
+    failData.forEach(function(value) { fail(value, Schema); });
   });
 
   it("should validate number - int", function() {
     var Schema = qdata.schema({ $type: "int" });
 
-    var pass = [0, 1, -1];
-    var fail = [false, true, "", "0", "string", {}, [], 0.1, -0.23211, Infinity, -Infinity, NaN];
+    var passData = [0, 1, -1];
+    var failData = [false, true, "", "0", "string", {}, [], 0.1, -0.23211, Infinity, -Infinity, NaN];
 
-    pass.forEach(function(value) {
-      assert(process(value, Schema) === value);
-    });
-
-    fail.forEach(function(value) {
-      assertThrow(function() { process(value, Schema); });
-    });
+    passData.forEach(function(value) { pass(value, Schema); });
+    failData.forEach(function(value) { fail(value, Schema); });
   });
 
   it("should validate number - intxx", function() {
-    assert(process(-128, qdata.schema({ $type: "int8"  })) === -128);
-    assert(process( 127, qdata.schema({ $type: "int8"  })) ===  127);
-    assert(process( 255, qdata.schema({ $type: "uint8" })) ===  255);
+    pass(-128       , qdata.schema({ $type: "int8"  }));
+    pass( 127       , qdata.schema({ $type: "int8"  }));
+    pass( 255       , qdata.schema({ $type: "uint8" }));
 
-    assert(process(-32768, qdata.schema({ $type: "int16"  })) === -32768);
-    assert(process( 32767, qdata.schema({ $type: "int16"  })) ===  32767);
-    assert(process( 65535, qdata.schema({ $type: "uint16" })) ===  65535);
+    pass(-32768     , qdata.schema({ $type: "int16"  }));
+    pass( 32767     , qdata.schema({ $type: "int16"  }));
+    pass( 65535     , qdata.schema({ $type: "uint16" }));
 
-    assert(process(-2147483648, qdata.schema({ $type: "int32"  })) === -2147483648);
-    assert(process( 2147483647, qdata.schema({ $type: "int32"  })) ===  2147483647);
-    assert(process( 4294967295, qdata.schema({ $type: "uint32" })) ===  4294967295);
+    pass(-2147483648, qdata.schema({ $type: "int32"  }));
+    pass( 2147483647, qdata.schema({ $type: "int32"  }));
+    pass( 4294967295, qdata.schema({ $type: "uint32" }));
 
-    assertThrow(function() { process(-129, qdata.schema({ $type: "int8" })); });
-    assertThrow(function() { process( 128, qdata.schema({ $type: "int8" })); });
-    assertThrow(function() { process(-1  , qdata.schema({ $type: "uint8" })); });
-    assertThrow(function() { process( 256, qdata.schema({ $type: "uint8" })); });
+    fail(-129       , qdata.schema({ $type: "int8"  }));
+    fail( 128       , qdata.schema({ $type: "int8"  }));
+    fail(-1         , qdata.schema({ $type: "uint8" }));
+    fail( 256       , qdata.schema({ $type: "uint8" }));
 
-    assertThrow(function() { process(-32769, qdata.schema({ $type: "int16" })); });
-    assertThrow(function() { process( 32768, qdata.schema({ $type: "int16" })); });
-    assertThrow(function() { process(-1    , qdata.schema({ $type: "uint16" })); });
-    assertThrow(function() { process( 65536, qdata.schema({ $type: "uint16" })); });
+    fail(-32769     , qdata.schema({ $type: "int16"  }));
+    fail( 32768     , qdata.schema({ $type: "int16"  }));
+    fail(-1         , qdata.schema({ $type: "uint16" }));
+    fail( 65536     , qdata.schema({ $type: "uint16" }));
 
-    assertThrow(function() { process(-2147483649, qdata.schema({ $type: "int32" })); });
-    assertThrow(function() { process( 2147483648, qdata.schema({ $type: "int32" })); });
-    assertThrow(function() { process(-1         , qdata.schema({ $type: "uint32" })); });
-    assertThrow(function() { process( 4294967296, qdata.schema({ $type: "uint32" })); });
+    fail(-2147483649, qdata.schema({ $type: "int32"  }));
+    fail( 2147483648, qdata.schema({ $type: "int32"  }));
+    fail(-1         , qdata.schema({ $type: "uint32" }));
+    fail( 4294967296, qdata.schema({ $type: "uint32" }));
   });
 
   it("should validate number - double", function() {
     var Schema = qdata.schema({ $type: "number" });
 
-    var pass = [0, 1, -1, 0.1, -0.23211];
-    var fail = [false, true, "", "0", "string", {}, [], Infinity, -Infinity, NaN];
+    var valuesToPass = [0, 1, -1, 0.1, -0.23211];
+    var valuesToFail = [false, true, "", "0", "string", {}, [], Infinity, -Infinity, NaN];
 
-    pass.forEach(function(value) {
-      assert(process(value, Schema) === value);
-    });
-
-    fail.forEach(function(value) {
-      assertThrow(function() { process(value, Schema); });
-    });
+    valuesToPass.forEach(function(value) { pass(value, Schema); });
+    valuesToFail.forEach(function(value) { fail(value, Schema); });
   });
 
   it("should validate number - lat/lon", function() {
@@ -415,74 +467,64 @@ describe("QData", function() {
     var passLon = [-180, -144.4322, 0, 99.2332, 180];
     var failLon = [-180.0001, 180.0001, "", true, null, undefined];
 
-    passLat.forEach(function(value) {
-      assert(process(value, SchemaLat) === value);
-    });
+    passLat.forEach(function(value) { pass(value, SchemaLat); });
+    failLat.forEach(function(value) { fail(value, SchemaLat); });
 
-    failLat.forEach(function(value) {
-      assertThrow(function() { process(value, SchemaLat); });
-    });
-
-    passLon.forEach(function(value) {
-      assert(process(value, SchemaLon) === value);
-    });
-
-    failLon.forEach(function(value) {
-      assertThrow(function() { process(value, SchemaLon); });
-    });
+    passLon.forEach(function(value) { pass(value, SchemaLon); });
+    failLon.forEach(function(value) { fail(value, SchemaLon); });
   });
 
   it("should validate number - $min/$max $gt/$lt $ge/$le", function() {
     ["int", "number"].forEach(function(type) {
-      assert(process(0, qdata.schema({ $type: type, $min: 0, $max: 5 })) === 0);
-      assert(process(5, qdata.schema({ $type: type, $min: 0, $max: 5 })) === 5);
+      pass(0, qdata.schema({ $type: type, $min: 0, $max: 5 }));
+      pass(5, qdata.schema({ $type: type, $min: 0, $max: 5 }));
 
-      assert(process(0, qdata.schema({ $type: type, $ge: 0, $le: 5 })) === 0);
-      assert(process(5, qdata.schema({ $type: type, $ge: 0, $le: 5 })) === 5);
+      pass(0, qdata.schema({ $type: type, $ge: 0, $le: 5 }));
+      pass(5, qdata.schema({ $type: type, $ge: 0, $le: 5 }));
 
-      assert(process(1, qdata.schema({ $type: type, $gt: 0, $lt: 5 })) === 1);
-      assert(process(4, qdata.schema({ $type: type, $gt: 0, $lt: 5 })) === 4);
+      pass(1, qdata.schema({ $type: type, $gt: 0, $lt: 5 }));
+      pass(4, qdata.schema({ $type: type, $gt: 0, $lt: 5 }));
 
-      assertThrow(function() { process(-1, qdata.schema({ $type: type, $min: 0, $max: 5 })); });
-      assertThrow(function() { process( 6, qdata.schema({ $type: type, $min: 0, $max: 5 })); });
+      fail(-1, qdata.schema({ $type: type, $min: 0, $max: 5 }));
+      fail( 6, qdata.schema({ $type: type, $min: 0, $max: 5 }));
 
-      assertThrow(function() { process(-1, qdata.schema({ $type: type, $ge: 0, $le: 5 })); });
-      assertThrow(function() { process( 6, qdata.schema({ $type: type, $ge: 0, $le: 5 })); });
+      fail(-1, qdata.schema({ $type: type, $ge: 0, $le: 5 }));
+      fail( 6, qdata.schema({ $type: type, $ge: 0, $le: 5 }));
 
-      assertThrow(function() { process( 0, qdata.schema({ $type: type, $gt: 0, $lt: 5 })); });
-      assertThrow(function() { process( 5, qdata.schema({ $type: type, $gt: 0, $lt: 5 })); });
+      fail( 0, qdata.schema({ $type: type, $gt: 0, $lt: 5 }));
+      fail( 5, qdata.schema({ $type: type, $gt: 0, $lt: 5 }));
     });
   });
 
-  it("should validate number - $divBy", function() {
+  it("should validate number - $divisibleBy", function() {
     ["int", "number"].forEach(function(type) {
-      assert(process(-9, qdata.schema({ $type: type, $divBy: 9 })) === -9);
-      assert(process( 0, qdata.schema({ $type: type, $divBy: 1 })) ===  0);
-      assert(process( 1, qdata.schema({ $type: type, $divBy: 1 })) ===  1);
-      assert(process( 2, qdata.schema({ $type: type, $divBy: 1 })) ===  2);
-      assert(process( 4, qdata.schema({ $type: type, $divBy: 2 })) ===  4);
-      assert(process(10, qdata.schema({ $type: type, $divBy: 5 })) === 10);
+      pass(-9, qdata.schema({ $type: type, $divisibleBy: 9 }));
+      pass( 0, qdata.schema({ $type: type, $divisibleBy: 1 }));
+      pass( 1, qdata.schema({ $type: type, $divisibleBy: 1 }));
+      pass( 2, qdata.schema({ $type: type, $divisibleBy: 1 }));
+      pass( 4, qdata.schema({ $type: type, $divisibleBy: 2 }));
+      pass(10, qdata.schema({ $type: type, $divisibleBy: 5 }));
 
-      assertThrow(function() { process(-3, qdata.schema({ $type: type, $divBy: 2 })); });
-      assertThrow(function() { process( 3, qdata.schema({ $type: type, $divBy: 6 })); });
+      fail(-3, qdata.schema({ $type: type, $divisibleBy: 2 }));
+      fail( 3, qdata.schema({ $type: type, $divisibleBy: 6 }));
     });
   });
 
   it("should validate string", function() {
-    assert(process("\x00"  , qdata.schema({ $type: "string" })) === "\x00");
-    assert(process("xxxx"  , qdata.schema({ $type: "string" })) === "xxxx");
+    pass("\x00"  , qdata.schema({ $type: "string" }));
+    pass("xxxx"  , qdata.schema({ $type: "string" }));
 
-    assert(process("abc"   , qdata.schema({ $type: "string", $length   : 3 })) === "abc"   );
+    pass("abc"   , qdata.schema({ $type: "string", $length   : 3 }));
 
-    assert(process("abc"   , qdata.schema({ $type: "string", $minLength: 3 })) === "abc"   );
-    assert(process("abcdef", qdata.schema({ $type: "string", $minLength: 3 })) === "abcdef");
+    pass("abc"   , qdata.schema({ $type: "string", $minLength: 3 }));
+    pass("abcdef", qdata.schema({ $type: "string", $minLength: 3 }));
 
-    assert(process("abc"   , qdata.schema({ $type: "string", $maxLength: 6 })) === "abc"   );
-    assert(process("abcdef", qdata.schema({ $type: "string", $maxLength: 6 })) === "abcdef");
+    pass("abc"   , qdata.schema({ $type: "string", $maxLength: 6 }));
+    pass("abcdef", qdata.schema({ $type: "string", $maxLength: 6 }));
 
-    assertThrow(function() { process("abc", qdata.schema({ $type: "string", $length   : 2 })); });
-    assertThrow(function() { process("abc", qdata.schema({ $type: "string", $minLength: 4 })); });
-    assertThrow(function() { process("abc", qdata.schema({ $type: "string", $maxLength: 2 })); });
+    fail("abc", qdata.schema({ $type: "string", $length   : 2 }));
+    fail("abc", qdata.schema({ $type: "string", $minLength: 4 }));
+    fail("abc", qdata.schema({ $type: "string", $maxLength: 2 }));
   });
 
   it("should validate text", function() {
@@ -491,219 +533,48 @@ describe("QData", function() {
     var Schema = qdata.schema({ $type: "text" });
 
     // Should accept some characters below 32.
-    assert(process("some text \x09", Schema) === "some text \x09");
-    assert(process("some text \x0A", Schema) === "some text \x0A");
-    assert(process("some text \x0D", Schema) === "some text \x0D");
+    pass("some text \x09", Schema);
+    pass("some text \x0A", Schema);
+    pass("some text \x0D", Schema);
 
     // Should refuse NULL and other characters below 32.
-    assertThrow(function() { process("some text \x00", Schema); });
-    assertThrow(function() { process("some text \x1B", Schema); });
-    assertThrow(function() { process("some text \x1F", Schema); });
-  });
-
-  it("should validate date - basics", function() {
-    var YYYY_MM    = qdata.schema({ $type: "date", $format: "YYYY-MM" });
-    var YYYY_MM_DD = qdata.schema({ $type: "date" });
-
-    assert(process("1968-08"   , YYYY_MM   ) === "1968-08"   );
-    assert(process("1968-08-20", YYYY_MM_DD) === "1968-08-20");
-
-    assertThrow(function() { process("0000-01"    , YYYY_MM   ); });
-    assertThrow(function() { process("1999-00"    , YYYY_MM   ); });
-    assertThrow(function() { process("1999-13"    , YYYY_MM   ); });
-
-    assertThrow(function() { process(""           , YYYY_MM_DD); });
-    assertThrow(function() { process("invalidDate", YYYY_MM_DD); });
-    assertThrow(function() { process("1999-01-01 ", YYYY_MM_DD); });
-    assertThrow(function() { process(" 1999-01-01", YYYY_MM_DD); });
-
-    assertThrow(function() { process("0000-01-01" , YYYY_MM_DD); });
-    assertThrow(function() { process("1999-00-01" , YYYY_MM_DD); });
-    assertThrow(function() { process("1999-01-00" , YYYY_MM_DD); });
-    assertThrow(function() { process("1999-01-32" , YYYY_MM_DD); });
-    assertThrow(function() { process("1999-02-29" , YYYY_MM_DD); });
-    assertThrow(function() { process("1999-13-01" , YYYY_MM_DD); });
-    assertThrow(function() { process("1999-01-0a" , YYYY_MM_DD); });
-    assertThrow(function() { process("1999-01-001", YYYY_MM_DD); });
-    assertThrow(function() { process("1999-01-01 ", YYYY_MM_DD); });
-  });
-
-  it("should validate date - datetime", function() {
-    var YYYY_MM_DD_HH_mm_ss = qdata.schema({ $type: "datetime"    });
-    var YYYY_MM_DD_HH_mm_ms = qdata.schema({ $type: "datetime-ms" });
-    var YYYY_MM_DD_HH_mm_us = qdata.schema({ $type: "datetime-us" });
-
-    assert(process("1968-08-20 12:00:59"       , YYYY_MM_DD_HH_mm_ss) === "1968-08-20 12:00:59"       );
-    assert(process("1968-08-20 12:00:59.999"   , YYYY_MM_DD_HH_mm_ms) === "1968-08-20 12:00:59.999"   );
-    assert(process("1968-08-20 12:00:59.999999", YYYY_MM_DD_HH_mm_us) === "1968-08-20 12:00:59.999999");
-
-    assertThrow(function() { process("1968-08-20 24:00:00", YYYY_MM_DD_HH_mm_ss); });
-    assertThrow(function() { process("1968-08-20 23:60:00", YYYY_MM_DD_HH_mm_ss); });
-    assertThrow(function() { process("1968-08-20 23:59:60", YYYY_MM_DD_HH_mm_ss); });
-
-    assertThrow(function() { process("1968-08-20 24:00:00.000", YYYY_MM_DD_HH_mm_ms); });
-    assertThrow(function() { process("1968-08-20 23:60:00.000", YYYY_MM_DD_HH_mm_ms); });
-    assertThrow(function() { process("1968-08-20 23:59:60.000", YYYY_MM_DD_HH_mm_ms); });
-
-    assertThrow(function() { process("1968-08-20 24:00:00.000000", YYYY_MM_DD_HH_mm_us); });
-    assertThrow(function() { process("1968-08-20 23:60:00.000000", YYYY_MM_DD_HH_mm_us); });
-    assertThrow(function() { process("1968-08-20 23:59:60.000000", YYYY_MM_DD_HH_mm_us); });
-  });
-
-  it("should validate date - leap year handling", function() {
-    var YYYY_MM_DD = qdata.schema({
-      $type: "date"
-    });
-
-    var YYYY_MM_DD_no29thFeb = qdata.schema({
-      $type: "date",
-      $leapYear: false
-    });
-
-    // `$leapYear` is true by default.
-    assert(process("2000-02-29", YYYY_MM_DD) === "2000-02-29");
-    assert(process("2004-02-29", YYYY_MM_DD) === "2004-02-29");
-    assert(process("2008-02-29", YYYY_MM_DD) === "2008-02-29");
-    assert(process("2012-02-29", YYYY_MM_DD) === "2012-02-29");
-    assert(process("2016-02-29", YYYY_MM_DD) === "2016-02-29");
-    assert(process("2400-02-29", YYYY_MM_DD) === "2400-02-29");
-
-    // Disabled leap year.
-    assertThrow(function() { process("2000-02-29", YYYY_MM_DD_no29thFeb); });
-    assertThrow(function() { process("2004-02-29", YYYY_MM_DD_no29thFeb); });
-    assertThrow(function() { process("2008-02-29", YYYY_MM_DD_no29thFeb); });
-    assertThrow(function() { process("2012-02-29", YYYY_MM_DD_no29thFeb); });
-    assertThrow(function() { process("2016-02-29", YYYY_MM_DD_no29thFeb); });
-    assertThrow(function() { process("2400-02-29", YYYY_MM_DD_no29thFeb); });
-
-    // Invalid leap year.
-    assertThrow(function() { process("1999-02-29", YYYY_MM_DD); });
-    assertThrow(function() { process("2100-02-29", YYYY_MM_DD); });
-  });
-
-  it("should validate date - leap second handling", function() {
-    var Schema = qdata.schema({ $type: "datetime", $leapSecond: true });
-
-    assert(process("1972-06-30 23:59:60", Schema) === "1972-06-30 23:59:60");
-    assert(process("1972-12-31 23:59:60", Schema) === "1972-12-31 23:59:60");
-    assert(process("2012-06-30 23:59:60", Schema) === "2012-06-30 23:59:60");
-
-    // Leap seconds data start from 1972, 1971 and below are not in the table.
-    assertThrow(function() { process("1971-06-30 23:59:60", Schema); });
-    assertThrow(function() { process("1971-12-31 23:59:60", Schema); });
-
-    // Leap seconds dates that are known.
-    assertThrow(function() { process("1973-06-30 23:59:60", Schema); });
-    assertThrow(function() { process("2013-06-30 23:59:60", Schema); });
-    assertThrow(function() { process("2013-12-31 23:59:60", Schema); });
-    assertThrow(function() { process("2014-06-30 23:59:60", Schema); });
-    assertThrow(function() { process("2014-12-31 23:59:60", Schema); });
-
-    // Future leap seconds are not known at the moment.
-    assertThrow(function() { process("2100-06-30 23:59:60", Schema); });
-    assertThrow(function() { process("2100-12-31 23:59:60", Schema); });
-  });
-
-  it("should validate date - valid custom format YYYYMMDD", function() {
-    var Schema = qdata.schema({ $type: "date", $format: "YYYYMMDD" });
-
-    assert(process("19990101", Schema) === "19990101");
-    assert(process("20041213", Schema) === "20041213");
-
-    assertThrow(function() { process("invalid"  , Schema); });
-    assertThrow(function() { process("2011312"  , Schema); });
-    assertThrow(function() { process("20111312" , Schema); });
-    assertThrow(function() { process("20140132" , Schema); });
-    assertThrow(function() { process("20110101 ", Schema); });
-  });
-
-  it("should validate date - valid custom format YYYYMMDD HHmmss", function() {
-    var Schema = qdata.schema({ $type: "date", $format: "YYYYMMDD HHmmss" });
-
-    assert(process("19990101 013030", Schema) === "19990101 013030");
-    assert(process("20041213 013030", Schema) === "20041213 013030");
-
-    assertThrow(function() { process("invalid"         , Schema); });
-    assertThrow(function() { process("19990101 253030" , Schema); });
-    assertThrow(function() { process("19990101 016030" , Schema); });
-    assertThrow(function() { process("19990101 013060" , Schema); });
-    assertThrow(function() { process("2011312 013030"  , Schema); });
-    assertThrow(function() { process("20111312 013030" , Schema); });
-    assertThrow(function() { process("20140132 013030" , Schema); });
-    assertThrow(function() { process("20110101 013030 ", Schema); });
-  });
-
-  it("should validate date - valid custom format D.M.Y", function() {
-    var Schema = qdata.schema({ $type: "date", $format: "D.M.Y" });
-
-    assert(process("1.1.455"   , Schema) === "1.1.455"   );
-    assert(process("2.8.2004"  , Schema) === "2.8.2004"  );
-    assert(process("20.12.2004", Schema) === "20.12.2004");
-
-    assertThrow(function() { process("32.1.2004"  , Schema); });
-    assertThrow(function() { process("20.13.2004" , Schema); });
-    assertThrow(function() { process("20.13.10000", Schema); });
-  });
-
-  it("should validate date - valid custom format D.M.Y H:m:s", function() {
-    var Schema = qdata.schema({ $type: "date", $format: "D.M.Y H:m:s" });
-
-    assert(process("1.1.455 1:30:30"   , Schema) === "1.1.455 1:30:30"   );
-    assert(process("2.8.2004 1:30:30"  , Schema) === "2.8.2004 1:30:30"  );
-    assert(process("20.12.2004 1:30:30", Schema) === "20.12.2004 1:30:30");
-
-    assertThrow(function() { process("1.1.1999 25:30:30"  , Schema); });
-    assertThrow(function() { process("1.1.1999 1:60:30"   , Schema); });
-    assertThrow(function() { process("1.1.1999 1:30:60"   , Schema); });
-    assertThrow(function() { process("32.1.2004 1:30:30"  , Schema); });
-    assertThrow(function() { process("20.13.2004 1:30:30" , Schema); });
-    assertThrow(function() { process("20.13.10000 1:30:30", Schema); });
-  });
-
-  it("should validate date - invalid custom format", function() {
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "YD"            }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "YM"            }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "YMD"           }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "DMY"           }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "M-D"           }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "MM-DD"         }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-DD"       }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-MM-DD mm" }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-MM-DD ss" }); });
+    fail("some text \x00", Schema);
+    fail("some text \x1B", Schema);
+    fail("some text \x1F", Schema);
   });
 
   it("should validate color - #XXX and #XXXXXX", function() {
     var Schema = qdata.schema({ $type: "color" });
 
-    assert(process("#000", Schema) === "#000");
-    assert(process("#123", Schema) === "#123");
-    assert(process("#F00", Schema) === "#F00");
-    assert(process("#0AF", Schema) === "#0AF");
-    assert(process("#0af", Schema) === "#0af");
-    assert(process("#DEF", Schema) === "#DEF");
-    assert(process("#fff", Schema) === "#fff");
+    pass("#000", Schema);
+    pass("#123", Schema);
+    pass("#F00", Schema);
+    pass("#0AF", Schema);
+    pass("#0af", Schema);
+    pass("#DEF", Schema);
+    pass("#fff", Schema);
 
-    assert(process("#000000", Schema) === "#000000");
-    assert(process("#112233", Schema) === "#112233");
-    assert(process("#FF0000", Schema) === "#FF0000");
-    assert(process("#00AAFF", Schema) === "#00AAFF");
-    assert(process("#00aaff", Schema) === "#00aaff");
-    assert(process("#DDEEFF", Schema) === "#DDEEFF");
-    assert(process("#ffffff", Schema) === "#ffffff");
+    pass("#000000", Schema);
+    pass("#112233", Schema);
+    pass("#FF0000", Schema);
+    pass("#00AAFF", Schema);
+    pass("#00aaff", Schema);
+    pass("#DDEEFF", Schema);
+    pass("#ffffff", Schema);
 
-    assertThrow(function() { process(" #FFF", Schema); });
-    assertThrow(function() { process("#FFF ", Schema); });
+    fail(" #FFF", Schema);
+    fail("#FFF ", Schema);
 
-    assertThrow(function() { process("#FF"  , Schema); });
-    assertThrow(function() { process("#FFFF", Schema); });
+    fail("#FF"  , Schema);
+    fail("#FFFF", Schema);
 
-    assertThrow(function() { process("#FFg" , Schema); });
-    assertThrow(function() { process("#FgF" , Schema); });
-    assertThrow(function() { process("#gFF" , Schema); });
+    fail("#FFg" , Schema);
+    fail("#FgF" , Schema);
+    fail("#gFF" , Schema);
 
-    assertThrow(function() { process("#FF " , Schema); });
-    assertThrow(function() { process("#F F" , Schema); });
-    assertThrow(function() { process("# FF" , Schema); });
+    fail("#FF " , Schema);
+    fail("#F F" , Schema);
+    fail("# FF" , Schema);
   });
 
   it("should validate color - color names", function() {
@@ -714,16 +585,16 @@ describe("QData", function() {
     for (var k in qdata.util.colorNames) {
       var K = k.toUpperCase();
 
-      assert(process(k, SchemaDefault) === k);
-      assert(process(K, SchemaDefault) === K);
+      pass(k, SchemaDefault);
+      pass(K, SchemaDefault);
 
-      assert(process(k, SchemaAllowNames) === k);
-      assert(process(K, SchemaAllowNames) === K);
+      pass(k, SchemaAllowNames);
+      pass(K, SchemaAllowNames);
 
-      assertThrow(function() { process(k      , SchemaDisallowNames); });
-      assertThrow(function() { process(K      , SchemaDisallowNames); });
-      assertThrow(function() { process(k + " ", SchemaDisallowNames); });
-      assertThrow(function() { process("#" + k, SchemaDisallowNames); });
+      fail(k      , SchemaDisallowNames);
+      fail(K      , SchemaDisallowNames);
+      fail(k + " ", SchemaDisallowNames);
+      fail("#" + k, SchemaDisallowNames);
     }
   });
 
@@ -740,67 +611,67 @@ describe("QData", function() {
       $extraNames: ExtraNames
     });
 
-    assert(process("#FFF"        , Schema) === "#FFF"        );
-    assert(process("#FFFFFF"     , Schema) === "#FFFFFF"     );
-    assert(process("red"         , Schema) === "red"         );
-    assert(process("RED"         , Schema) === "RED"         );
-    assert(process("none"        , Schema) === "none"        );
-    assert(process("NONE"        , Schema) === "NONE"        );
-    assert(process("transparent" , Schema) === "transparent" );
-    assert(process("TRANSPARENT" , Schema) === "TRANSPARENT" );
-    assert(process("currentcolor", Schema) === "currentcolor");
-    assert(process("currentColor", Schema) === "currentColor");
-    assert(process("CURRENTCOLOR", Schema) === "CURRENTCOLOR");
+    pass("#FFF"        , Schema);
+    pass("#FFFFFF"     , Schema);
+    pass("red"         , Schema);
+    pass("RED"         , Schema);
+    pass("none"        , Schema);
+    pass("NONE"        , Schema);
+    pass("transparent" , Schema);
+    pass("TRANSPARENT" , Schema);
+    pass("currentcolor", Schema);
+    pass("currentColor", Schema);
+    pass("CURRENTCOLOR", Schema);
   });
 
   it("should validate net - mac address", function() {
     var MAC  = qdata.schema({ $type: "mac" });
     var MACd = qdata.schema({ $type: "mac", $separator: "-" });
 
-    assert(process("00:00:00:00:00:00", MAC) === "00:00:00:00:00:00");
-    assert(process("01:02:03:04:05:06", MAC) === "01:02:03:04:05:06");
-    assert(process("a1:a2:a3:a4:a5:a6", MAC) === "a1:a2:a3:a4:a5:a6");
-    assert(process("F1:F2:F3:F4:F5:F6", MAC) === "F1:F2:F3:F4:F5:F6");
-    assert(process("ab:cd:ef:ab:cd:ef", MAC) === "ab:cd:ef:ab:cd:ef");
-    assert(process("aB:cD:eF:aB:cD:eF", MAC) === "aB:cD:eF:aB:cD:eF");
-    assert(process("Ab:Cd:Ef:Ab:Cd:Ef", MAC) === "Ab:Cd:Ef:Ab:Cd:Ef");
-    assert(process("AB:CD:EF:AB:CD:EF", MAC) === "AB:CD:EF:AB:CD:EF");
+    pass("00:00:00:00:00:00", MAC);
+    pass("01:02:03:04:05:06", MAC);
+    pass("a1:a2:a3:a4:a5:a6", MAC);
+    pass("F1:F2:F3:F4:F5:F6", MAC);
+    pass("ab:cd:ef:ab:cd:ef", MAC);
+    pass("aB:cD:eF:aB:cD:eF", MAC);
+    pass("Ab:Cd:Ef:Ab:Cd:Ef", MAC);
+    pass("AB:CD:EF:AB:CD:EF", MAC);
 
-    assert(process("ab-cd-ef-ab-cd-ef", MACd) === "ab-cd-ef-ab-cd-ef");
+    pass("ab-cd-ef-ab-cd-ef", MACd);
 
-    assertThrow(function() { process(true                , MAC); });
-    assertThrow(function() { process("invalid"           , MAC); });
+    fail(true                , MAC);
+    fail("invalid"           , MAC);
 
-    assertThrow(function() { process(":12:34:56:78:90:AB", MAC); });
-    assertThrow(function() { process(" 12:34:56:78:90:AB", MAC); });
-    assertThrow(function() { process("12:34:56:78:90:AB:", MAC); });
-    assertThrow(function() { process("12:34:56:78:90:AB ", MAC); });
+    fail(":12:34:56:78:90:AB", MAC);
+    fail(" 12:34:56:78:90:AB", MAC);
+    fail("12:34:56:78:90:AB:", MAC);
+    fail("12:34:56:78:90:AB ", MAC);
 
-    assertThrow(function() { process("1:34:56:78:90:AB"  , MAC); });
-    assertThrow(function() { process("12:3:56:78:90:AB"  , MAC); });
-    assertThrow(function() { process("12:34:5:78:90:AB"  , MAC); });
-    assertThrow(function() { process("12:34:56:7:90:AB"  , MAC); });
-    assertThrow(function() { process("12:34:56:78:9:AB"  , MAC); });
-    assertThrow(function() { process("12:34:56:78:90:A"  , MAC); });
+    fail("1:34:56:78:90:AB"  , MAC);
+    fail("12:3:56:78:90:AB"  , MAC);
+    fail("12:34:5:78:90:AB"  , MAC);
+    fail("12:34:56:7:90:AB"  , MAC);
+    fail("12:34:56:78:9:AB"  , MAC);
+    fail("12:34:56:78:90:A"  , MAC);
 
-    assertThrow(function() { process("12:34:56:78:90:Ag" , MAC); });
-    assertThrow(function() { process("12:34:56:78:90:gB" , MAC); });
-    assertThrow(function() { process("12:34:56:78:9g:AB" , MAC); });
-    assertThrow(function() { process("12:34:56:78:g0:AB" , MAC); });
-    assertThrow(function() { process("12:34:56:7g:90:AB" , MAC); });
-    assertThrow(function() { process("12:34:56:g8:90:AB" , MAC); });
-    assertThrow(function() { process("12:34:5g:78:90:AB" , MAC); });
-    assertThrow(function() { process("12:34:g6:78:90:AB" , MAC); });
-    assertThrow(function() { process("12:3g:56:78:90:AB" , MAC); });
-    assertThrow(function() { process("12:g4:56:78:90:AB" , MAC); });
-    assertThrow(function() { process("1g:34:56:78:90:AB" , MAC); });
-    assertThrow(function() { process("g2:34:56:78:90:AB" , MAC); });
+    fail("12:34:56:78:90:Ag" , MAC);
+    fail("12:34:56:78:90:gB" , MAC);
+    fail("12:34:56:78:9g:AB" , MAC);
+    fail("12:34:56:78:g0:AB" , MAC);
+    fail("12:34:56:7g:90:AB" , MAC);
+    fail("12:34:56:g8:90:AB" , MAC);
+    fail("12:34:5g:78:90:AB" , MAC);
+    fail("12:34:g6:78:90:AB" , MAC);
+    fail("12:3g:56:78:90:AB" , MAC);
+    fail("12:g4:56:78:90:AB" , MAC);
+    fail("1g:34:56:78:90:AB" , MAC);
+    fail("g2:34:56:78:90:AB" , MAC);
 
-    assertThrow(function() { process("12:34:56:78:90-AB" , MAC); });
-    assertThrow(function() { process("12:34:56:78-90:AB" , MAC); });
-    assertThrow(function() { process("12:34:56-78:90:AB" , MAC); });
-    assertThrow(function() { process("12:34-56:78:90:AB" , MAC); });
-    assertThrow(function() { process("12-34:56:78:90:AB" , MAC); });
+    fail("12:34:56:78:90-AB" , MAC);
+    fail("12:34:56:78-90:AB" , MAC);
+    fail("12:34:56-78:90:AB" , MAC);
+    fail("12:34-56:78:90:AB" , MAC);
+    fail("12-34:56:78:90:AB" , MAC);
   });
 
   it("should validate net - ipv4 address", function() {
@@ -808,43 +679,214 @@ describe("QData", function() {
       $type: "ipv4"
     });
 
-    assert(process("0.0.0.0"        , IPV4) === "0.0.0.0"        );
-    assert(process("1.1.1.1"        , IPV4) === "1.1.1.1"        );
-    assert(process("1.1.1.10"       , IPV4) === "1.1.1.10"       );
-    assert(process("1.1.10.1"       , IPV4) === "1.1.10.1"       );
-    assert(process("1.10.1.1"       , IPV4) === "1.10.1.1"       );
-    assert(process("10.1.1.1"       , IPV4) === "10.1.1.1"       );
-    assert(process("1.1.1.255"      , IPV4) === "1.1.1.255"      );
-    assert(process("1.1.255.1"      , IPV4) === "1.1.255.1"      );
-    assert(process("1.255.1.1"      , IPV4) === "1.255.1.1"      );
-    assert(process("255.1.1.1"      , IPV4) === "255.1.1.1"      );
-    assert(process("192.168.1.1"    , IPV4) === "192.168.1.1"    );
-    assert(process("255.255.255.255", IPV4) === "255.255.255.255");
+    pass("0.0.0.0"        , IPV4);
+    pass("1.1.1.1"        , IPV4);
+    pass("1.1.1.10"       , IPV4);
+    pass("1.1.10.1"       , IPV4);
+    pass("1.10.1.1"       , IPV4);
+    pass("10.1.1.1"       , IPV4);
+    pass("1.1.1.255"      , IPV4);
+    pass("1.1.255.1"      , IPV4);
+    pass("1.255.1.1"      , IPV4);
+    pass("255.1.1.1"      , IPV4);
+    pass("192.168.1.1"    , IPV4);
+    pass("255.255.255.255", IPV4);
 
-    assertThrow(function() { process(true        , IPV4); });
-    assertThrow(function() { process("invalid"   , IPV4); });
-    assertThrow(function() { process("0"         , IPV4); });
-    assertThrow(function() { process("0.0"       , IPV4); });
-    assertThrow(function() { process("0.0.0"     , IPV4); });
-    assertThrow(function() { process("0.0.0.0."  , IPV4); });
-    assertThrow(function() { process("0.0.0.0 "  , IPV4); });
-    assertThrow(function() { process(".0.0.0.0"  , IPV4); });
-    assertThrow(function() { process(" 0.0.0.0"  , IPV4); });
-    assertThrow(function() { process("1.1.1..1"  , IPV4); });
-    assertThrow(function() { process("1.1..1.1"  , IPV4); });
-    assertThrow(function() { process("1..1.1.1"  , IPV4); });
-    assertThrow(function() { process("1.1.1.01"  , IPV4); });
-    assertThrow(function() { process("1.1.01.1"  , IPV4); });
-    assertThrow(function() { process("1.01.1.1"  , IPV4); });
-    assertThrow(function() { process("01.1.1.1"  , IPV4); });
-    assertThrow(function() { process("1.1.1.256" , IPV4); });
-    assertThrow(function() { process("1.1.256.1" , IPV4); });
-    assertThrow(function() { process("1.256.1.1" , IPV4); });
-    assertThrow(function() { process("256.1.1.1" , IPV4); });
-    assertThrow(function() { process("1.1.1.1000", IPV4); });
-    assertThrow(function() { process("1.1.1000.1", IPV4); });
-    assertThrow(function() { process("1.1000.1.1", IPV4); });
-    assertThrow(function() { process("1000.1.1.1", IPV4); });
+    fail(true        , IPV4);
+    fail("invalid"   , IPV4);
+    fail("0"         , IPV4);
+    fail("0.0"       , IPV4);
+    fail("0.0.0"     , IPV4);
+    fail("0.0.0.0."  , IPV4);
+    fail("0.0.0.0 "  , IPV4);
+    fail(".0.0.0.0"  , IPV4);
+    fail(" 0.0.0.0"  , IPV4);
+    fail("1.1.1..1"  , IPV4);
+    fail("1.1..1.1"  , IPV4);
+    fail("1..1.1.1"  , IPV4);
+    fail("1.1.1.01"  , IPV4);
+    fail("1.1.01.1"  , IPV4);
+    fail("1.01.1.1"  , IPV4);
+    fail("01.1.1.1"  , IPV4);
+    fail("1.1.1.256" , IPV4);
+    fail("1.1.256.1" , IPV4);
+    fail("1.256.1.1" , IPV4);
+    fail("256.1.1.1" , IPV4);
+    fail("1.1.1.1000", IPV4);
+    fail("1.1.1000.1", IPV4);
+    fail("1.1000.1.1", IPV4);
+    fail("1000.1.1.1", IPV4);
+  });
+
+  it("should validate date - basics", function() {
+    var YYYY_MM    = qdata.schema({ $type: "date", $format: "YYYY-MM" });
+    var YYYY_MM_DD = qdata.schema({ $type: "date" });
+
+    pass("1968-08"   , YYYY_MM);
+    pass("1968-08-20", YYYY_MM_DD);
+
+    fail("0000-01"    , YYYY_MM);
+    fail("1999-00"    , YYYY_MM);
+    fail("1999-13"    , YYYY_MM);
+
+    fail(""           , YYYY_MM_DD);
+    fail("invalidDate", YYYY_MM_DD);
+    fail("1999-01-01 ", YYYY_MM_DD);
+    fail(" 1999-01-01", YYYY_MM_DD);
+
+    fail("0000-01-01" , YYYY_MM_DD);
+    fail("1999-00-01" , YYYY_MM_DD);
+    fail("1999-01-00" , YYYY_MM_DD);
+    fail("1999-01-32" , YYYY_MM_DD);
+    fail("1999-02-29" , YYYY_MM_DD);
+    fail("1999-13-01" , YYYY_MM_DD);
+    fail("1999-01-0a" , YYYY_MM_DD);
+    fail("1999-01-001", YYYY_MM_DD);
+    fail("1999-01-01 ", YYYY_MM_DD);
+  });
+
+  it("should validate date - datetime", function() {
+    var YYYY_MM_DD_HH_mm_ss = qdata.schema({ $type: "datetime"    });
+    var YYYY_MM_DD_HH_mm_ms = qdata.schema({ $type: "datetime-ms" });
+    var YYYY_MM_DD_HH_mm_us = qdata.schema({ $type: "datetime-us" });
+
+    pass("1968-08-20 12:00:59"       , YYYY_MM_DD_HH_mm_ss);
+    pass("1968-08-20 12:00:59.999"   , YYYY_MM_DD_HH_mm_ms);
+    pass("1968-08-20 12:00:59.999999", YYYY_MM_DD_HH_mm_us);
+
+    fail("1968-08-20 24:00:00", YYYY_MM_DD_HH_mm_ss);
+    fail("1968-08-20 23:60:00", YYYY_MM_DD_HH_mm_ss);
+    fail("1968-08-20 23:59:60", YYYY_MM_DD_HH_mm_ss);
+
+    fail("1968-08-20 24:00:00.000", YYYY_MM_DD_HH_mm_ms);
+    fail("1968-08-20 23:60:00.000", YYYY_MM_DD_HH_mm_ms);
+    fail("1968-08-20 23:59:60.000", YYYY_MM_DD_HH_mm_ms);
+
+    fail("1968-08-20 24:00:00.000000", YYYY_MM_DD_HH_mm_us);
+    fail("1968-08-20 23:60:00.000000", YYYY_MM_DD_HH_mm_us);
+    fail("1968-08-20 23:59:60.000000", YYYY_MM_DD_HH_mm_us);
+  });
+
+  it("should validate date - leap year handling", function() {
+    var YYYY_MM_DD = qdata.schema({
+      $type: "date"
+    });
+
+    var YYYY_MM_DD_no29thFeb = qdata.schema({
+      $type: "date",
+      $leapYear: false
+    });
+
+    // `$leapYear` is true by default.
+    pass("2000-02-29", YYYY_MM_DD);
+    pass("2004-02-29", YYYY_MM_DD);
+    pass("2008-02-29", YYYY_MM_DD);
+    pass("2012-02-29", YYYY_MM_DD);
+    pass("2016-02-29", YYYY_MM_DD);
+    pass("2400-02-29", YYYY_MM_DD);
+
+    // Disabled leap year.
+    fail("2000-02-29", YYYY_MM_DD_no29thFeb);
+    fail("2004-02-29", YYYY_MM_DD_no29thFeb);
+    fail("2008-02-29", YYYY_MM_DD_no29thFeb);
+    fail("2012-02-29", YYYY_MM_DD_no29thFeb);
+    fail("2016-02-29", YYYY_MM_DD_no29thFeb);
+    fail("2400-02-29", YYYY_MM_DD_no29thFeb);
+
+    // Invalid leap year.
+    fail("1999-02-29", YYYY_MM_DD);
+    fail("2100-02-29", YYYY_MM_DD);
+  });
+
+  it("should validate date - leap second handling", function() {
+    var Schema = qdata.schema({ $type: "datetime", $leapSecond: true });
+
+    pass("1972-06-30 23:59:60", Schema);
+    pass("1972-12-31 23:59:60", Schema);
+    pass("2012-06-30 23:59:60", Schema);
+
+    // Leap seconds' dates are not defined from 1971 and below.
+    fail("1971-06-30 23:59:60", Schema);
+    fail("1971-12-31 23:59:60", Schema);
+
+    // Leap seconds' dates that are known to not have leap second.
+    fail("1973-06-30 23:59:60", Schema);
+    fail("2013-06-30 23:59:60", Schema);
+    fail("2013-12-31 23:59:60", Schema);
+    fail("2014-06-30 23:59:60", Schema);
+    fail("2014-12-31 23:59:60", Schema);
+
+    // Leap seconds' dates in far future are not known at the moment.
+    fail("2100-06-30 23:59:60", Schema);
+    fail("2100-12-31 23:59:60", Schema);
+  });
+
+  it("should validate date - valid custom format YYYYMMDD", function() {
+    var Schema = qdata.schema({ $type: "date", $format: "YYYYMMDD" });
+
+    pass("19990101", Schema);
+    pass("20041213", Schema);
+
+    fail("invalid"  , Schema);
+    fail("2011312"  , Schema);
+    fail("20111312" , Schema);
+    fail("20140132" , Schema);
+    fail("20110101 ", Schema);
+  });
+
+  it("should validate date - valid custom format YYYYMMDD HHmmss", function() {
+    var Schema = qdata.schema({ $type: "date", $format: "YYYYMMDD HHmmss" });
+
+    pass("19990101 013030" , Schema);
+    pass("20041213 013030" , Schema);
+
+    fail("invalid"         , Schema);
+    fail("19990101 253030" , Schema);
+    fail("19990101 016030" , Schema);
+    fail("19990101 013060" , Schema);
+    fail("2011312 013030"  , Schema);
+    fail("20111312 013030" , Schema);
+    fail("20140132 013030" , Schema);
+    fail("20110101 013030 ", Schema);
+  });
+
+  it("should validate date - valid custom format D.M.Y", function() {
+    var Schema = qdata.schema({ $type: "date", $format: "D.M.Y" });
+
+    pass("1.1.455"    , Schema);
+    pass("2.8.2004"   , Schema);
+    pass("20.12.2004" , Schema);
+
+    fail("32.1.2004"  , Schema);
+    fail("20.13.2004" , Schema);
+    fail("20.13.10000", Schema);
+  });
+
+  it("should validate date - valid custom format D.M.Y H:m:s", function() {
+    var Schema = qdata.schema({ $type: "date", $format: "D.M.Y H:m:s" });
+
+    pass("1.1.455 1:30:30"    , Schema);
+    pass("2.8.2004 1:30:30"   , Schema);
+    pass("20.12.2004 1:30:30" , Schema);
+
+    fail("1.1.1999 25:30:30"  , Schema);
+    fail("1.1.1999 1:60:30"   , Schema);
+    fail("1.1.1999 1:30:60"   , Schema);
+    fail("32.1.2004 1:30:30"  , Schema);
+    fail("20.13.2004 1:30:30" , Schema);
+    fail("20.13.10000 1:30:30", Schema);
+  });
+
+  it("should validate date - invalid custom format", function() {
+    assertThrow(function() { qdata.schema({ $type: "date", $format: "YD"            }); });
+    assertThrow(function() { qdata.schema({ $type: "date", $format: "YM"            }); });
+    assertThrow(function() { qdata.schema({ $type: "date", $format: "YMD"           }); });
+    assertThrow(function() { qdata.schema({ $type: "date", $format: "DMY"           }); });
+    assertThrow(function() { qdata.schema({ $type: "date", $format: "M-D"           }); });
+    assertThrow(function() { qdata.schema({ $type: "date", $format: "MM-DD"         }); });
+    assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-DD"       }); });
+    assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-MM-DD mm" }); });
+    assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-MM-DD ss" }); });
   });
 
   it("should validate object - mandatory fields", function() {
@@ -859,7 +901,7 @@ describe("QData", function() {
       }
     });
 
-    var data = {
+    pass({
       a: true,
       b: 1,
       c: 1.5,
@@ -868,8 +910,7 @@ describe("QData", function() {
         a: 6,
         b: null
       }
-    };
-    assert(deepEqual(qdata.process(data, def), data));
+    }, def);
   });
 
   it("should validate object - optional fields", function() {
@@ -884,8 +925,7 @@ describe("QData", function() {
       }
     });
 
-    var data = { nested: {} };
-    assert(deepEqual(qdata.process(data, def), data));
+    pass({ nested: {} }, def);
   });
 
   it("should validate object - special fields", function() {
@@ -906,8 +946,8 @@ describe("QData", function() {
       __defineGetter__    : "5"
     };
 
-    assert(deepEqual(qdata.process(none, def), none));
-    assert(deepEqual(qdata.process(data, def), data));
+    pass(none, def);
+    pass(data, def);
   });
 
   it("should validate object - unicode fields", function() {
@@ -916,8 +956,7 @@ describe("QData", function() {
       "\u0910": { $type: "string" }
     });
 
-    var data = { "\u0909": "a", "\u0910": "b" };
-    assert(deepEqual(qdata.process(data, def), data));
+    pass({ "\u0909": "a", "\u0910": "b" }, def);
   });
 
   it("should validate object - escaped fields", function() {
@@ -926,8 +965,7 @@ describe("QData", function() {
       "\\\\value": { $type: "string" }
     });
 
-    var data = { "$type": "int", "\\value": "13" };
-    assert(deepEqual(qdata.process(data, def), data));
+    pass({ "$type": "int", "\\value": "13" }, def);
   });
 
   it("should validate object - strict/extract", function() {
@@ -951,11 +989,11 @@ describe("QData", function() {
     var noise2 = deepCopy(noise1);
     noise2.nested.anotherNoise = true;
 
-    assert(deepEqual(qdata.process(noise1, def, qdata.kExtractTopFields), data));
-    assert(deepEqual(qdata.process(noise2, def, qdata.kExtractAllFields), data));
+    pass(noise1, def, qdata.kExtractTopFields, null, data);
+    pass(noise2, def, qdata.kExtractAllFields, null, data);
 
-    assertThrow(function() { qdata.process(noise1, def, qdata.kNoOptions);        });
-    assertThrow(function() { qdata.process(noise2, def, qdata.kExtractTopFields); });
+    fail(noise1, def, qdata.kNoOptions);
+    fail(noise2, def, qdata.kExtractTopFields);
   });
 
   it("should validate array - nested values", function() {
@@ -971,8 +1009,9 @@ describe("QData", function() {
       [false, true].forEach(function(canBeNull) {
         [false, true].forEach(function(canBeUndefined) {
           var type = def.type;
-          var pass = def.pass;
-          var fail = def.fail;
+
+          var passData = def.pass;
+          var failData = def.fail;
 
           var Schema = qdata.schema({
             $type: "array",
@@ -984,20 +1023,17 @@ describe("QData", function() {
           });
 
           if (canBeNull)
-            pass = pass.concat([null]);
+            passData = passData.concat([null]);
           else
-            fail = fail.concat([null]);
+            failData = failData.concat([null]);
 
           if (canBeUndefined)
-            pass = pass.concat([undefined]);
+            passData = passData.concat([undefined]);
           else
-            fail = fail.concat([undefined]);
+            failData = failData.concat([undefined]);
 
-          assert(deepEqual(qdata.process(pass, Schema), pass));
-
-          fail.forEach(function(failValue) {
-            assertThrow(function() { qdata.process([failValue], Schema); });
-          });
+          passData.forEach(function(value) { pass([value], Schema); });
+          failData.forEach(function(value) { fail([value], Schema); });
         });
       });
     });
@@ -1024,7 +1060,7 @@ describe("QData", function() {
       { active: null , nested: { position: 2, nested: null } }
     ];
 
-    assert(deepEqual(qdata.process(data, def), data));
+    pass(data, def);
   });
 
   it("should validate array - length", function() {
@@ -1052,13 +1088,13 @@ describe("QData", function() {
       $maxLength: 2
     });
 
-    assert(deepEqual(qdata.process([0, 1], defLen2), [0, 1]));
-    assert(deepEqual(qdata.process([0, 1], defMin2), [0, 1]));
-    assert(deepEqual(qdata.process([0, 1], defMax2), [0, 1]));
+    pass([0, 1], defLen2);
+    pass([0, 1], defMin2);
+    pass([0, 1], defMax2);
 
-    assertThrow(function() { qdata.process([0, 1, 2], defLen2); });
-    assertThrow(function() { qdata.process([1234567], defMin2); });
-    assertThrow(function() { qdata.process([0, 1, 2], defMax2); });
+    fail([0, 1, 2], defLen2);
+    fail([1234567], defMin2);
+    fail([0, 1, 2], defMax2);
   });
 
   it("should properly handle type ending with '?'", function() {
@@ -1067,13 +1103,13 @@ describe("QData", function() {
       b: { $type: "int?" }
     });
 
-    assert(deepEqual(qdata.process({ a: 0, b: 1    }, def), { a: 0, b: 1    }));
-    assert(deepEqual(qdata.process({ a: 0, b: null }, def), { a: 0, b: null }));
+    pass({ a: 0, b: 1    }, def);
+    pass({ a: 0, b: null }, def);
 
-    assertThrow(function() { qdata.process({ a: 0               }, def); });
-    assertThrow(function() { qdata.process({ a: null, b: 1      }, def); });
-    assertThrow(function() { qdata.process({ a: 0, b: undefined }, def); });
-    assertThrow(function() { qdata.process({ a: 0, b: "string"  }, def); });
+    fail({ a: 0               }, def);
+    fail({ a: null, b: 1      }, def);
+    fail({ a: 0, b: undefined }, def);
+    fail({ a: 0, b: "string"  }, def);
   });
 
   it("should properly handle type ending with '[]'", function() {
@@ -1082,13 +1118,13 @@ describe("QData", function() {
       b: { $type: "int[]" }
     });
 
-    assert(deepEqual(qdata.process({ a: 0, b: [0] }, def), { a: 0, b: [0] }));
+    pass({ a: 0, b: [0] }, def);
 
-    assertThrow(function() { qdata.process({ a: 0           }, def); });
-    assertThrow(function() { qdata.process({ a: null, b: [] }, def); });
-    assertThrow(function() { qdata.process({ a: 0, b: null  }, def); });
-    assertThrow(function() { qdata.process({ a: 0, b: "s"   }, def); });
-    assertThrow(function() { qdata.process({ a: 0, b: ["s"] }, def); });
+    fail({ a: 0           }, def);
+    fail({ a: null, b: [] }, def);
+    fail({ a: 0, b: null  }, def);
+    fail({ a: 0, b: "s"   }, def);
+    fail({ a: 0, b: ["s"] }, def);
   });
 
   it("should properly handle type ending with '[]?'", function() {
@@ -1097,15 +1133,15 @@ describe("QData", function() {
       b: { $type: "int[]?" }
     });
 
-    assert(deepEqual(qdata.process({ a: 0, b: []   }, def), { a: 0, b: []   }));
-    assert(deepEqual(qdata.process({ a: 0, b: [0]  }, def), { a: 0, b: [0]  }));
-    assert(deepEqual(qdata.process({ a: 0, b: null }, def), { a: 0, b: null }));
+    pass({ a: 0, b: []   }, def);
+    pass({ a: 0, b: [0]  }, def);
+    pass({ a: 0, b: null }, def);
 
-    assertThrow(function() { qdata.process({ a: 0               }, def); });
-    assertThrow(function() { qdata.process({ a: null, b: []     }, def); });
-    assertThrow(function() { qdata.process({ a: 0, b: undefined }, def); });
-    assertThrow(function() { qdata.process({ a: 0, b: "s"       }, def); });
-    assertThrow(function() { qdata.process({ a: 0, b: ["s"]     }, def); });
+    fail({ a: 0               }, def);
+    fail({ a: null, b: []     }, def);
+    fail({ a: 0, b: undefined }, def);
+    fail({ a: 0, b: "s"       }, def);
+    fail({ a: 0, b: ["s"]     }, def);
   });
 
   it("should properly handle type ending with '?[]?'", function() {
@@ -1114,16 +1150,16 @@ describe("QData", function() {
       b: { $type: "int?[]?" }
     });
 
-    assert(deepEqual(qdata.process({ a: 0, b: []     }, def), { a: 0, b: []     }));
-    assert(deepEqual(qdata.process({ a: 0, b: [0]    }, def), { a: 0, b: [0]    }));
-    assert(deepEqual(qdata.process({ a: 0, b: null   }, def), { a: 0, b: null   }));
-    assert(deepEqual(qdata.process({ a: 0, b: [null] }, def), { a: 0, b: [null] }));
+    pass({ a: 0, b: []     }, def);
+    pass({ a: 0, b: [0]    }, def);
+    pass({ a: 0, b: null   }, def);
+    pass({ a: 0, b: [null] }, def);
 
-    assertThrow(function() { qdata.process({ a: 0               }, def); });
-    assertThrow(function() { qdata.process({ a: null, b: []     }, def); });
-    assertThrow(function() { qdata.process({ a: 0, b: undefined }, def); });
-    assertThrow(function() { qdata.process({ a: 0, b: "s"       }, def); });
-    assertThrow(function() { qdata.process({ a: 0, b: ["s"]     }, def); });
+    fail({ a: 0               }, def);
+    fail({ a: null, b: []     }, def);
+    fail({ a: 0, b: undefined }, def);
+    fail({ a: 0, b: "s"       }, def);
+    fail({ a: 0, b: ["s"]     }, def);
   });
 
   it("should properly handle invalid type ending", function() {
@@ -1164,15 +1200,15 @@ describe("QData", function() {
       out = qdata.process(data, def, qdata.kAccumulateErrors);
     }
     catch (err) {
-      assert(err instanceof qdata.SchemaError);
-      assert(deepEqual(err.details, [
-        { code: "BoolCheckFailure"  , path: "a" },
-        { code: "IntCheckFailure"   , path: "b" },
-        { code: "DoubleCheckFailure", path: "c" },
-        { code: "StringCheckFailure", path: "d" },
-        { code: "IntCheckFailure"   , path: "nested.a" },
-        { code: "IntCheckFailure"   , path: "nested.b" }
-      ]));
+      assert(err instanceof qdata.SchemaError, "Error thrown 'SchemaError' instance.");
+      assert.deepEqual(err.details, [
+        { code: "ExpectedBoolean", path: "a" },
+        { code: "ExpectedNumber" , path: "b" },
+        { code: "ExpectedNumber" , path: "c" },
+        { code: "ExpectedString" , path: "d" },
+        { code: "ExpectedNumber" , path: "nested.a" },
+        { code: "ExpectedNumber" , path: "nested.b" }
+      ]);
     }
 
     if (out)

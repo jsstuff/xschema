@@ -96,8 +96,14 @@ var kTuneUseObjectKeysAsCount = false;
 // [Internals]
 // ============================================================================
 
-var isArray = Array.isArray;
+var toString = Object.prototype.toString;
 var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function isObject(obj) {
+  return obj.constructor === Object || toString.call(obj) === "[object Object]";
+}
+
+var isArray = Array.isArray;
 
 // \internal
 //
@@ -108,12 +114,12 @@ var unsafeProperties = Object.getOwnPropertyNames(Object.prototype);
 
 // \internal
 //
-// Mapping of JS types into a one character describing the type. This mapping
+// Mapping of JS types into a character that describes the type. This mapping
 // is used by `SchemaCompiler` to reduce the length of variable names generated
 // and to map distinct types to different names in case of collision. This is
 // good for JS engine as each variable will only contain a specific value type
 // and JIT won't need to deoptimize it in case of type collision.
-var mangledType = {
+var MangledType = {
   array  : "a",
   boolean: "b",
   number : "n",
@@ -122,7 +128,7 @@ var mangledType = {
 };
 
 // ============================================================================
-// [Core - Errors]
+// [Errors]
 // ============================================================================
 
 // \class RuntimeError
@@ -190,7 +196,7 @@ function throwSchemaError(details) {
 qdata.throwSchemaError = throwSchemaError;
 
 // ============================================================================
-// [Core - Basics]
+// [Core]
 // ============================================================================
 
 // \function `qdata.typeOf(val)`
@@ -355,7 +361,7 @@ function deepEqual(a, b) {
 qdata.deepEqual = deepEqual;
 
 // ============================================================================
-// [Core - Util]
+// [Util]
 // ============================================================================
 
 // \namespace `qdata.util`
@@ -364,7 +370,7 @@ qdata.deepEqual = deepEqual;
 var qdata_util = qdata.util = {};
 
 // ============================================================================
-// [Core - Util - String]
+// [String]
 // ============================================================================
 
 // \internal
@@ -382,7 +388,7 @@ var unescapeFieldNameRE = /\\(.)/g;
 // Used to sanity an identifier.
 var invalidIdentifierRE = /[^A-Za-z0-9_\$]/g;
 
-// \function `qdata.string.isPropertyName(s)`
+// \function `qdata.util.isPropertyName(s)`
 //
 // Get whether the string `s` is a qdata's property name (ie it starts with "$").
 function isPropertyName(s) {
@@ -390,7 +396,7 @@ function isPropertyName(s) {
 }
 qdata_util.isPropertyName = isPropertyName;
 
-// \function `qdata.string.isVariableName(s)`
+// \function `qdata.util.isVariableName(s)`
 //
 // Get whether the string `s` is a valid JS variable name:
 //
@@ -411,7 +417,7 @@ function isVariableName(s) {
 }
 qdata_util.isVariableName = isVariableName;
 
-// \function `qdata.string.escapeRegExp(s)`
+// \function `qdata.util.escapeRegExp(s)`
 //
 // Escape a string `s` so it can be used in regexp for exact matching. For
 // example a string "[]" will be escaped to "\\[\\]".
@@ -420,7 +426,7 @@ function escapeRegExp(s) {
 }
 qdata_util.escapeRegExp = escapeRegExp;
 
-// \function `qdata.string.unescapeFieldName(s)`
+// \function `qdata.util.unescapeFieldName(s)`
 //
 // Unescape a given object's field name `s` to a real name (qdata specific).
 function unescapeFieldName(s) {
@@ -428,7 +434,7 @@ function unescapeFieldName(s) {
 }
 qdata_util.unescapeFieldName = unescapeFieldName;
 
-// \function `qdata.string.toCamelCase(s)`
+// \function `qdata.util.toCamelCase(s)`
 //
 // Make a string camelcased.
 //
@@ -462,577 +468,7 @@ var toCamelCase = (function() {
 qdata_util.toCamelCase = toCamelCase;
 
 // ============================================================================
-// [Core - Util - Color]
-// ============================================================================
-
-var colorNames = {
-  "aliceblue"           : "#f0f8ff", "antiquewhite"        : "#faebd7",
-  "aqua"                : "#00ffff", "aquamarine"          : "#7fffd4",
-  "azure"               : "#f0ffff",
-  "beige"               : "#f5f5dc", "bisque"              : "#ffe4c4",
-  "black"               : "#000000", "blanchedalmond"      : "#ffebcd",
-  "blue"                : "#0000ff", "blueviolet"          : "#8a2be2",
-  "brown"               : "#a52a2a", "burlywood"           : "#deb887",
-  "cadetblue"           : "#5f9ea0", "chartreuse"          : "#7fff00",
-  "chocolate"           : "#d2691e", "coral"               : "#ff7f50",
-  "cornflowerblue"      : "#6495ed", "cornsilk"            : "#fff8dc",
-  "crimson"             : "#dc143c", "cyan"                : "#00ffff",
-  "darkblue"            : "#00008b", "darkcyan"            : "#008b8b",
-  "darkgoldenrod"       : "#b8860b", "darkgray"            : "#a9a9a9",
-  "darkgreen"           : "#006400", "darkkhaki"           : "#bdb76b",
-  "darkmagenta"         : "#8b008b", "darkolivegreen"      : "#556b2f",
-  "darkorange"          : "#ff8c00", "darkorchid"          : "#9932cc",
-  "darkred"             : "#8b0000", "darksalmon"          : "#e9967a",
-  "darkseagreen"        : "#8fbc8f", "darkslateblue"       : "#483d8b",
-  "darkslategray"       : "#2f4f4f", "darkturquoise"       : "#00ced1",
-  "darkviolet"          : "#9400d3", "deeppink"            : "#ff1493",
-  "deepskyblue"         : "#00bfff", "dimgray"             : "#696969",
-  "dodgerblue"          : "#1e90ff",
-  "firebrick"           : "#b22222", "floralwhite"         : "#fffaf0",
-  "forestgreen"         : "#228b22", "fuchsia"             : "#ff00ff",
-  "gainsboro"           : "#dcdcdc", "ghostwhite"          : "#f8f8ff",
-  "gold"                : "#ffd700", "goldenrod"           : "#daa520",
-  "gray"                : "#808080", "green"               : "#008000",
-  "greenyellow"         : "#adff2f",
-  "honeydew"            : "#f0fff0", "hotpink"             : "#ff69b4",
-  "indianred"           : "#cd5c5c", "indigo"              : "#4b0082",
-  "ivory"               : "#fffff0",
-  "khaki"               : "#f0e68c",
-  "lavender"            : "#e6e6fa", "lavenderblush"       : "#fff0f5",
-  "lawngreen"           : "#7cfc00", "lemonchiffon"        : "#fffacd",
-  "lightblue"           : "#add8e6", "lightcoral"          : "#f08080",
-  "lightcyan"           : "#e0ffff", "lightgoldenrodyellow": "#fafad2",
-  "lightgrey"           : "#d3d3d3", "lightgreen"          : "#90ee90",
-  "lightpink"           : "#ffb6c1", "lightsalmon"         : "#ffa07a",
-  "lightseagreen"       : "#20b2aa", "lightskyblue"        : "#87cefa",
-  "lightslategray"      : "#778899", "lightsteelblue"      : "#b0c4de",
-  "lightyellow"         : "#ffffe0", "lime"                : "#00ff00",
-  "limegreen"           : "#32cd32", "linen"               : "#faf0e6",
-  "magenta"             : "#ff00ff", "maroon"              : "#800000",
-  "mediumaquamarine"    : "#66cdaa", "mediumblue"          : "#0000cd",
-  "mediumorchid"        : "#ba55d3", "mediumpurple"        : "#9370d8",
-  "mediumseagreen"      : "#3cb371", "mediumslateblue"     : "#7b68ee",
-  "mediumspringgreen"   : "#00fa9a", "mediumturquoise"     : "#48d1cc",
-  "mediumvioletred"     : "#c71585", "midnightblue"        : "#191970",
-  "mintcream"           : "#f5fffa", "mistyrose"           : "#ffe4e1",
-  "moccasin"            : "#ffe4b5",
-  "navajowhite"         : "#ffdead", "navy"                : "#000080",
-  "oldlace"             : "#fdf5e6", "olive"               : "#808000",
-  "olivedrab"           : "#6b8e23", "orange"              : "#ffa500",
-  "orangered"           : "#ff4500", "orchid"              : "#da70d6",
-  "palegoldenrod"       : "#eee8aa", "palegreen"           : "#98fb98",
-  "paleturquoise"       : "#afeeee", "palevioletred"       : "#d87093",
-  "papayawhip"          : "#ffefd5", "peachpuff"           : "#ffdab9",
-  "peru"                : "#cd853f", "pink"                : "#ffc0cb",
-  "plum"                : "#dda0dd", "powderblue"          : "#b0e0e6",
-  "purple"              : "#800080",
-  "red"                 : "#ff0000", "rosybrown"           : "#bc8f8f",
-  "royalblue"           : "#4169e1",
-  "saddlebrown"         : "#8b4513", "salmon"              : "#fa8072",
-  "sandybrown"          : "#f4a460", "seagreen"            : "#2e8b57",
-  "seashell"            : "#fff5ee", "sienna"              : "#a0522d",
-  "silver"              : "#c0c0c0", "skyblue"             : "#87ceeb",
-  "slateblue"           : "#6a5acd", "slategray"           : "#708090",
-  "snow"                : "#fffafa", "springgreen"         : "#00ff7f",
-  "steelblue"           : "#4682b4",
-  "tan"                 : "#d2b48c", "teal"                : "#008080",
-  "thistle"             : "#d8bfd8", "tomato"              : "#ff6347",
-  "turquoise"           : "#40e0d0",
-  "violet"              : "#ee82ee",
-  "wheat"               : "#f5deb3", "white"               : "#ffffff",
-  "whitesmoke"          : "#f5f5f5",
-  "yellow"              : "#ffff00", "yellowgreen"         : "#9acd32"
-};
-qdata_util.colorNames = colorNames;
-
-function isColor(s, allowNames, extraNames) {
-  var len = s.length;
-  if (!len)
-    return false;
-
-  // Validate "#XXX" and "#XXXXXX".
-  var c0 = s.charCodeAt(0);
-  if (c0 === 35) {
-    if (len !== 4 && len !== 7)
-      return false;
-
-    for (var i = 1; i < len; i++) {
-      var c0 = s.charCodeAt(i);
-      if (c0 < 48 || (c0 > 57 && (c0 |= 0x20) < 97 || c0 > 102))
-        return false;
-    }
-
-    return true;
-  }
-
-  if (allowNames === false && extraNames != null)
-    return false;
-
-  s = s.toLowerCase();
-
-  // Validate named entities.
-  if (allowNames !== false && hasOwnProperty.call(colorNames, s))
-    return true;
-
-  // Validate extra table (can contain values like "currentColor", "none", ...)
-  if (extraNames != null && hasOwnProperty.call(extraNames, s))
-    return true;
-
-  return false;
-}
-qdata_util.isColor = isColor;
-
-// ============================================================================
-// [Core - Util - IPV4 / IPV6]
-// ============================================================================
-
-function isIPV4(s) {
-  // The smallest possible IPV4 address is "W.X.Y.Z", which is 7 characters long.
-  var len = s.length;
-  if (len < 7)
-    return false;
-
-  var i = 0;
-  var n = 1;
-
-  for (;;) {
-    // Parse the first digit.
-    var c0 = s.charCodeAt(i++);
-    if (c0 < 48 || c0 > 57)
-      return false;
-    c0 -= 48;
-
-    if (i === len)
-      return n === 4;
-
-    // Parse one or two consecutive digits and validate the value to be <= 256.
-    var c1 = s.charCodeAt(i++);
-    if (c1 >= 48 && c0 <= 57) {
-      if (c0 === 0)
-        return false;
-
-      if (i === len)
-        return n === 4;
-
-      c0 = c0 * 10 + c1 - 48;
-      c1 = s.charCodeAt(i++);
-
-      if (c1 >= 48 && c1 <= 57) {
-        c0 = c0 * 10 + c1 - 48;
-        if (c0 > 255)
-          return false;
-
-        if (i === len)
-          return n === 4;
-        c1 = s.charCodeAt(i++);
-      }
-    }
-
-    if (c1 !== 46 || i === len || ++n > 4)
-      return false;
-  }
-}
-qdata_util.isIPV4 = isIPV4;
-
-function isIPV6(s) {
-  // TODO: Implement.
-  return false;
-}
-qdata_util.isIPV6 = isIPV6;
-
-function isMAC(s, sep) {
-  if (typeof sep !== "number")
-    sep = 58; // ':'.
-
-  // Mac has a format "AA:BB:CC:DD:EE:FF" which is exactly 17 characters long.
-  if (s.length !== 17)
-    return false;
-
-  var i = 0;
-  for (;;) {
-    var c0 = s.charCodeAt(i    );
-    var c1 = s.charCodeAt(i + 1);
-
-    i += 3;
-
-    if (c0 < 48 || (c0 > 57 && (c0 |= 0x20) < 97 || c0 > 102)) return false;
-    if (c1 < 48 || (c1 > 57 && (c1 |= 0x20) < 97 || c1 > 102)) return false;
-
-    if (i === 18)
-      return true;
-
-    if (s.charCodeAt(i - 1) !== sep)
-      return false;
-  }
-}
-qdata_util.isMAC = isMAC;
-
-// ============================================================================
-// [Core - Util - Date]
-// ============================================================================
-
-// Days in a month, leap years have to be handled separately.
-//                (JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC)
-var daysInMonth = [ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-
-// Leap seconds data.
-//
-// Every year has it's own data that is stored in a single number in a form 0xXY,
-// where X represents a leap second in June-30 and Y represents Dec-31.
-var leapSecondDates = {
-  start: 1972,
-  array: [
-    /* 1972: */ 0x11, /* 1973: */ 0x01, /* 1974: */ 0x01, /* 1975: */ 0x01,
-    /* 1976: */ 0x01, /* 1977: */ 0x01, /* 1978: */ 0x01, /* 1979: */ 0x01,
-    /* 1980: */ 0x00, /* 1981: */ 0x10, /* 1982: */ 0x10, /* 1983: */ 0x10,
-    /* 1984: */ 0x00, /* 1985: */ 0x10, /* 1986: */ 0x00, /* 1987: */ 0x01,
-    /* 1988: */ 0x00, /* 1989: */ 0x01, /* 1990: */ 0x01, /* 1991: */ 0x00,
-    /* 1992: */ 0x10, /* 1993: */ 0x10, /* 1994: */ 0x10, /* 1995: */ 0x01,
-    /* 1996: */ 0x00, /* 1997: */ 0x10, /* 1998: */ 0x01, /* 1999: */ 0x00,
-    /* 2000: */ 0x00, /* 2001: */ 0x00, /* 2002: */ 0x00, /* 2003: */ 0x00,
-    /* 2004: */ 0x00, /* 2005: */ 0x01, /* 2006: */ 0x00, /* 2007: */ 0x00,
-    /* 2008: */ 0x01, /* 2009: */ 0x00, /* 2010: */ 0x00, /* 2011: */ 0x00,
-    /* 2012: */ 0x10, /* 2013: */ 0x00, /* 2014: */ 0x00, /* 2015: */ 0x10
-  ]
-};
-qdata_util.leapSecondDates = leapSecondDates;
-
-// \function `data.util.isLeapYear(year)`
-//
-// Get whether the `year` is a leap year (ie it has 29th February).
-function isLeapYear(year) {
-  return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0) ? 1 : 0;
-}
-qdata_util.isLeapYear = isLeapYear;
-
-// \function `data.util.hasLeapSecond(year, month, day)`
-//
-// Get whether a date defined by `year`, `month`, and `day` has a leap second.
-// Please note that it's impossible to guess leap second in the future. This
-// function is mainly included to validate whether a date that has already
-// passed or is in a near future has a leap second defined.
-function isLeapSecondDate(year, month, date) {
-  var msk = 0x00;
-
-  if (month === 6 && date === 30)
-    msk = 0x10;
-  else if (month === 12 && date === 31)
-    msk = 0x01;
-  else
-    return false;
-
-  var data = leapSecondDates;
-  var start = data.start;
-  var array = data.array;
-  var index = year - start;
-
-  if (index < 0 || index >= array.length)
-    return 0;
-
-  return (array[index] & msk) !== 0;
-}
-qdata_util.isLeapSecondDate = isLeapSecondDate;
-
-// \internal
-var dateParts = {
-  Y     : { len:-4, msk: 0x01 },
-  YY    : { len: 2, msk: 0x01 },
-  YYYY  : { len: 4, msk: 0x01 },
-  M     : { len:-2, msk: 0x02 },
-  MM    : { len: 2, msk: 0x02 },
-  D     : { len:-2, msk: 0x04 },
-  DD    : { len: 2, msk: 0x04 },
-  H     : { len:-2, msk: 0x08 },
-  HH    : { len: 2, msk: 0x08 },
-  m     : { len:-2, msk: 0x10 },
-  mm    : { len: 2, msk: 0x10 },
-  s     : { len:-2, msk: 0x20 },
-  ss    : { len: 2, msk: 0x20 },
-  S     : { len: 1, msk: 0x40 },
-  SS    : { len: 2, msk: 0x40 },
-  SSS   : { len: 3, msk: 0x40 },
-  SSSSSS: { len: 6, msk: 0x40 }
-};
-
-// \internal
-//
-// Get whether the given charcode is a date component (ie it can be parsed as
-// year, month, date, etc...). Please note that not all alphanumeric characters
-// are considered as date components.
-function isDateComponent(c) {
-  return (c === 0x59) | // 'Y' - Year.
-         (c === 0x4D) | // 'M' - Month.
-         (c === 0x44) | // 'D' - Day.
-         (c === 0x48) | // 'H' - Hour.
-         (c === 0x6D) | // 'm' - Minute.
-         (c === 0x73) | // 's' - Second.
-         (c === 0x53) ; // 'S' - Fractions of second.
-}
-
-// \internal
-//
-// Interface to create/cache date parsers based on date `format`.
-var DateFactory = {
-  // Get a date parser based on format passed as `format`. The object returned
-  // has `format`, which is the same as `format` passed and `func`, which is a
-  // compiled validation function. The result is cached and every `format` is
-  // checked and compiled only once.
-  get: function(format) {
-    var cache = this.cache;
-
-    if (hasOwnProperty.call(cache, format))
-      return cache[format];
-
-    var detail = this.inspect(format);
-    var validator = {
-      format: format,
-      exec  : this.compile(format, detail)
-    };
-
-    cache[format] = validator;
-    return validator;
-  },
-
-  // A mapping between a date format and a validator instance.
-  cache: {},
-
-  // Inspects a date format passed as `format`. If the format is valid and
-  // non-ambiguous it returns an object that contains:
-  //
-  //   'Y', 'M', 'D', 'H', 'm', 's', 'S' - Information about date parts parsed in
-  //     a `format` of object having `{ part, index, len }` properties.
-  //
-  //   'parts' - Date components and separators.
-  //
-  //   'fixed' - Whether ALL date components have fixed length (0 or 1).
-  //
-  //   'minLength' - Minimum length of a string to be considered valid and to be
-  //     processed.
-  inspect: function(format) {
-    var i = 0;
-    var len = format.length;
-
-    // Split date components and separators, for example "YYYY-MM-DD" string
-    // would be split into ["YYYY", "-", "MM", "-", "DD"] components.
-    var parts = [];
-    do {
-      var start = i;
-      var symb = format.charCodeAt(i);
-
-      if (isDateComponent(symb)) {
-        // Merge component chars, like "Y", "YY", "YYYY".
-        while (++i < len && format.charCodeAt(i) === symb)
-          continue;
-      }
-      else {
-        // Parse anything that is not a date component.
-        while (++i < len && !isDateComponent(format.charCodeAt(i)))
-          continue;
-      }
-
-      parts.push(format.substring(start, i));
-    } while (i < len);
-
-    var index = 0;   // Component/Part string index, -1 if not usable.
-    var fixed = 1;   // All components have fixed length.
-
-    var msk = 0|0;   // Mask of parsed components.
-    var sep = false; // Whether the current/next component has to be a separator.
-
-    var insepected = {
-      parts: null,
-      fixed: 0,
-      minLength: len
-    };
-
-    for (i = 0, len = parts.length; i < len; i++) {
-      var part = parts[i];
-
-      if (hasOwnProperty.call(dateParts, part)) {
-        var data = dateParts[part];
-        var symb = part.charAt(0);
-
-        // Fail if one component appears multiple times or if the separator is
-        // required at this point.
-        if ((msk & data.msk) !== 0 || sep)
-          throwRuntimeError("Invalid date format '" + format + "'.");
-        msk |= data.msk;
-
-        // Store the information about this date component. We always use the
-        // format symbol `symb` as a key as it's always "Y" for all of "Y", "YY",
-        // and "YYYY", for example.
-        insepected[symb] = {
-          part : part,
-          index: fixed ? index : -1,
-          len  : data.len
-        };
-
-        // Require the next component to be a separator if the component doesn't
-        // have a fixed length. This prevents from ambiguities and one component
-        // running through another in case of "YMD" for example.
-        sep = data.len <= 0;
-
-        // Update `fixed` flag in case this component's length is not fixed.
-        fixed &= !sep;
-      }
-      else {
-        // Reset the separator flag and add escaped part sequence into the regexp.
-        sep = false;
-      }
-
-      index += part.length;
-    }
-
-    if (((msk + 1) & msk) !== 0)
-      throwRuntimeError("Invalid date format '" + format + "'.");
-
-    insepected.parts = parts;
-    insepected.fixed = fixed;
-
-    return insepected;
-  },
-
-  compile: function(format, detail) {
-    var c = new CoreCompiler();
-
-    var parts = detail.parts;
-    var fixed = detail.fixed;
-
-    var Y = detail.Y;
-    var M = detail.M;
-    var D = detail.D;
-    var H = detail.H;
-    var m = detail.m;
-    var s = detail.s;
-
-    var index = 0;
-    var i, j;
-
-    c.arg("input");
-    c.arg("hasLeapYear");
-    c.arg("hasLeapSecond");
-
-    c.declareVariable("len", "input.length");
-    c.declareVariable("cp", 0);
-
-    c.emitComment("Date validator of '" + format + "' format.");
-    c.emit("do {");
-
-    c.emit("if (len " + (fixed ? "!==" : "<") + " " + detail.minLength + ") break;");
-    c.emitNewLine();
-
-    for (i = 0; i < parts.length; i++) {
-      var part = parts[i];
-      var symb = part.charAt(0);
-
-      if (hasOwnProperty.call(detail, symb)) {
-        var data = detail[symb];
-        var jLen = data.len;
-
-        // Generate code that parses the number and assigns its value into
-        // a variable `symb`.
-        c.declareVariable(symb);
-
-        // If this component has a variable length we have to fix the parser
-        // in a way that all consecutive components will use relative indexing.
-        if (jLen <= 0 && index >= 0) {
-          c.declareVariable("index", String(index));
-          index = -1;
-        }
-
-        if (jLen > 0) {
-          if (index < 0)
-            c.emit("if (index + " + String(jLen) + " > len) break;");
-
-          for (j = 0; j < jLen; j++) {
-            var v = (j === 0) ? symb : "cp";
-            var sIndex = (index >= 0) ? String(index + j) : "index + " + j;
-
-            c.emit("if ((" + v + " = input.charCodeAt(" + sIndex + ") - 48) < 0 || " + v + " >= 10) break;");
-            if (j !== 0)
-              c.emit(symb + " = " + symb + " * 10 + " + v + ";");
-          }
-
-          if (index >= 0)
-            index += jLen;
-        }
-        else {
-          j = -jLen;
-
-          c.declareVariable("limit");
-
-          c.emit("if (index >= len) break;");
-          c.emit("if ((" + symb + " = input.charCodeAt(index) - 48) < 0 || " + symb + " >= 10) break;");
-
-          c.emitNewLine();
-          c.emit("limit = Math.min(len, index + " + j + ");");
-
-          c.emit("while (++index < limit && (cp = input.charCodeAt(index) - 48) >= 0 && cp < 10) {");
-          c.emit(symb += " = " + symb + " * 10 + cp;");
-          c.emit("}");
-        }
-      }
-      else {
-        // Generate code that checks if the separator sequence is correct.
-        var cond = [];
-        var jLen = part.length;
-
-        if (index >= 0) {
-          for (j = 0; j < jLen; j++)
-            cond.push("input.charCodeAt(" + (index + j) + ") !== " + part.charCodeAt(j));
-          index += jLen;
-        }
-        else {
-          cond.push("index + " + jLen + " > len");
-          for (j = 0; j < jLen; j++)
-            cond.push("input.charCodeAt(index + " + j + ") !== " + part.charCodeAt(j));
-        }
-
-        c.emit("if (" + cond.join(" || ") + ") break;");
-
-        if (index < 0)
-          c.emit("index += " + jLen + ";");
-      }
-
-      c.emitNewLine();
-    }
-
-    if (Y) {
-      c.emit("if (Y < " + kYearMin + ") break;");
-      if (M) {
-        c.emit("if (M < 1 || M > 12) break;");
-        if (D) {
-          c.declareData("daysInMonth", daysInMonth);
-          c.emit("if (D < 1 || D > daysInMonth[M - 1] +\n" +
-                 "    ((M === 2 && D === 29 && hasLeapYear && ((Y % 4 === 0 && Y % 100 !== 0) || (Y % 400 === 0))) ? 1 : 0))\n" +
-                 "  break;");
-        }
-      }
-    }
-
-    if (H) {
-      c.emit("if (H > 23) break;");
-      if (m) {
-        c.emit("if (m > 59) break;");
-        if (s) {
-          c.declareData("isLeapSecondDate", isLeapSecondDate);
-          c.emit("if (s > 59 && !(s === 60 && hasLeapSecond && isLeapSecondDate(Y, M, D))) break;");
-        }
-      }
-    }
-
-    c.emit("return null;");
-    c.emit("} while (false);");
-
-    c.emitNewLine();
-    c.emit("return { code: \"DateCheckFailure\", format: this.format };");
-
-    return c.toFunction();
-  }
-};
-
-// ============================================================================
-// [Core - Enum]
+// [Enum]
 // ============================================================================
 
 function _sortIntFn(a, b) { return a - b; }
@@ -1214,7 +650,7 @@ qdata.enum = qclass({
 });
 
 // ============================================================================
-// [Core - Compiler]
+// [CoreCompiler]
 // ============================================================================
 
 // \class `qdata.CoreCompiler`
@@ -1268,7 +704,12 @@ qdata.enum = qclass({
 // `data(data)` method or more high level `declareData(name, data)` method.
 function CoreCompiler() {
   this._debug = false;        // Whether to output debug code and comments.
-  this._indentation = "  ";   // Indentation, see `indent()` and `deindent()`.
+
+  // Used by `nest()` and `denest()`.
+  this._scopeArray = [];      // Used to save data of the previous scope(s).
+  this._scopeIndex = 0;       // Scope index in `_scopeArray`.
+  this._indentation = "  ";   // Indentation.
+  this._ifElseCount = 0;      // Count if previous if/if else blocks.
 
   this._args = [];            // Function arguments;
   this._body = "";            // Function body.
@@ -1381,29 +822,47 @@ qclass({
     if (!code)
       return this;
 
-    // Automatically deindent if the first character is '}'.
+    // Automatically denest if the first character is '}'.
     if (code.charAt(0) === "}")
-      this.deindent();
+      this.denest();
 
     this._body += this.applyIndentation(code);
 
-    // Automatically indent if the last character is '{'.
+    // Automatically nest if the last character is '{'.
     if (code.charAt(code.length - 1) === "{")
-      this.indent();
+      this.nest();
 
     return this;
   },
 
   // Emit newline delimiter `\n`.
-  emitNewLine: function() {
+  nl: function() {
     this._body += "\n";
     return this;
   },
 
   // Emit comment with current indentation applied if debugging is enabled.
-  emitComment: function(s) {
+  comment: function(s) {
     if (this._debug)
       this._body += this.applyIndentation("// " + s.replace("\n", "\n// "));
+    return this;
+  },
+
+  ifElseIf: function(cond) {
+    var keyword = (++this._ifElseCount === 1) ? "if" : "else if";
+    this.emit(keyword + " (" + cond + ") {");
+    return this;
+  },
+
+  otherwise: function() {
+    var keyword = this._ifElseCount > 0 ? "else" : "if (1)";
+    this._ifElseCount = 0;
+    this.emit(keyword + " {");
+    return this;
+  },
+
+  end: function() {
+    this.emit("}");
     return this;
   },
 
@@ -1411,14 +870,45 @@ qclass({
     return JSON.stringify(s);
   },
 
-  indent: function() {
-    this._indentation += "  ";
+  nest: function() {
+    var array = this._scopeArray;
+    var index = this._scopeIndex;
+
+    var indentation = this._indentation;
+    var ifElseCount = this._ifElseCount;
+
+    if (index === array.length) {
+      obj = {
+        indentation: indentation,
+        ifElseCount: ifElseCount
+      };
+      array.push(obj);
+    }
+    else {
+      var obj = array[index];
+      obj.indentation = indentation;
+      obj.ifElseCount = ifElseCount;
+    }
+
+    this._scopeIndex = index + 1;
+    this._indentation = indentation + "  ";
+    this._ifElseCount = 0;
+
     return this;
   },
 
-  deindent: function() {
-    var s = this._indentation;
-    this._indentation = s.substr(0, s.length - 2);
+  denest: function() {
+    var array = this._scopeArray;
+    var index = this._scopeIndex;
+
+    if (index === 0)
+      throwRuntimeError("CoreCompiler.denest() - Can't denest the root scope.");
+
+    var obj = array[--index];
+    this._scopeIndex = index;
+    this._indentation = obj.indentation;
+    this._ifElseCount = obj.ifElseCount;
+
     return this;
   },
 
@@ -1473,7 +963,6 @@ qclass({
       body = this.serialize();
       fn = new Function(this._dataName, body);
 
-      //console.log(body);
       return fn(this._data);
     }
     catch (ex) {
@@ -1492,7 +981,7 @@ qclass({
 });
 
 // ============================================================================
-// [Schema - Compiler]
+// [SchemaCompiler]
 // ============================================================================
 
 // \internal
@@ -1514,13 +1003,7 @@ function SchemaCompiler(env, options) {
   this._env = env;          // Schema environment (`qdata` or customized).
   this._options = options;  // Schema validation options.
   this._extract = false;    // Whether to extract properties from this level.
-
-  this._nestedLevel = 0;    // Level of the current scope.
-  this._ifLevel = 0;        // Count of IFs in the current scope.
-  this._sectionLevel = 0;   // Section level.
-
   this._path = "\"\"";      // Path to the current scope (code).
-  this._stack = [];         // Used to save state of the previous scope.
 }
 qclass({
   $extend: CoreCompiler,
@@ -1528,9 +1011,7 @@ qclass({
 
   compileFunc: function(def) {
     this.arg("input");
-
     this.declareData("qdata", this._env);
-    this.declareVariable("err", "null");
 
     if (this.hasOption(kAccumulateErrors))
       this.declareVariable("details", "[]");
@@ -1541,7 +1022,7 @@ qclass({
     var vIn = "input";
     var vOut = this.compileType(vIn, def);
 
-    this.emitNewLine();
+    this.nl();
 
     if (this.hasOption(kAccumulateErrors)) {
       this.declareGlobal(
@@ -1568,58 +1049,11 @@ qclass({
     if (!type)
       throwRuntimeError("Couldn't find handler for type " + name + ".");
 
-    var vOut = type.compile(this, vIn, def);
-
-    if (!this.hasOption(kTestModeOnly)) {
-      this.emitNewLine();
-      this.emit("if (err !== null) {");
-      this.emitErrorCase();
-      this.emit("}");
-    }
-
-    return vOut;
+    return type.compile(this, vIn, def);
   },
 
   hasOption: function(option) {
     return (this._options & option ) !== 0;
-  },
-
-  // Handle a case at least `def.$null` or `def.$undefined` is `true`. It emits
-  // code that handles `null` or `undefined` value, so the flow won't continue.
-  //
-  // NOTE: If both `$null` and `$undefined` are false this code does nothing.
-  emitNullOrUndefinedCheck: function(def, vOut, vIn) {
-    if (def.$null && def.$undefined)
-      this.passIf(vIn + " == null", vOut, vIn);
-    else if (def.$null)
-      this.passIf(vIn + " === null", vOut, vIn);
-    else if (def.$undefined)
-      this.passIf(vIn + " === undefined", vOut, vIn);
-
-    return this;
-  },
-
-  emitStringTypeCheck: function(def, v) {
-    this.failIf("typeof " + v + " !== \"string\"",
-      this.error(this.str("StringCheckFailure")));
-
-    if (def.$length != null)
-      this.failIf(v + ".length !== " + def.$length,
-        this.error(this.str("InvalidLength")));
-
-    if (def.$minLength != null && def.$maxLength == null)
-      this.failIf(v + ".length < " + def.$minLength,
-        this.error(this.str("InvalidLength")));
-
-    if (def.$minLength == null && def.$maxLength != null)
-      this.failIf(v + ".length > " + def.$maxLength,
-        this.error(this.str("InvalidLength")));
-
-    if (def.$minLength != null && def.$maxLength != null)
-      this.failIf(v + ".length < " + def.$minLength + " || " + v + " > " + def.$maxLength,
-        this.error(this.str("InvalidLength")));
-
-    return this;
   },
 
   emitNumberCheck: function(def, v, minValue, maxValue, isInt, isFinite) {
@@ -1630,36 +1064,14 @@ qclass({
     var maxEq = 0;
 
     // Handle $gt, $ge, and $min.
-    if (def.$ge != null && (min === null || min <= def.$ge)) {
-      min = def.$ge;
-      minEq = 1;
-    }
-
-    if (def.$min != null && (min === null || min <= def.$min)) {
-      min = def.$min;
-      minEq = 1;
-    }
-
-    if (minValue != null && (min === null || min <= minValue)) {
-      min = minValue;
-      minEq = 1;
-    }
+    if (def.$ge  != null && (min === null || min <= def.$ge )) { min = def.$ge ; minEq = 1; }
+    if (def.$min != null && (min === null || min <= def.$min)) { min = def.$min; minEq = 1; }
+    if (minValue != null && (min === null || min <= minValue)) { min = minValue; minEq = 1; }
 
     // Handle $lt, $le, and $max.
-    if (def.$le != null && (max === null || max >= def.$le)) {
-      max = def.$le;
-      maxEq = 1;
-    }
-
-    if (def.$max != null && (max === null || max >= def.$max)) {
-      max = def.$max;
-      maxEq = 1;
-    }
-
-    if (maxValue != null && (max === null || max >= maxValue)) {
-      max = maxValue;
-      maxEq = 1;
-    }
+    if (def.$le  != null && (max === null || max >= def.$le )) { max = def.$le ; maxEq = 1; }
+    if (def.$max != null && (max === null || max >= def.$max)) { max = def.$max; maxEq = 1; }
+    if (maxValue != null && (max === null || max >= maxValue)) { max = maxValue; maxEq = 1; }
 
     // Emit.
     var cond = [];
@@ -1691,44 +1103,18 @@ qclass({
       }
     }
 
-    if (min !== null)
-      cond.push(v + (minEq ? " >= " : " > ") + min);
-
-    if (max !== null)
-      cond.push(v + (maxEq ? " <= " : " < ") + max);
+    if (min !== null) cond.push(v + (minEq ? " >= " : " > ") + min);
+    if (max !== null) cond.push(v + (maxEq ? " <= " : " < ") + max);
 
     if (cond.length > 0)
       this.failIf("!(" + cond.join(" && ") + ")",
-        this.error(this.str("OutOfRange")));
-
-    return this;
-  },
-
-  emitErrorCase: function(code) {
-    if (this.hasOption(kTestModeOnly)) {
-      this.emit("return false;");
-    }
-    else {
-      if (code)
-        this.emit(code);
-      this.emit("err.path = " + this.path() + ";");
-
-      if (this.hasOption(kAccumulateErrors)) {
-        this.emit("details.push(err);");
-        this.emit("err = null;");
-      }
-      else {
-        this.declareGlobal(
-          "throwSchemaError", "qdata.throwSchemaError");
-        this.emit("throwSchemaError(err);");
-      }
-    }
+        this.error(this.str("InvalidValue")));
 
     return this;
   },
 
   addLocal: function(name, mangledType) {
-    return this.declareVariable("_" + this._nestedLevel + (mangledType || "") + "_" + name);
+    return this.declareVariable("_" + this._scopeIndex + (mangledType || "") + "_" + name);
   },
 
   // Get a type-prefix of type defined by `def`.
@@ -1741,19 +1127,16 @@ qclass({
     if (typeof def.$type === "string") {
       var type = env.getType(def.$type);
       if (type)
-        mangled = mangledType[type.type] || "x";
+        mangled = MangledType[type.type] || "x";
     }
 
     return mangled;
   },
 
   emitIf: function(cond, body) {
-    var ifKeyword = (++this._ifLevel === 1) ? "if" : "else if";
-
-    this.emit(ifKeyword + " (" + cond + ") {");
-    this.emit(body);
-    this.emit("}");
-
+    this.ifElseIf(cond)
+      .emit(body)
+      .end();
     return this;
   },
 
@@ -1764,17 +1147,32 @@ qclass({
       return this.emitIf(cond, vOut + " = " + vIn + ";");
   },
 
-  failIf: function(cond, code) {
+  failIf: function(cond, err) {
+    this.ifElseIf(cond);
+    if (this.hasOption(kTestModeOnly))
+      this.emitIf(cond, "return false;");
+    else
+      this.emitError(err);
+    this.end();
+
+    return this;
+  },
+
+  emitError: function(err) {
     if (this.hasOption(kTestModeOnly)) {
-      return this.emitIf(cond, "return false;");
+      this.emit("return false;");
+      return this;
+    }
+
+    if (this.hasOption(kAccumulateErrors)) {
+      this.emit("details.push(" + err + ");");
+      return this;
     }
     else {
-      if (code !== "err")
-        code = "err = " + code + ";";
-      else
-        code = "// FAIL.";
-
-      return this.emitIf(cond, code);
+      this.declareGlobal(
+        "throwSchemaError", "qdata.throwSchemaError");
+      this.emit("throwSchemaError(" + err + ");");
+      return this;
     }
   },
 
@@ -1805,64 +1203,30 @@ qclass({
     return prev;
   },
 
-  path: function() {
-    return this._path;
-  },
+  error: function(code, extra) {
+    var s = "{ code: " + code + ", path: " + this.getPath();
 
-  error: function(objectOrCode) {
+    if (extra)
+      s += " ," + JSON.stringify(extra).substr(1);
+    else
+      s += " }";
+    return s;
+    /*
     if (typeof objectOrCode === "object")
       return JSON.stringify(objectOrCode);
     else
       return "{ \"code\": " + objectOrCode + " }";
-  },
-
-  beginSection: function() {
-    this.emit(this._ifLevel === 0 ? "if (1) {" : "else {");
-    this._ifLevel = 0;
-    this._sectionLevel++;
-    return this;
-  },
-
-  endSection: function() {
-    if (--this._sectionLevel < 0)
-      throwRuntimeError("Invalid call to endSection(), there are no more sections.");
-
-    this.emit("}");
-    this._ifLevel = 0;
-
-    return this;
+    */
   },
 
   done: function() {
-    this._ifLevel = 0;
-    return this;
-  },
-
-  // Begin nesting of the current object/array.
-  nest: function() {
-    this._stack.push({
-      ifLevel: this._ifLevel
-    });
-
-    this._ifLevel = 0;
-    this._nestedLevel++;
-
-    return this;
-  },
-
-  // End nesting of the current object/array.
-  denest: function() {
-    var state = this._stack.pop();
-
-    this._ifLevel = state.ifLevel;
-    this._nestedLevel--;
-
+    this._ifElseCount = 0;
     return this;
   }
 });
 
 // ============================================================================
-// [Schema - Builder]
+// [SchemaBuilder]
 // ============================================================================
 
 // \internal
@@ -1912,7 +1276,7 @@ function _schemaField(def, env, priv) {
       $data     : _schemaField(nested, env, null),
       $null     : hasNull,
       $undefined: false,
-      $_private : priv
+      $_qPrivate: priv
     };
   }
   else {
@@ -1927,7 +1291,7 @@ function _schemaField(def, env, priv) {
       $data     : null,
       $null     : hasNull,
       $undefined: hasUndef,
-      $_private : priv
+      $_qPrivate: priv
     };
 
     if (name === "object") {
@@ -1990,9 +1354,9 @@ function _schemaField(def, env, priv) {
 // and compiled by `qdata` library. It basically normalizes the input object
 // and calls `type` and `rule` hooks on it.
 function schema(def) {
-  // All members starting with `$_private` are considered private and used
-  // exclusively by QData library. This is the only reserved prefix so far.
-  var priv = { func: new Array(kMaxFuncCount) };
+  // The member `$_qPrivate` is considered private and used exclusively by the
+  // QData library. This is the only reserved property so far.
+  var priv = { fnCache: new Array(kMaxFuncCount) };
   return _schemaField(def, this || qdata, priv);
 }
 qdata.schema = schema;
@@ -2001,16 +1365,17 @@ qdata.schema = schema;
 // [Schema - Interface]
 // ============================================================================
 
-// \function `qdata.compile(def, options)`
+// \internal
 //
-// Compile and return a function that can be used to process data based
-// on definition `def` and options given in `options`. The function returned
-// is NOT associated with the given `def`, use more high-level `qdata.process()`
-// to process data by using functions that are cached.
-function compile(def, options) {
-  return (new SchemaCompiler(this || qdata, options || 0)).compileFunc(def);
+// Compile and return a function that can be used to process data based on the
+// definition `def` and options given in `fnIndex` (options and processing mode).
+function compile(env, def, fnIndex) {
+  var fnCache = def.$_qPrivate.fnCache;
+  var fn = (new SchemaCompiler(env, fnIndex)).compileFunc(def);
+
+  fnCache[fnIndex] = fn;
+  return fn;
 }
-qdata.compile = compile;
 
 // \function `qdata.process(data, def, options, access)`
 //
@@ -2018,48 +1383,26 @@ qdata.compile = compile;
 // rights. The function specific for the validation type and options is compiled
 // on demand and then cached.
 function process(data, def, options, access) {
-  var fnArray = def.$_private.func;
+  var fnCache = def.$_qPrivate.fnCache;
   var fnIndex = options || 0;
 
-  var fn = fnArray[fnIndex];
-  if (!fn)
-    fnArray[fnIndex] = fn = compile.call(this, def, fnIndex);
-
+  var fn = fnCache[fnIndex] || compile(this || qdata, def, fnIndex);
   return fn(data, access);
 }
 qdata.process = process;
-
-function precompileProcess(def, options) {
-  var fnArray = def.$_private.func;
-  var fnIndex = options || 0;
-
-  return fnArray[fnIndex] || (fnArray[fnIndex] = compile.call(this, def, fnIndex));
-}
-qdata.precompileProcess = precompileProcess;
 
 // \function `qdata.test(data, def, options, access)`
 //
 // Tests the given `data` by using a definition `def`, `options` and `access`
 // right.
 function test(data, def, options, access) {
-  var fnArray = def.$_private.func;
+  var fnCache = def.$_qPrivate.fnCache;
   var fnIndex = (options || 0) | kTestModeOnly;
 
-  var fn = fnArray[fnIndex];
-  if (!fn)
-    fnArray[fnIndex] = fn = compile.call(this, def, fnIndex);
-
+  var fn = fnCache[fnIndex] || compile(this || qdata, def, fnIndex);
   return fn(data, def, access);
 }
 qdata.test = test;
-
-function precompileTest(def, options) {
-  var fnArray = def.$_private.func;
-  var fnIndex = (options || 0) | kTestModeOnly;
-
-  return fnArray[fnIndex] || (fnArray[fnIndex] = compile.call(this, def, fnIndex));
-}
-qdata.precompileTest = precompileTest;
 
 // ============================================================================
 // [Schema - Customize]
@@ -2198,7 +1541,7 @@ function customize(opt) {
 
   // Create a new `qdata` like object.
   var obj = copyObject(this || qdata);
-  var tmp, i;
+  var tmp;
 
   // Clone members that can change.
   obj.types = copyObject(obj.types);
@@ -2218,28 +1561,142 @@ function customize(opt) {
 qdata.customize = customize;
 
 // ============================================================================
-// [Schema Type - Bool]
+// [SchemaType - Base]
 // ============================================================================
 
-qdata.addType({
-  name: ["boolean", "bool"],
-  type: "boolean",
+var TypeToError = {
+  array  : "ExpectedArray",
+  boolean: "ExpectedBoolean",
+  number : "ExpectedNumber",
+  object : "ExpectedObject",
+  string : "ExpectedString"
+};
 
+function BaseType() {}
+qdata.BaseType = qclass({
+  $construct: BaseType,
+
+  // Field type ("array", "date", "color", ...), not strictly js type-name.
+  name: null,
+  // JavaScript type ("array", "boolean", "number", "object", "string").
+  type: null,
+
+  // Verify the definition `def` and throw `RuntimeError` if it's not valid.
+  verify: function(def) {
+    // Nothing by default.
+  },
+
+  // Compile the type definition `def`.
   compile: function(c, v, def) {
-    c.emitNullOrUndefinedCheck(def, v, v);
+    var type = this.type;
+    var cond = null;
 
-    c.failIf("typeof " + v + " !== \"boolean\"",
-      c.error(c.str("BoolCheckFailure")));
+    var vIn = v;
+    var vOut = v;
 
-    return v;
+    var typeError = this.typeError || TypeToError[type];
+
+    var isNull = def.$null;
+    var isUndef = def.$undefined;
+
+    // Object and Array types require `vOut` variable to be different than `vIn`.
+    if (type === "object" || type === "array") {
+      if (!c.hasOption(kTestModeOnly))
+        vOut = c.addLocal("out", c.mangledType(type));
+    }
+
+    // Emit type check that considers `null` and `undefined` values if specified.
+    if (type === "object") {
+      var constructor = type === "array" ? "Array" : "Object";
+      var toStringFn = c.declareGlobal("toString", "Object.prototype.toString");
+      var cond = "";
+
+      c.emit(vOut + " = " + vIn + ";");
+
+      if (isNull && isUndef) {
+        c.passIf(vIn + " == null");
+      }
+      else if (isNull) {
+        c.passIf(vIn + " === null");
+      }
+      else if (isUndef) {
+        c.passIf(vIn + " === undefined");
+        cond = vIn + " === null || ";
+      }
+      else {
+        cond = vIn + " == null || ";
+      }
+
+      cond += "(" + vIn + ".constructor !== " + constructor + " && " + toStringFn + ".call(" + v + ") !== \"[object " + constructor + "]\")";
+      c.failIf(cond, c.error(c.str(typeError)));
+
+      this.compileType(c, vOut, vIn, def);
+    }
+    else {
+      if (type === "array")
+        c.ifElseIf("!Array.isArray(" + vIn + ")");
+      else
+        c.ifElseIf("typeof " + vIn + " !== \"" + type + "\"");
+
+      if (def.$null && def.$undefined)
+        cond = vIn + " != null";
+      else if (def.$null)
+        cond = vIn + " !== null";
+      else if (def.$undefined)
+        cond = vIn + " !== undefined";
+      else
+        cond = null;
+
+      if (cond || c.hasOption(kAccumulateErrors) && vOut !== vIn)
+        c.emit(vOut + " = " + vIn + ";");
+
+      var err = c.error(c.str(typeError));
+      if (cond)
+        c.failIf(cond, err);
+      else
+        c.emitError(err);
+
+      c.end();
+      this.compileType(c, vOut, vIn, def);
+    }
+
+    return vOut;
+  },
+
+  compileType: function(c, vOut, v, def) {
+    throwRuntimeError("BaseType.compileType() has to be overridden.");
   }
 });
 
 // ============================================================================
-// [Schema Type - Int / Double]
+// [SchemaType - Bool]
 // ============================================================================
 
-qdata.addType({
+function BooleanType() {
+  BaseType.call(this);
+}
+qdata.BooleanType = qclass({
+  $extend: BaseType,
+  $construct: BooleanType,
+
+  name: ["boolean", "bool"],
+  type: "boolean",
+
+  compileType: function(c, vOut, v, def) {}
+});
+qdata.addType(new BooleanType());
+
+// ============================================================================
+// [SchemaType - Number]
+// ============================================================================
+
+function NumberType() {
+  BaseType.call(this);
+}
+qdata.NumberType = qclass({
+  $extend: BaseType,
+  $construct: NumberType,
+
   name: [
     // Double types.
     "double",
@@ -2257,8 +1714,9 @@ qdata.addType({
     "lat", "latitude",
     "lon", "longitude"
   ],
+  type: "number",
 
-  compile: function(c, v, def) {
+  compileType: function(c, vOut, v, def) {
     var type = def.$type;
 
     var minValue = null;
@@ -2266,8 +1724,6 @@ qdata.addType({
 
     var isInt = false;
     var isFinite = true;
-
-    c.emitNullOrUndefinedCheck(def, v, v);
 
     switch (type) {
       case "number":
@@ -2330,39 +1786,20 @@ qdata.addType({
         throwRuntimeError("Invalid type '" + type + "'.");
     }
 
-    var errorCode = isInt ? "IntCheckFailure" : "DoubleCheckFailure";
-    c.failIf("typeof " + v + " !== \"number\"", c.error(c.str(errorCode)));
     c.emitNumberCheck(def, v, minValue, maxValue, isInt, isFinite);
 
     // DivBy check.
-    if (def.$divBy != null)
-      c.failIf(v + " % " + def.$divBy + " !== 0",
-        c.error(c.str("DivByFailure")));
+    if (def.$divisibleBy != null)
+      c.failIf(v + " % " + def.$divisibleBy + " !== 0",
+        c.error(c.str("DivisibleByError")));
 
     return v;
   }
 });
+qdata.addType(new NumberType());
 
 // ============================================================================
-// [Schema Type - Char]
-// ============================================================================
-
-qdata.addType({
-  name: ["char"],
-  type: "string",
-
-  compile: function(c, v, def) {
-    c.emitNullOrUndefinedCheck(def, v, v);
-
-    c.failIf("typeof " + v + " !== \"string\" || " + v + ".length !== 1",
-      c.error(c.str("CharCheckFailure")));
-
-    return v;
-  }
-});
-
-// ============================================================================
-// [Schema Type - String / Text]
+// [SchemaType - String / Text]
 // ============================================================================
 
 // Text is basically a string with some characters restricted:
@@ -2397,35 +1834,755 @@ qdata.addType({
 //   - [1F] US  Unit Separator
 var isInvalidTextRE = /[\x00-\x08\x0B-\x0C\x0E-\x1F]/;
 
-qdata.addType({
+function StringType() {
+  BaseType.call(this);
+}
+qdata.StringType = qclass({
+  $extend: BaseType,
+  $construct: StringType,
+
   name: ["string", "text"],
   type: "string",
 
-  compile: function(c, v, def) {
-    c.emitNullOrUndefinedCheck(def, v, v);
-    c.emitStringTypeCheck(def, v);
+  compileType: function(c, vOut, v, def) {
+    var len = def.$length;
+    var min = def.$minLength;
+    var max = def.$maxLength;
 
-    if (def.$type === "text") {
-      var reText = c.declareData(null, isInvalidTextRE);
-      c.failIf(reText + ".test(" + v + ")",
-        c.error(c.str("TextCheckFailure")));
-    }
+    if (len != null)
+      c.failIf(v + ".length !== " + len,
+        c.error(c.str("InvalidLength")));
 
-    if (def.$re != null) {
-      var reCustom = c.declareData(null, def.$re);
-      c.failIf(reCustom + ".test(" + v + ")",
+    if (min != null && max == null)
+      c.failIf(v + ".length < " + min,
+        c.error(c.str("InvalidLength")));
+
+    if (min == null && max != null)
+      c.failIf(v + ".length > " + max,
+        c.error(c.str("InvalidLength")));
+
+    if (min != null && max != null)
+      c.failIf(v + ".length < " + min + " || " + v + " > " + max,
+        c.error(this.str("InvalidLength")));
+
+    if (def.$type === "text")
+      c.failIf(c.declareData(null, isInvalidTextRE) + ".test(" + v + ")",
+        c.error(c.str("InvalidText")));
+
+    if (def.$re != null)
+      c.failIf(c.declareData(null, def.$re) + ".test(" + v + ")",
         c.error(c.str(def.$reError || "RegExpFailure")));
-    }
 
     return v;
   }
 });
+qdata.addType(new StringType());
 
 // ============================================================================
-// [Schema Type - Date / Time / DateTime]
+// [SchemaType - Char]
 // ============================================================================
 
-qdata.addType({
+function CharType() {
+  BaseType.call(this);
+}
+qdata.CharType = qclass({
+  $extend: BaseType,
+  $construct: CharType,
+
+  name: ["char"],
+  type: "string",
+
+  compileType: function(c, vOut, v, def) {
+    c.failIf(v + ".length !== 1", c.error(c.str("InvalidChar")));
+    return v;
+  }
+});
+qdata.addType(new CharType());
+
+// ============================================================================
+// [SchemaType - Color]
+// ============================================================================
+
+// \internal
+var ColorNames = {
+  aliceblue           : "#f0f8ff", antiquewhite        : "#faebd7",
+  aqua                : "#00ffff", aquamarine          : "#7fffd4",
+  azure               : "#f0ffff",
+  beige               : "#f5f5dc", bisque              : "#ffe4c4",
+  black               : "#000000", blanchedalmond      : "#ffebcd",
+  blue                : "#0000ff", blueviolet          : "#8a2be2",
+  brown               : "#a52a2a", burlywood           : "#deb887",
+  cadetblue           : "#5f9ea0", chartreuse          : "#7fff00",
+  chocolate           : "#d2691e", coral               : "#ff7f50",
+  cornflowerblue      : "#6495ed", cornsilk            : "#fff8dc",
+  crimson             : "#dc143c", cyan                : "#00ffff",
+  darkblue            : "#00008b", darkcyan            : "#008b8b",
+  darkgoldenrod       : "#b8860b", darkgray            : "#a9a9a9",
+  darkgreen           : "#006400", darkkhaki           : "#bdb76b",
+  darkmagenta         : "#8b008b", darkolivegreen      : "#556b2f",
+  darkorange          : "#ff8c00", darkorchid          : "#9932cc",
+  darkred             : "#8b0000", darksalmon          : "#e9967a",
+  darkseagreen        : "#8fbc8f", darkslateblue       : "#483d8b",
+  darkslategray       : "#2f4f4f", darkturquoise       : "#00ced1",
+  darkviolet          : "#9400d3", deeppink            : "#ff1493",
+  deepskyblue         : "#00bfff", dimgray             : "#696969",
+  dodgerblue          : "#1e90ff",
+  firebrick           : "#b22222", floralwhite         : "#fffaf0",
+  forestgreen         : "#228b22", fuchsia             : "#ff00ff",
+  gainsboro           : "#dcdcdc", ghostwhite          : "#f8f8ff",
+  gold                : "#ffd700", goldenrod           : "#daa520",
+  gray                : "#808080", green               : "#008000",
+  greenyellow         : "#adff2f",
+  honeydew            : "#f0fff0", hotpink             : "#ff69b4",
+  indianred           : "#cd5c5c", indigo              : "#4b0082",
+  ivory               : "#fffff0",
+  khaki               : "#f0e68c",
+  lavender            : "#e6e6fa", lavenderblush       : "#fff0f5",
+  lawngreen           : "#7cfc00", lemonchiffon        : "#fffacd",
+  lightblue           : "#add8e6", lightcoral          : "#f08080",
+  lightcyan           : "#e0ffff", lightgoldenrodyellow: "#fafad2",
+  lightgrey           : "#d3d3d3", lightgreen          : "#90ee90",
+  lightpink           : "#ffb6c1", lightsalmon         : "#ffa07a",
+  lightseagreen       : "#20b2aa", lightskyblue        : "#87cefa",
+  lightslategray      : "#778899", lightsteelblue      : "#b0c4de",
+  lightyellow         : "#ffffe0", lime                : "#00ff00",
+  limegreen           : "#32cd32", linen               : "#faf0e6",
+  magenta             : "#ff00ff", maroon              : "#800000",
+  mediumaquamarine    : "#66cdaa", mediumblue          : "#0000cd",
+  mediumorchid        : "#ba55d3", mediumpurple        : "#9370d8",
+  mediumseagreen      : "#3cb371", mediumslateblue     : "#7b68ee",
+  mediumspringgreen   : "#00fa9a", mediumturquoise     : "#48d1cc",
+  mediumvioletred     : "#c71585", midnightblue        : "#191970",
+  mintcream           : "#f5fffa", mistyrose           : "#ffe4e1",
+  moccasin            : "#ffe4b5",
+  navajowhite         : "#ffdead", navy                : "#000080",
+  oldlace             : "#fdf5e6", olive               : "#808000",
+  olivedrab           : "#6b8e23", orange              : "#ffa500",
+  orangered           : "#ff4500", orchid              : "#da70d6",
+  palegoldenrod       : "#eee8aa", palegreen           : "#98fb98",
+  paleturquoise       : "#afeeee", palevioletred       : "#d87093",
+  papayawhip          : "#ffefd5", peachpuff           : "#ffdab9",
+  peru                : "#cd853f", pink                : "#ffc0cb",
+  plum                : "#dda0dd", powderblue          : "#b0e0e6",
+  purple              : "#800080",
+  red                 : "#ff0000", rosybrown           : "#bc8f8f",
+  royalblue           : "#4169e1",
+  saddlebrown         : "#8b4513", salmon              : "#fa8072",
+  sandybrown          : "#f4a460", seagreen            : "#2e8b57",
+  seashell            : "#fff5ee", sienna              : "#a0522d",
+  silver              : "#c0c0c0", skyblue             : "#87ceeb",
+  slateblue           : "#6a5acd", slategray           : "#708090",
+  snow                : "#fffafa", springgreen         : "#00ff7f",
+  steelblue           : "#4682b4",
+  tan                 : "#d2b48c", teal                : "#008080",
+  thistle             : "#d8bfd8", tomato              : "#ff6347",
+  turquoise           : "#40e0d0",
+  violet              : "#ee82ee",
+  wheat               : "#f5deb3", white               : "#ffffff",
+  whitesmoke          : "#f5f5f5",
+  yellow              : "#ffff00", yellowgreen         : "#9acd32"
+};
+qdata_util.ColorNames = ColorNames;
+
+function isColor(s, allowNames, extraNames) {
+  var len = s.length;
+  if (!len)
+    return false;
+
+  // Validate "#XXX" and "#XXXXXX".
+  var c0 = s.charCodeAt(0);
+  if (c0 === 35) {
+    if (len !== 4 && len !== 7)
+      return false;
+
+    for (var i = 1; i < len; i++) {
+      var c0 = s.charCodeAt(i);
+      if (c0 < 48 || (c0 > 57 && ((c0 |= 0x20) < 97 || c0 > 102)))
+        return false;
+    }
+
+    return true;
+  }
+
+  if (allowNames === false && extraNames != null)
+    return false;
+
+  // Need lowercased color name from here (a bit overhead, but necessary).
+  s = s.toLowerCase();
+
+  // Validate named entities.
+  if (allowNames !== false && hasOwnProperty.call(ColorNames, s))
+    return true;
+
+  // Validate extra table (can contain values like "currentColor", "none", ...)
+  if (extraNames != null && hasOwnProperty.call(extraNames, s))
+    return true;
+
+  return false;
+}
+qdata_util.isColor = isColor;
+
+function ColorType() {
+  BaseType.call(this);
+}
+qdata.ColorType = qclass({
+  $extend: BaseType,
+  $construct: ColorType,
+
+  name: ["color"],
+  type: "string",
+
+  compileType: function(c, vOut, v, def) {
+    var errorCode = "InvalidColor";
+    var allowNames = true;
+    var extraNames = null;
+
+    if (def.$allowNames === false) {
+      allowNames = def.$allowNames;
+      if (typeof allowNames !== "boolean")
+        throwRuntimeError("Invalid $allowNames property '" + allowNames + "'.");
+    }
+
+    if (def.$extraNames != null) {
+      extraNames = def.$extraNames;
+      if (typeof extraNames !== "object" || isArray(extraNames))
+        throwRuntimeError("Invalid $extraNames property '" + extraNames + "'.");
+    }
+
+    var fn = c.declareData(null, isColor);
+    var extra = null;
+
+    if (extraNames)
+      extra = c.declareData(null, extraNames);
+
+    c.failIf("!" + fn + "(" + v + ", " + allowNames + ", " + extra + ")",
+      c.error(c.str(errorCode)));
+
+    return v;
+  }
+});
+qdata.addType(new ColorType());
+
+// ============================================================================
+// [SchemaType - MAC Address]
+// ============================================================================
+
+function isMAC(s, sep) {
+  if (typeof sep !== "number")
+    sep = 58; // ':'.
+
+  // Mac has a format "AA:BB:CC:DD:EE:FF" which is exactly 17 characters long.
+  if (s.length !== 17)
+    return false;
+
+  var i = 0;
+  for (;;) {
+    var c0 = s.charCodeAt(i    );
+    var c1 = s.charCodeAt(i + 1);
+
+    i += 3;
+
+    if (c0 < 48 || (c0 > 57 && ((c0 |= 0x20) < 97 || c0 > 102))) return false;
+    if (c1 < 48 || (c1 > 57 && ((c1 |= 0x20) < 97 || c1 > 102))) return false;
+
+    if (i === 18)
+      return true;
+
+    if (s.charCodeAt(i - 1) !== sep)
+      return false;
+  }
+}
+qdata_util.isMAC = isMAC;
+
+function MACType() {
+  BaseType.call(this);
+}
+qdata.MACType = qclass({
+  $extend: BaseType,
+  $construct: MACType,
+
+  name: ["mac"],
+  type: "string",
+
+  compileType: function(c, vOut, v, def) {
+    var err = "InvalidMAC";
+    var sep = def.$separator || ":";
+
+    if (sep.length !== 1)
+      throwRuntimeError("Invalid MAC address separator '" + sep + "'.");
+
+    c.failIf("!" + c.declareData(null, isMAC) + "(" + v + ", " + sep.charCodeAt(0) + ")",
+      c.error(c.str(err)));
+    return v;
+  }
+});
+qdata.addType(new MACType());
+
+// ============================================================================
+// [SchemaType - IPV4 / IPV6]
+// ============================================================================
+
+function isIPV4(s) {
+  // The smallest possible IPV4 address is "W.X.Y.Z", which is 7 characters long.
+  var len = s.length;
+  if (len < 7)
+    return false;
+
+  var i = 0;
+  var n = 1;
+
+  for (;;) {
+    // Parse the first digit.
+    var c0 = s.charCodeAt(i++);
+    if (c0 < 48 || c0 > 57)
+      return false;
+    c0 -= 48;
+
+    if (i === len)
+      return n === 4;
+
+    // Parse one or two consecutive digits and validate the value to be <= 256.
+    var c1 = s.charCodeAt(i++);
+    if (c1 >= 48 && c0 <= 57) {
+      if (c0 === 0)
+        return false;
+
+      if (i === len)
+        return n === 4;
+
+      c0 = c0 * 10 + c1 - 48;
+      c1 = s.charCodeAt(i++);
+
+      if (c1 >= 48 && c1 <= 57) {
+        c0 = c0 * 10 + c1 - 48;
+        if (c0 > 255)
+          return false;
+
+        if (i === len)
+          return n === 4;
+        c1 = s.charCodeAt(i++);
+      }
+    }
+
+    if (c1 !== 46 || i === len || ++n > 4)
+      return false;
+  }
+}
+qdata_util.isIPV4 = isIPV4;
+
+function isIPV6(s) {
+  // TODO: Implement.
+  return false;
+}
+qdata_util.isIPV6 = isIPV6;
+
+function IPType() {
+  BaseType.call(this);
+}
+qdata.IPType = qclass({
+  $extend: BaseType,
+  $construct: IPType,
+
+  name: ["ipv4", "ipv6"],
+  type: "string",
+
+  compileType: function(c, vOut, v, def) {
+    var type = def.$type;
+    var err;
+    var fn;
+
+    switch (type) {
+      case "ipv4":
+        err = "InvalidIPV4";
+        fn = qdata_util.isIPV4;
+        break;
+      case "ipv6":
+        err = "InvalidIPV6";
+        fn = qdata_util.isIPV6;
+        break;
+      default:
+        throwRuntimeError("Invalid type '" + type + "'.");
+    }
+
+    c.failIf("!" + c.declareData(null, fn) + "(" + v + ")",
+      c.error(c.str(err)));
+
+    return v;
+  }
+});
+qdata.addType(new IPType());
+
+// ============================================================================
+// [SchemaType - DateTime]
+// ============================================================================
+
+// Days in a month, leap years have to be handled separately.
+//                (JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC)
+var DaysInMonth = [ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+// Leap seconds data.
+//
+// Every year has it's own data that is stored in a single number in a form 0xXY,
+// where X represents a leap second in June-30 and Y represents Dec-31.
+var leapSecondDates = {
+  start: 1972,
+  array: [
+    /* 1972: */ 0x11, /* 1973: */ 0x01, /* 1974: */ 0x01, /* 1975: */ 0x01,
+    /* 1976: */ 0x01, /* 1977: */ 0x01, /* 1978: */ 0x01, /* 1979: */ 0x01,
+    /* 1980: */ 0x00, /* 1981: */ 0x10, /* 1982: */ 0x10, /* 1983: */ 0x10,
+    /* 1984: */ 0x00, /* 1985: */ 0x10, /* 1986: */ 0x00, /* 1987: */ 0x01,
+    /* 1988: */ 0x00, /* 1989: */ 0x01, /* 1990: */ 0x01, /* 1991: */ 0x00,
+    /* 1992: */ 0x10, /* 1993: */ 0x10, /* 1994: */ 0x10, /* 1995: */ 0x01,
+    /* 1996: */ 0x00, /* 1997: */ 0x10, /* 1998: */ 0x01, /* 1999: */ 0x00,
+    /* 2000: */ 0x00, /* 2001: */ 0x00, /* 2002: */ 0x00, /* 2003: */ 0x00,
+    /* 2004: */ 0x00, /* 2005: */ 0x01, /* 2006: */ 0x00, /* 2007: */ 0x00,
+    /* 2008: */ 0x01, /* 2009: */ 0x00, /* 2010: */ 0x00, /* 2011: */ 0x00,
+    /* 2012: */ 0x10, /* 2013: */ 0x00, /* 2014: */ 0x00, /* 2015: */ 0x10
+  ]
+};
+qdata_util.leapSecondDates = leapSecondDates;
+
+// \internal
+var DateComponents = {
+  Y     : { len:-4, msk: 0x01 },
+  YY    : { len: 2, msk: 0x01 },
+  YYYY  : { len: 4, msk: 0x01 },
+  M     : { len:-2, msk: 0x02 },
+  MM    : { len: 2, msk: 0x02 },
+  D     : { len:-2, msk: 0x04 },
+  DD    : { len: 2, msk: 0x04 },
+  H     : { len:-2, msk: 0x08 },
+  HH    : { len: 2, msk: 0x08 },
+  m     : { len:-2, msk: 0x10 },
+  mm    : { len: 2, msk: 0x10 },
+  s     : { len:-2, msk: 0x20 },
+  ss    : { len: 2, msk: 0x20 },
+  S     : { len: 1, msk: 0x40 },
+  SS    : { len: 2, msk: 0x40 },
+  SSS   : { len: 3, msk: 0x40 },
+  SSSSSS: { len: 6, msk: 0x40 }
+};
+
+// \function `data.util.isLeapYear(year)`
+//
+// Get whether the `year` is a leap year (ie it has 29th February).
+function isLeapYear(year) {
+  return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0) ? 1 : 0;
+}
+qdata_util.isLeapYear = isLeapYear;
+
+// \function `data.util.hasLeapSecond(year, month, day)`
+//
+// Get whether a date defined by `year`, `month`, and `day` has a leap second.
+// Please note that it's impossible to guess leap second in the future. This
+// function is mainly included to validate whether a date that has already
+// passed or is in a near future has a leap second defined.
+function isLeapSecondDate(year, month, date) {
+  var msk = 0x00;
+
+  if (month === 6 && date === 30)
+    msk = 0x10;
+  else if (month === 12 && date === 31)
+    msk = 0x01;
+  else
+    return false;
+
+  var data = leapSecondDates;
+  var start = data.start;
+  var array = data.array;
+  var index = year - start;
+
+  if (index < 0 || index >= array.length)
+    return 0;
+
+  return (array[index] & msk) !== 0;
+}
+qdata_util.isLeapSecondDate = isLeapSecondDate;
+
+// \internal
+//
+// Get whether the given charcode is a date component (ie it can be parsed as
+// year, month, date, etc...). Please note that not all alphanumeric characters
+// are considered as date components.
+function isDateComponent(c) {
+  return (c === 0x59) | // 'Y' - Year.
+         (c === 0x4D) | // 'M' - Month.
+         (c === 0x44) | // 'D' - Day.
+         (c === 0x48) | // 'H' - Hour.
+         (c === 0x6D) | // 'm' - Minute.
+         (c === 0x73) | // 's' - Second.
+         (c === 0x53) ; // 'S' - Fractions of second.
+}
+
+// \internal
+//
+// Interface to create/cache date parsers based on date `format`.
+var DateFactory = {
+  // Get a date parser based on format passed as `format`. The object returned
+  // has `format`, which is the same as `format` passed and `func`, which is a
+  // compiled validation function. The result is cached and every `format` is
+  // checked and compiled only once.
+  get: function(format) {
+    var cache = this.cache;
+
+    if (hasOwnProperty.call(cache, format))
+      return cache[format];
+
+    var detail = this.inspect(format);
+    var validator = {
+      format: format,
+      exec  : this.compile(format, detail)
+    };
+
+    cache[format] = validator;
+    return validator;
+  },
+
+  // A mapping between a date format and a validator instance.
+  cache: {},
+
+  // Inspects a date format passed as `format`. If the format is valid and
+  // non-ambiguous it returns an object that contains:
+  //
+  //   'Y', 'M', 'D', 'H', 'm', 's', 'S' - Information about date parts parsed in
+  //     a `format` of object having `{ part, index, len }` properties.
+  //
+  //   'parts' - Date components and separators.
+  //
+  //   'fixed' - Whether ALL date components have fixed length (0 or 1).
+  //
+  //   'minLength' - Minimum length of a string to be considered valid and to be
+  //     processed.
+  inspect: function(format) {
+    var i = 0;
+    var len = format.length;
+
+    // Split date components and separators, for example "YYYY-MM-DD" string
+    // would be split into ["YYYY", "-", "MM", "-", "DD"] components.
+    var parts = [];
+    do {
+      var start = i;
+      var symb = format.charCodeAt(i);
+
+      if (isDateComponent(symb)) {
+        // Merge component chars, like "Y", "YY", "YYYY".
+        while (++i < len && format.charCodeAt(i) === symb)
+          continue;
+      }
+      else {
+        // Parse anything that is not a date component.
+        while (++i < len && !isDateComponent(format.charCodeAt(i)))
+          continue;
+      }
+
+      parts.push(format.substring(start, i));
+    } while (i < len);
+
+    var index = 0;   // Component/Part string index, -1 if not usable.
+    var fixed = 1;   // All components have fixed length.
+
+    var msk = 0|0;   // Mask of parsed components.
+    var sep = false; // Whether the current/next component has to be a separator.
+
+    var insepected = {
+      parts: null,
+      fixed: 0,
+      minLength: len
+    };
+
+    for (i = 0, len = parts.length; i < len; i++) {
+      var part = parts[i];
+
+      if (hasOwnProperty.call(DateComponents, part)) {
+        var data = DateComponents[part];
+        var symb = part.charAt(0);
+
+        // Fail if one component appears multiple times or if the separator is
+        // required at this point.
+        if ((msk & data.msk) !== 0 || sep)
+          throwRuntimeError("Invalid date format '" + format + "'.");
+        msk |= data.msk;
+
+        // Store the information about this date component. We always use the
+        // format symbol `symb` as a key as it's always "Y" for all of "Y", "YY",
+        // and "YYYY", for example.
+        insepected[symb] = {
+          part : part,
+          index: fixed ? index : -1,
+          len  : data.len
+        };
+
+        // Require the next component to be a separator if the component doesn't
+        // have a fixed length. This prevents from ambiguities and one component
+        // running through another in case of "YMD" for example.
+        sep = data.len <= 0;
+
+        // Update `fixed` flag in case this component's length is not fixed.
+        fixed &= !sep;
+      }
+      else {
+        // Reset the separator flag and add escaped part sequence into the regexp.
+        sep = false;
+      }
+
+      index += part.length;
+    }
+
+    if (((msk + 1) & msk) !== 0)
+      throwRuntimeError("Invalid date format '" + format + "'.");
+
+    insepected.parts = parts;
+    insepected.fixed = fixed;
+
+    return insepected;
+  },
+
+  compile: function(format, detail) {
+    var c = new CoreCompiler();
+
+    var parts = detail.parts;
+    var fixed = detail.fixed;
+
+    var Y = detail.Y;
+    var M = detail.M;
+    var D = detail.D;
+    var H = detail.H;
+    var m = detail.m;
+    var s = detail.s;
+
+    var index = 0;
+    var i, j;
+
+    c.arg("input");
+    c.arg("hasLeapYear");
+    c.arg("hasLeapSecond");
+
+    c.declareVariable("len", "input.length");
+    c.declareVariable("cp", 0);
+
+    c.comment("Date validator of '" + format + "' format.");
+    c.emit("do {");
+
+    c.emit("if (len " + (fixed ? "!==" : "<") + " " + detail.minLength + ") break;");
+    c.nl();
+
+    for (i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      var symb = part.charAt(0);
+
+      if (hasOwnProperty.call(detail, symb)) {
+        var data = detail[symb];
+        var jLen = data.len;
+
+        // Generate code that parses the number and assigns its value into
+        // a variable `symb`.
+        c.declareVariable(symb);
+
+        // If this component has a variable length we have to fix the parser
+        // in a way that all consecutive components will use relative indexing.
+        if (jLen <= 0 && index >= 0) {
+          c.declareVariable("index", String(index));
+          index = -1;
+        }
+
+        if (jLen > 0) {
+          if (index < 0)
+            c.emit("if (index + " + String(jLen) + " > len) break;");
+
+          for (j = 0; j < jLen; j++) {
+            var v = (j === 0) ? symb : "cp";
+            var sIndex = (index >= 0) ? String(index + j) : "index + " + j;
+
+            c.emit("if ((" + v + " = input.charCodeAt(" + sIndex + ") - 48) < 0 || " + v + " >= 10) break;");
+            if (j !== 0)
+              c.emit(symb + " = " + symb + " * 10 + " + v + ";");
+          }
+
+          if (index >= 0)
+            index += jLen;
+        }
+        else {
+          j = -jLen;
+
+          c.declareVariable("limit");
+
+          c.emit("if (index >= len) break;");
+          c.emit("if ((" + symb + " = input.charCodeAt(index) - 48) < 0 || " + symb + " >= 10) break;");
+
+          c.nl();
+          c.emit("limit = Math.min(len, index + " + j + ");");
+
+          c.emit("while (++index < limit && (cp = input.charCodeAt(index) - 48) >= 0 && cp < 10) {");
+          c.emit(symb += " = " + symb + " * 10 + cp;");
+          c.emit("}");
+        }
+      }
+      else {
+        // Generate code that checks if the separator sequence is correct.
+        var cond = [];
+        var jLen = part.length;
+
+        if (index >= 0) {
+          for (j = 0; j < jLen; j++)
+            cond.push("input.charCodeAt(" + (index + j) + ") !== " + part.charCodeAt(j));
+          index += jLen;
+        }
+        else {
+          cond.push("index + " + jLen + " > len");
+          for (j = 0; j < jLen; j++)
+            cond.push("input.charCodeAt(index + " + j + ") !== " + part.charCodeAt(j));
+        }
+
+        c.emit("if (" + cond.join(" || ") + ") break;");
+
+        if (index < 0)
+          c.emit("index += " + jLen + ";");
+      }
+
+      c.nl();
+    }
+
+    if (Y) {
+      c.emit("if (Y < " + kYearMin + ") break;");
+      if (M) {
+        c.emit("if (M < 1 || M > 12) break;");
+        if (D) {
+          c.declareData("daysInMonth", DaysInMonth);
+          c.emit("if (D < 1 || D > daysInMonth[M - 1] +\n" +
+                 "    ((M === 2 && D === 29 && hasLeapYear && ((Y % 4 === 0 && Y % 100 !== 0) || (Y % 400 === 0))) ? 1 : 0))\n" +
+                 "  break;");
+        }
+      }
+    }
+
+    if (H) {
+      c.emit("if (H > 23) break;");
+      if (m) {
+        c.emit("if (m > 59) break;");
+        if (s) {
+          c.declareData("isLeapSecondDate", isLeapSecondDate);
+          c.emit("if (s > 59 && !(s === 60 && hasLeapSecond && isLeapSecondDate(Y, M, D))) break;");
+        }
+      }
+    }
+
+    c.emit("return null;");
+    c.emit("} while (false);");
+
+    c.nl();
+    c.emit("return { code: \"InvalidDate\", format: this.format };");
+
+    return c.toFunction();
+  }
+};
+
+function DateType() {
+  BaseType.call(this);
+}
+qdata.DateType = qclass({
+  $extend: BaseType,
+  $construct: DateType,
+
   name: ["date", "datetime", "datetime-ms", "datetime-us"],
   type: "string",
 
@@ -2439,12 +2596,8 @@ qdata.addType({
     def.$validator = DateFactory.get(format);
   },
 
-  compile: function(c, v, def) {
-    var vErr = "err";
-
-    c.emitNullOrUndefinedCheck(def, v, v);
-    c.failIf("typeof " + v + " !== \"string\"",
-      c.error(c.str("DateCheckFailure")));
+  compileType: function(c, vOut, v, def) {
+    var vErr = c.declareVariable("err");
 
     var validator = c.declareData(null, def.$validator);
     var hasLeapYear = true;
@@ -2475,113 +2628,19 @@ qdata.addType({
     "datetime-us": "YYYY-MM-DD HH:mm:ss.SSSSSS"
   }
 });
+qdata.addType(new DateType());
 
 // ============================================================================
-// [Schema Type - Color]
+// [SchemaType - Object]
 // ============================================================================
 
-qdata.addType({
-  name: ["color"],
-  type: "string",
+function ObjectType() {
+  BaseType.call(this);
+}
+qdata.ObjectType = qclass({
+  $extend: BaseType,
+  $construct: ObjectType,
 
-  compile: function(c, v, def) {
-    var errorCode = "ColorCheckFailure";
-    var allowNames = true;
-    var extraNames = null;
-
-    if (def.$allowNames === false) {
-      allowNames = def.$allowNames;
-      if (typeof allowNames !== "boolean")
-        throwRuntimeError("Invalid colorNames type '" + typeOf(allowNames) + "'.");
-    }
-
-    if (def.$extraNames != null) {
-      extraNames = def.$extraNames;
-      if (typeof extraNames !== "object" || isArray(extraNames))
-        throwRuntimeError("Invalid extraNames type '" + typeOf(extraNames) + "'.");
-    }
-
-    var fn = c.declareData(null, isColor);
-    var en = null;
-
-    if (extraNames)
-      en = c.declareData(null, extraNames);
-
-    c.emitNullOrUndefinedCheck(def, v, v);
-    c.failIf("typeof " + v + " !== \"string\" || !" + fn + "(" + v + ", " + allowNames + ", " + en + ")",
-      c.error(c.str(errorCode)));
-
-    return v;
-  }
-});
-
-// ============================================================================
-// [Schema Type - MAC Address]
-// ============================================================================
-
-qdata.addType({
-  name: ["mac"],
-  type: "string",
-
-  compile: function(c, v, def) {
-    var errorCode = "MACCheckFailure";
-    var separator = def.$separator || ":";
-
-    if (separator.length !== 1)
-      throwRuntimeError("Invalid MAC address separator '" + separator + "'.");
-
-    var fn = c.declareData(null, isMAC);
-
-    c.emitNullOrUndefinedCheck(def, v, v);
-    c.failIf("typeof " + v + " !== \"string\" || !" + fn + "(" + v + ", " + separator.charCodeAt(0) + ")",
-      c.error(c.str(errorCode)));
-
-    return v;
-  }
-});
-
-// ============================================================================
-// [Schema Type - IP Address]
-// ============================================================================
-
-qdata.addType({
-  name: ["ipv4", "ipv6"],
-  type: "string",
-
-  compile: function(c, v, def) {
-    var type = def.$type;
-
-    var errorCode;
-    var validator;
-
-    switch (type) {
-      case "ipv4":
-        errorCode = "IPV4CheckFailure";
-        validator = qdata_util.isIPV4;
-        break;
-      case "ipv6":
-        errorCode = "IPV6CheckFailure";
-        validator = qdata_util.isIPV6;
-        break;
-      default:
-        throwRuntimeError("Invalid type '" + type + "'.");
-    }
-
-    var fn = c.declareData(null, validator);
-
-    c.emitNullOrUndefinedCheck(def, v, v);
-    c.failIf("typeof " + v + " !== \"string\" || !" + fn + "(" + v + ")",
-      c.error(c.str(errorCode)));
-
-    return v;
-  }
-});
-
-// ============================================================================
-// [Schema Type - Object]
-// ============================================================================
-
-qdata.addType({
   name: ["object"],
   type: "object",
 
@@ -2594,23 +2653,10 @@ qdata.addType({
     }
   },
 
-  compile: function(c, v, def) {
+  compileType: function(c, vOut, v, def) {
+    c.otherwise();
+
     var vLen = "";
-    var vOut = c.hasOption(kTestModeOnly) ? v : c.addLocal("out", c.mangledType(this.type));
-
-    var toString = c.declareGlobal("toString", "Object.prototype.toString");
-
-    // Type of null/{} is "object". So if "null" nor "undefined" types are allowed
-    // this condition catches them both. We don't have to worry about these in
-    // case that one of them is allowed as in such case it will be caught by
-    // `emitNullOrUndefinedCheck()` and input would have never reached here.
-    c.emitNullOrUndefinedCheck(def, vOut, v);
-    c.failIf("" + v + " == null || (" + v + ".constructor !== Object && " + toString + ".call(" + v + ") !== \"[object Object]\")",
-      c.error(c.str("ObjectCheckFailure")));
-
-    c.beginSection();
-    c.nest();
-
     var fields = def.$data;
     var mandatoryFields = [];
     var optionalFields = [];
@@ -2667,11 +2713,11 @@ qdata.addType({
         if (isUnsafeProperty) {
           c.emit("}");
           c.emit("else {");
-          c.emitErrorCase("err = " + c.error(c.str("RequiredField")) + ";");
+          c.emitError(c.error(c.str("RequiredField")));
           c.emit("}");
         }
 
-        c.emitNewLine();
+        c.nl();
         c.setPath(path);
         c.done();
       }
@@ -2697,7 +2743,7 @@ qdata.addType({
       for (i = 0; i < optionalFields.length; i++) {
         eKey = optionalFields[i];
 
-        c.emitNewLine();
+        c.nl();
 
         c.declareGlobal("hasOwnProperty", "Object.prototype.hasOwnProperty");
         c.emit("if (hasOwnProperty.call(" + v + ", " + c.str(eKey) + ")) {");
@@ -2723,7 +2769,7 @@ qdata.addType({
 
     if (!extract) {
       c.declareVariable("dummy");
-      c.emitNewLine();
+      c.nl();
 
       if (kTuneUseObjectKeysAsCount) {
         c.emit("if (Object.keys(" + v + ").length !== " + vLen + ") {");
@@ -2739,14 +2785,13 @@ qdata.addType({
       }
       else {
         var fn = c.declareData("extractionFailed", this.extractionFailed);
-        c.emit("err = " + fn + "(" + vOut + ", " + v + ");");
+        c.emitError(fn + "(" + vOut + ", " + v + ", " + c.getPath() + ")");
       }
 
       c.emit("}");
     }
 
-    c.denest();
-    c.endSection();
+    c.end();
     c.setExtract(extract);
 
     return vOut;
@@ -2754,7 +2799,7 @@ qdata.addType({
 
   // Called from compiled code to generate a list containing all invalid
   // properties.
-  extractionFailed: function(dst, src) {
+  extractionFailed: function(dst, src, path) {
     var list = [];
 
     for (var k in src)
@@ -2762,33 +2807,35 @@ qdata.addType({
         list.push(k);
 
     return {
-      code: "InvalidProperty",
+      code: "InvalidProperties",
+      path: path,
       list: list
     };
   }
 });
+qdata.addType(new ObjectType());
 
 // ============================================================================
-// [Schema Type - Array]
+// [SchemaType - Array]
 // ============================================================================
 
-qdata.addType({
+function ArrayType() {
+  BaseType.call(this);
+}
+qdata.ArrayType = qclass({
+  $extend: BaseType,
+  $construct: ArrayType,
+
   name: ["array"],
   type: "array",
 
-  compile: function(c, v, def) {
+  compileType: function(c, vOut, v, def) {
     var vIdx = c.addLocal("idx", "_");
     var vLen = c.addLocal("len", "_");
-    var vOut = c.hasOption(kTestModeOnly) ? v : c.addLocal("out", c.mangledType(this.type));
 
-    c.emitNullOrUndefinedCheck(def, vOut, v);
-    c.failIf("!Array.isArray(" + v + ")",
-      c.error(c.str("ArrayCheckFailure")));
-
-    c.beginSection();
-    c.nest();
-
+    c.otherwise();
     c.emit(vLen + " = " + v + ".length;");
+
     if (!c.hasOption(kTestModeOnly))
       c.emit(vOut + " = [];");
 
@@ -2805,10 +2852,10 @@ qdata.addType({
     if (cond.length) {
       c.failIf(cond.join(" && "),
         c.error(c.str("InvalidLength")));
-      c.beginSection();
+      c.otherwise();
     }
 
-    c.emitNewLine();
+    c.nl();
     c.emit("for (" + vIdx + " = 0; " + vIdx + " < " + vLen + "; " + vIdx + "++) {");
 
     var eDef = def.$data;
@@ -2830,18 +2877,17 @@ qdata.addType({
     c.setPath(prevPath);
 
     if (cond.length) {
-      c.endSection();
+      c.end();
     }
 
-    c.denest();
-    c.endSection();
-
+    c.end();
     return vOut;
   }
 });
+qdata.addType(new ArrayType());
 
 // ============================================================================
-// [Schema Rule - Id]
+// [SchemaRule - Id]
 // ============================================================================
 
 // Processes `$pk` and `$fk` properties of "object" type and generate the
