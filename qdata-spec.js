@@ -32,8 +32,6 @@ function pass(input, schema, options, access, expected) {
   var output = null;
   var err = null;
 
-  var fn = null;
-
   if (err)
     throw err;
 
@@ -41,9 +39,10 @@ function pass(input, schema, options, access, expected) {
     output = qdata.process(input, schema, options, access);
   }
   catch (ex) {
-    console.log("Schema Validation Failed:");
+    console.log("Schema should have passed:");
     console.log(JSON.stringify(schema, null, 2));
-    console.log("\n" + fn.toString());
+    console.log(JSON.stringify(input));
+
     err = ex;
   }
 
@@ -54,7 +53,6 @@ function pass(input, schema, options, access, expected) {
     expected = input;
 
   if (!deepEqual(output, expected)) {
-    console.log("\n" + fn.toString());
     if (arguments.length <= 4)
       throw new TestError("Result didn't match the input data.", schema, input, output);
     else
@@ -543,6 +541,89 @@ describe("QData", function() {
     fail("some text \x1F", Schema);
   });
 
+  it("should validate bigint", function() {
+    var Schema = qdata.schema({ $type: "bigint" });
+
+    var passData = [
+      "0",
+      "1",
+      "12",
+      "123",
+      "1234",
+      "12345",
+      "10000",
+      "1000000000000000000",
+      "9000000000000000000",
+      "9200000000000000000",
+      "9220000000000000000",
+      "9223000000000000000",
+      "9223000000000000000",
+      "9223300000000000000",
+      "9223370000000000000",
+      "9223372000000000000",
+      "9223372030000000000",
+      "9223372036000000000",
+      "9223372036800000000",
+      "9223372036850000000",
+      "9223372036854000000",
+      "9223372036854700000",
+      "9223372036854770000",
+      "9223372036854775000",
+      "9223372036854775800",
+      "9223372036854775800",
+      "9223372036854775806",
+      "9223372036854775807"
+    ];
+
+    var failData = [
+      0,
+      true,
+      1222,
+      "",
+      "invalid",
+      "0x",
+      "0 ",
+      "x0",
+      " 0",
+      "[0]",
+      "00",
+      "000",
+      "9223372036854775808",
+      "9223372036854775810",
+      "9223372036854775900",
+      "9223372036854776000",
+      "9223372036854780000",
+      "9223372036854800000",
+      "9223372036855000000",
+      "9223372036860000000",
+      "9223372036900000000",
+      "9223372037000000000",
+      "9223372040000000000",
+      "9223372100000000000",
+      "9223373000000000000",
+      "9223380000000000000",
+      "9223400000000000000",
+      "9224000000000000000",
+      "9230000000000000000",
+      "9300000000000000000",
+      "9999999999999999999",
+      "10000000000000000000",
+
+      "-",
+      "-0",
+      "-00",
+      "-000"
+    ];
+
+    passData.forEach(function(data) {
+      pass(data, Schema);
+    });
+
+    failData.forEach(function(data) {
+      fail(data, Schema);
+    });
+  });
+
   it("should validate color - #XXX and #XXXXXX", function() {
     var Schema = qdata.schema({ $type: "color" });
 
@@ -679,43 +760,178 @@ describe("QData", function() {
       $type: "ipv4"
     });
 
-    pass("0.0.0.0"        , IPV4);
-    pass("1.1.1.1"        , IPV4);
-    pass("1.1.1.10"       , IPV4);
-    pass("1.1.10.1"       , IPV4);
-    pass("1.10.1.1"       , IPV4);
-    pass("10.1.1.1"       , IPV4);
-    pass("1.1.1.255"      , IPV4);
-    pass("1.1.255.1"      , IPV4);
-    pass("1.255.1.1"      , IPV4);
-    pass("255.1.1.1"      , IPV4);
-    pass("192.168.1.1"    , IPV4);
-    pass("255.255.255.255", IPV4);
+    var IPV4AllowPort = qdata.schema({
+      $type: "ipv4",
+      $allowPort: true
+    });
 
-    fail(true        , IPV4);
-    fail("invalid"   , IPV4);
-    fail("0"         , IPV4);
-    fail("0.0"       , IPV4);
-    fail("0.0.0"     , IPV4);
-    fail("0.0.0.0."  , IPV4);
-    fail("0.0.0.0 "  , IPV4);
-    fail(".0.0.0.0"  , IPV4);
-    fail(" 0.0.0.0"  , IPV4);
-    fail("1.1.1..1"  , IPV4);
-    fail("1.1..1.1"  , IPV4);
-    fail("1..1.1.1"  , IPV4);
-    fail("1.1.1.01"  , IPV4);
-    fail("1.1.01.1"  , IPV4);
-    fail("1.01.1.1"  , IPV4);
-    fail("01.1.1.1"  , IPV4);
-    fail("1.1.1.256" , IPV4);
-    fail("1.1.256.1" , IPV4);
-    fail("1.256.1.1" , IPV4);
-    fail("256.1.1.1" , IPV4);
-    fail("1.1.1.1000", IPV4);
-    fail("1.1.1000.1", IPV4);
-    fail("1.1000.1.1", IPV4);
-    fail("1000.1.1.1", IPV4);
+    var ipList = [
+      "0.0.0.0",
+      "1.1.1.1",
+      "1.1.1.10",
+      "1.1.10.1",
+      "1.10.1.1",
+      "10.1.1.1",
+      "1.1.1.255",
+      "1.1.255.1",
+      "1.255.1.1",
+      "255.1.1.1",
+      "192.168.1.1",
+      "255.255.255.255"
+    ];
+
+    ipList.forEach(function(ip) {
+      pass(ip, IPV4);
+
+      pass(ip + ":123"  , IPV4AllowPort);
+      fail(ip + ":65536", IPV4AllowPort);
+
+      fail(" " + ip, IPV4);
+      fail(" " + ip, IPV4AllowPort);
+      fail(ip + " ", IPV4);
+      fail(ip + " ", IPV4AllowPort);
+    });
+
+    fail(true             , IPV4);
+    fail("invalid"        , IPV4);
+
+    fail("0"              , IPV4);
+    fail("0.0"            , IPV4);
+    fail("0.0.0"          , IPV4);
+
+    fail("..."            , IPV4);
+    fail("0..."           , IPV4);
+    fail("0.0.."          , IPV4);
+    fail("0.0.0."         , IPV4);
+    fail(".0.0."          , IPV4);
+    fail("..0."           , IPV4);
+
+    fail("0.0.0.0."       , IPV4);
+    fail("0.0.0.0 "       , IPV4);
+    fail(".0.0.0.0"       , IPV4);
+    fail(" 0.0.0.0"       , IPV4);
+    fail("1.1.1..1"       , IPV4);
+    fail("1.1..1.1"       , IPV4);
+    fail("1..1.1.1"       , IPV4);
+    fail("1.1.1.01"       , IPV4);
+    fail("1.1.01.1"       , IPV4);
+    fail("1.01.1.1"       , IPV4);
+    fail("01.1.1.1"       , IPV4);
+    fail("1.1.1.256"      , IPV4);
+    fail("1.1.256.1"      , IPV4);
+    fail("1.256.1.1"      , IPV4);
+    fail("256.1.1.1"      , IPV4);
+    fail("1.1.1.1000"     , IPV4);
+    fail("1.1.1000.1"     , IPV4);
+    fail("1.1000.1.1"     , IPV4);
+    fail("1000.1.1.1"     , IPV4);
+  });
+
+  it("should validate net - ipv6 address", function() {
+    var IPV6 = qdata.schema({
+      $type: "ipv6"
+    });
+
+    var IPV6AllowPort = qdata.schema({
+      $type: "ipv6",
+      $allowPort: true
+    });
+
+    var ipList = [
+      "137F:F137:7F13:37F1:137F:F137:7F13:37F1",
+      "137F:137F:137F:137F:137F:137F:137F::",
+      "137F:137F:137F:137F:137F:137F::",
+      "137F:137F:137F:137F:137F::",
+      "137F:137F:137F:137F::",
+      "137F:137F:137F::",
+      "137F:137F::",
+      "137F::",
+
+      "::137F:137F:137F:137F:137F:137F:137F",
+      "::137F:137F:137F:137F:137F:137F",
+      "::137F:137F:137F:137F:137F",
+      "::137F:137F:137F:137F",
+      "::137F:137F:137F",
+      "::137F:137F",
+      "::137F",
+
+      "1::2:3:4:5:6:7",
+      "1:2::3:4:5:6:7",
+      "1:2:3::4:5:6:7",
+      "1:2:3:4::5:6:7",
+      "1:2:3:4:5::6:7",
+      "1:2:3:4:5:6::7",
+
+      "::1",
+      "1::"
+    ];
+
+    ipList.forEach(function(ip) {
+      pass(ip, IPV6);
+
+      pass("[" + ip + "]:123"  , IPV6AllowPort);
+      fail("[" + ip + "]:65536", IPV6AllowPort);
+
+      // Extra space is invalid.
+      fail(" " + ip, IPV6);
+      fail(" " + ip, IPV6AllowPort);
+      fail(ip + " ", IPV6);
+      fail(ip + " ", IPV6AllowPort);
+
+      // Malformed, extra ":" is invalid.
+      fail(":" + ip, IPV6);
+      fail(":" + ip, IPV6AllowPort);
+      fail(ip + ":", IPV6);
+      fail(ip + ":", IPV6AllowPort);
+    });
+
+    // High level errors.
+    fail(true                                       , IPV6);
+    fail("invalid"                                  , IPV6);
+
+    // Invalid HEX digit 'G'.
+    fail("G37F:137F:137F:137F:137F:137F:137F:137F"  , IPV6);
+    fail("137F:G37F:137F:137F:137F:137F:137F:137F"  , IPV6);
+    fail("137F:137F:G37F:137F:137F:137F:137F:137F"  , IPV6);
+    fail("137F:137F:137F:G37F:137F:137F:137F:137F"  , IPV6);
+    fail("137F:137F:137F:137F:G37F:137F:137F:137F"  , IPV6);
+    fail("137F:137F:137F:137F:137F:G37F:137F:137F"  , IPV6);
+    fail("137F:137F:137F:137F:137F:137F:G37F:137F"  , IPV6);
+    fail("137F:137F:137F:137F:137F:137F:137F:G37F"  , IPV6);
+
+    // More than 4 HEX digits per component.
+    fail("1137F:137F:137F:137F:137F:137F:137F:137F" , IPV6);
+    fail("137F:1137F:137F:137F:137F:137F:137F:137F" , IPV6);
+    fail("137F:137F:1137F:137F:137F:137F:137F:137F" , IPV6);
+    fail("137F:137F:137F:1137F:137F:137F:137F:137F" , IPV6);
+    fail("137F:137F:137F:137F:1137F:137F:137F:137F" , IPV6);
+    fail("137F:137F:137F:137F:137F:1137F:137F:137F" , IPV6);
+    fail("137F:137F:137F:137F:137F:137F:1137F:137F" , IPV6);
+    fail("137F:137F:137F:137F:137F:137F:137F:1137F" , IPV6);
+
+    // Leading / Trailing errors.
+    fail(" 137F:137F:137F:137F:137F:137F:137F:137F" , IPV6);
+    fail(":137F:137F:137F:137F:137F:137F:137F:137F" , IPV6);
+    fail("::137F:137F:137F:137F:137F:137F:137F:137F", IPV6);
+
+    fail("137F:137F:137F:137F:137F:137F:137F:137F " , IPV6);
+    fail("137F:137F:137F:137F:137F:137F:137F:137F:" , IPV6);
+    fail("137F:137F:137F:137F:137F:137F:137F:137F::", IPV6);
+
+    // More than 8 components.
+    fail("1:2:3:4:5:6:7:8:9"                        , IPV6);
+
+    // Multiple collapse marks.
+    fail("::1::"                                    , IPV6);
+    fail("1:2::3:4::5:6"                            , IPV6);
+    fail("::1:2:3::4:5"                             , IPV6);
+    fail("1:2:3::4:5::"                             , IPV6);
+
+    // Extra separators.
+    fail("1:::"                                     , IPV6);
+    fail(":::1"                                     , IPV6);
+    fail("1:2:3:4:5:6:::"                           , IPV6);
+    fail(":::1:2:3:4:5:6"                           , IPV6);
   });
 
   it("should validate date - basics", function() {
@@ -1127,6 +1343,37 @@ describe("QData", function() {
     fail({ a: 0, b: ["s"] }, def);
   });
 
+  it("should properly handle type ending with '[x..y]'", function() {
+    var Exact  = qdata.schema({ $type: "int[2]"    });
+    var Min    = qdata.schema({ $type: "int[2..]"  });
+    var Max    = qdata.schema({ $type: "int[..2]"  });
+    var MinMax = qdata.schema({ $type: "int[2..4]" });
+
+    fail([]             , Exact);
+    fail([0]            , Exact);
+    pass([0, 1]         , Exact);
+    fail([0, 1, 2]      , Exact);
+
+    fail([]             , Min);
+    fail([0]            , Min);
+    pass([0, 1]         , Min);
+    pass([0, 1, 2]      , Min);
+    pass([0, 1, 2, 3]   , Min);
+
+    pass([]             , Max);
+    pass([0]            , Max);
+    pass([0, 1]         , Max);
+    fail([0, 1, 2]      , Max);
+    fail([0, 1, 2, 3]   , Max);
+
+    fail([]             , MinMax);
+    fail([0]            , MinMax);
+    pass([0, 1]         , MinMax);
+    pass([0, 1, 2]      , MinMax);
+    pass([0, 1, 2, 3]   , MinMax);
+    fail([0, 1, 2, 3, 4], MinMax);
+  });
+
   it("should properly handle type ending with '[]?'", function() {
     var def = qdata.schema({
       a: { $type: "int"    },
@@ -1201,7 +1448,7 @@ describe("QData", function() {
     }
     catch (err) {
       assert(err instanceof qdata.SchemaError, "Error thrown 'SchemaError' instance.");
-      assert.deepEqual(err.details, [
+      assert.deepEqual(err.errors, [
         { code: "ExpectedBoolean", path: "a" },
         { code: "ExpectedNumber" , path: "b" },
         { code: "ExpectedNumber" , path: "c" },

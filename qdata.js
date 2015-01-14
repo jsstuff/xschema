@@ -64,11 +64,19 @@ var kTestModeOnly = 0x0008;
 
 // \internal
 //
+// Mask of all options that take effect in cache lookup. These options that are
+// not here are always checked in the validator function itself and won't cause
+// a new function to be generated when one is already present (even if it was
+// generated with some different options)
+var kFuncCacheMask = kExtractTopFields | kExtractAllFields | kTestModeOnly;
+
+// \internal
+//
 // Maximum number of functions that can be generated per one final schema. This
 // is basically a last flag shifted one bit left. For example if the last bit is
 // 0x8 the total number of functions generated per schema to cover all possible
 // combinations would be 16 (indexed 0...15).
-var kMaxFuncCount = 0x0008 << 1;
+var kFuncCacheCount = 0x0008 << 1;
 
 // Min/Max safe integer limits - 53 bits.
 //
@@ -115,10 +123,11 @@ var unsafeProperties = Object.getOwnPropertyNames(Object.prototype);
 // \internal
 //
 // Mapping of JS types into a character that describes the type. This mapping
-// is used by `SchemaCompiler` to reduce the length of variable names generated
-// and to map distinct types to different names in case of collision. This is
-// good for JS engine as each variable will only contain a specific value type
-// and JIT won't need to deoptimize it in case of type collision.
+// is used by `SchemaCompiler` to reduce the length of variable names and to map
+// distinct JS types to different variable names in case of the same property
+// name. This is good for JS engines as each variable will always contain values
+// of a specific JS type and the engine will never deoptimize the function in
+// case of type misprediction.
 var MangledType = {
   array  : "a",
   boolean: "b",
@@ -153,45 +162,31 @@ qdata.throwRuntimeError = throwRuntimeError;
 
 // \class SchemaError
 //
-// Error thrown in case of validation failure.
-//
-// The SchemaError is used in general in two ways:
-//
-//   1. `data` is an object - in this case the schema validator was configured
-//      to out after the first error that have happened, and the `data` object
-//      contains the error details. Data will be stored as an array having one
-//      element that is the `data` argument to make the interface compatible
-//      with `data` containing an array of errors.
-//
-//   2. `data` is an array - in this case the schema validator was configured
-//      to accumulate all errors (by using `kAccumulateErrors` option).
-//
-// A single error entry contains the following properties:
+// Error thrown in case of validation failure. The `SchemaError` constructor
+// always accepts an array of errors, where a single element is an object
+// containing the following mandatory properties:
 //
 //   "code": String - Code of the error (not a message).
 //   "path": String - Path to the error (dot is used to separate nested fields).
 //
-// Each error can also contain any other properties that are specific to the
-// type or rule.
-function SchemaError(details) {
+// An error detail can also contain an optional properties that are specific to
+// the type and rule used, for example `InvalidDate` will contain the requested
+// date format, etc...
+function SchemaError(errors) {
   var e = Error.call(this);
 
-  if (!isArray(details))
-    details = [details];
-
   this.name = "SchemaError";
-  this.message = "Data processing failed.";
+  this.message = "Data is not valid according to the schema.";
   this.stack = e.stack || "";
-
-  this.details = details;
+  this.errors = errors;
 }
 qdata.SchemaError = qclass({
   $extend: Error,
   $construct: SchemaError
 });
 
-function throwSchemaError(details) {
-  throw new SchemaError(details);
+function throwSchemaError(errors) {
+  throw new SchemaError(errors);
 }
 qdata.throwSchemaError = throwSchemaError;
 
@@ -1010,11 +1005,11 @@ qclass({
   $construct: SchemaCompiler,
 
   compileFunc: function(def) {
+    this.arg("errors");
     this.arg("input");
-    this.declareData("qdata", this._env);
+    this.arg("options");
 
-    if (this.hasOption(kAccumulateErrors))
-      this.declareVariable("details", "[]");
+    this.declareData("qdata", this._env);
 
     if (this.hasOption(kExtractTopFields) || this.hasOption(kExtractAllFields))
       this.setExtract(true);
@@ -1024,20 +1019,10 @@ qclass({
 
     this.nl();
 
-    if (this.hasOption(kAccumulateErrors)) {
-      this.declareGlobal(
-        "throwSchemaError", "qdata.throwSchemaError");
-      this.emit(
-        "if (details.length !== 0)\n" +
-        "  throwSchemaError(details);\n" +
-        "\n"
-      );
-    }
-
-    if (this.hasOption(kTestModeOnly))
-      this.emit("return true;");
-    else
+    if (!this.hasOption(kTestModeOnly))
       this.emit("return " + vOut + ";");
+    else
+      this.emit("return true;");
 
     return this.toFunction();
   },
@@ -1058,7 +1043,7 @@ qclass({
 
   emitNumberCheck: function(def, v, minValue, maxValue, isInt, isFinite) {
     var min = def.$gt != null ? def.$gt : null;
-    var max = def.$lt != null ? def.$lt : null;;
+    var max = def.$lt != null ? def.$lt : null;
 
     var minEq = 0;
     var maxEq = 0;
@@ -1150,7 +1135,7 @@ qclass({
   failIf: function(cond, err) {
     this.ifElseIf(cond);
     if (this.hasOption(kTestModeOnly))
-      this.emitIf(cond, "return false;");
+      this.emit("return false;");
     else
       this.emitError(err);
     this.end();
@@ -1161,19 +1146,12 @@ qclass({
   emitError: function(err) {
     if (this.hasOption(kTestModeOnly)) {
       this.emit("return false;");
-      return this;
-    }
-
-    if (this.hasOption(kAccumulateErrors)) {
-      this.emit("details.push(" + err + ");");
-      return this;
     }
     else {
-      this.declareGlobal(
-        "throwSchemaError", "qdata.throwSchemaError");
-      this.emit("throwSchemaError(" + err + ");");
-      return this;
+      this.emit("errors.push(" + err + ");");
+      this.emit("if ((options & " + (kAccumulateErrors) + ") === 0) return false;");
     }
+    return this;
   },
 
   getPath: function() {
@@ -1205,18 +1183,11 @@ qclass({
 
   error: function(code, extra) {
     var s = "{ code: " + code + ", path: " + this.getPath();
-
     if (extra)
       s += " ," + JSON.stringify(extra).substr(1);
     else
       s += " }";
     return s;
-    /*
-    if (typeof objectOrCode === "object")
-      return JSON.stringify(objectOrCode);
-    else
-      return "{ \"code\": " + objectOrCode + " }";
-    */
   },
 
   done: function() {
@@ -1236,14 +1207,14 @@ var _isOptionalFieldRE = /\?$/;
 
 // \internal
 //
-// Test if the given key is an array type "...[]".
-var _isArrayFieldRE = /\[\]$/;
+// Test if the given key is an array type "...[xxx]".
+var _isArrayFieldRE = /\[(\d+)?(\.\.)?(\d+)?]$/;
 
 // \internal
 //
-// Translate a given schema definition into internal format that can be used
-// by `qdata` library. This function is called for root type and all children
-// it contains, basically per recognized type.
+// Translate the given schema definition into an internal format that can
+// be used by `qdata` library. This function is called for root type and
+// all children it contains, basically per recognized type.
 function _schemaField(def, env, priv) {
   // Safe defaults.
   var name = def.$type || "object";
@@ -1264,12 +1235,24 @@ function _schemaField(def, env, priv) {
       throwRuntimeError("Invalid type '" + def.$type + "'.");
   }
 
-  // If the $type ends with "[]" it implies `{ $type: "array", $data: ... }`.
+  // If the $type ends with "[...]" it implies `{ $type: "array", $data: ... }`.
   // In this case all definitions specified in `def` are related to the array
-  // elements, not the array itself.
-  if (_isArrayFieldRE.test(name)) {
+  // elements, not the array itself. However, it's possible to specify basics
+  // like array length, minimum length, and maximum length.
+  var m = name.match(_isArrayFieldRE);
+
+  if (!m && name.indexOf("[") !== -1)
+    throwRuntimeError("Invalid type '" + def.$type + "'.");
+
+  if (m) {
     var nested = copyObject(def);
-    nested.$type = name.substr(0, name.length - 2);
+    nested.$type = name.substr(0, name.length - m[0].length);
+
+    var minLen = m[1] ? parseInt(m[1]) : null;
+    var maxLen = m[3] ? parseInt(m[3]) : null;
+
+    if (minLen !== null && maxLen !== null && minLen > maxLen)
+      throwRuntimeError("Invalid type '" + def.$type + "'.");
 
     obj = {
       $type     : "array",
@@ -1278,6 +1261,16 @@ function _schemaField(def, env, priv) {
       $undefined: false,
       $_qPrivate: priv
     };
+
+    if (m[2]) {
+      // [min..], [..max] or [min..max] syntax.
+      if (minLen !== null) obj.$minLength = minLen;
+      if (maxLen !== null) obj.$maxLength = maxLen;
+    }
+    else {
+      // [length] syntax.
+      if (minLen !== null) obj.$length = minLen;
+    }
   }
   else {
     if (typeof def.$null === "boolean")
@@ -1302,7 +1295,7 @@ function _schemaField(def, env, priv) {
 
         // Properties are stored in `obj` itself, however, object fields are
         // stored always in `obj.$data`. This is just a way to distinguish
-        // properties from object fields.
+        // qdata properties from object's properties.
         if (!isPropertyName(k))
           $data[unescapeFieldName(k)] = _schemaField(kDef, env, null);
         else if (!hasOwnProperty.call(obj, k))
@@ -1356,7 +1349,7 @@ function _schemaField(def, env, priv) {
 function schema(def) {
   // The member `$_qPrivate` is considered private and used exclusively by the
   // QData library. This is the only reserved property so far.
-  var priv = { fnCache: new Array(kMaxFuncCount) };
+  var priv = { fnCache: new Array(kFuncCacheCount) };
   return _schemaField(def, this || qdata, priv);
 }
 qdata.schema = schema;
@@ -1364,6 +1357,15 @@ qdata.schema = schema;
 // ============================================================================
 // [Schema - Interface]
 // ============================================================================
+
+// \internal
+//
+// Global validation context, used as a cache to prevent creating the object
+// every time `process()`, `validate()`, and `test()` are called. It doesn't
+// prevent nested validation as the context is always set to `null` in case
+// it's acquired and set back when released, if another global context doesn't
+// exist.
+var _errorsGlobal = null;
 
 // \internal
 //
@@ -1382,12 +1384,23 @@ function compile(env, def, fnIndex) {
 // Process the given `data` by using a definition `def`, `options` and `access`
 // rights. The function specific for the validation type and options is compiled
 // on demand and then cached.
-function process(data, def, options, access) {
+function process(data, def, _options, access) {
+  var options = typeof _options === "number" ? (_options | 0) : 0;
+
   var fnCache = def.$_qPrivate.fnCache;
-  var fnIndex = options || 0;
+  var fnIndex = options & kFuncCacheMask;
 
   var fn = fnCache[fnIndex] || compile(this || qdata, def, fnIndex);
-  return fn(data, access);
+  var errors = _errorsGlobal || [];
+
+  _errorsGlobal = null;
+  var result = fn(errors, data, options, access);
+
+  if (errors.length)
+    throwSchemaError(errors);
+
+  _errorsGlobal = errors;
+  return result;
 }
 qdata.process = process;
 
@@ -1395,12 +1408,14 @@ qdata.process = process;
 //
 // Tests the given `data` by using a definition `def`, `options` and `access`
 // right.
-function test(data, def, options, access) {
+function test(data, def, _options, access) {
+  var options = typeof _options === "number" ? _options | kTestModeOnly : kTestModeOnly;
+
   var fnCache = def.$_qPrivate.fnCache;
-  var fnIndex = (options || 0) | kTestModeOnly;
+  var fnIndex = options & kFuncCacheMask;
 
   var fn = fnCache[fnIndex] || compile(this || qdata, def, fnIndex);
-  return fn(data, def, access);
+  return fn(null, data, options, access);
 }
 qdata.test = test;
 
@@ -1647,7 +1662,7 @@ qdata.BaseType = qclass({
       else
         cond = null;
 
-      if (cond || c.hasOption(kAccumulateErrors) && vOut !== vIn)
+      if (cond && vOut !== vIn)
         c.emit(vOut + " = " + vIn + ";");
 
       var err = c.error(c.str(typeError));
@@ -1900,6 +1915,84 @@ qdata.CharType = qclass({
 qdata.addType(new CharType());
 
 // ============================================================================
+// [SchemaType - BigInt]
+// ============================================================================
+
+var kBigIntMin = "-9223372036854775808"; // Min BIGINT.
+var kBigIntMax = "9223372036854775807";  // Max BIGINT.
+
+function isBigInt(s, min, max) {
+  var len = s.length;
+  if (!len)
+    return false;
+
+  var i = 0;
+  var c = s.charCodeAt(i);
+
+  var ref;
+  var isNegative = c === 45 ? 1 : 0;
+
+  // Parse '-' sign.
+  if (isNegative) {
+    ref = min || kBigIntMin;
+    if (ref.charCodeAt(0) !== 45 || ++i === len)
+      return false;
+    c = s.charCodeAt(i);
+  }
+  else {
+    ref = max || kBigIntMax;
+    if (ref.charCodeAt(0) === 45)
+      return false;
+  }
+
+  // The input string can't be longer than the minimum/maximum string.
+  var refLen = ref.length;
+  if (len > refLen)
+    return false;
+
+  // "-0" or padded numbers like "-0XXX" and "0XXX" are not allowed.
+  if (c < 48 || c > 57 || (c === 48 && len > 1))
+    return false;
+
+  // Validate whether the string only contains numbers, i.e. chars from 48..57.
+  while (++i < len) {
+    c = s.charCodeAt(i);
+    if (c < 48 || c > 57)
+      return false;
+  }
+
+  // In case that the input has the same length as min/max string we have to go
+  // char-by-char and validate whether the string doesn't overflow.
+  if (len === refLen) {
+    for (i = isNegative; i < len; i++) {
+      c = s.charCodeAt(i) - ref.charCodeAt(i);
+      if (c !== 0) return c < 0;
+    }
+  }
+
+  return true;
+}
+qdata_util.isBigInt = isBigInt;
+
+function BigIntType() {
+  BaseType.call(this);
+}
+qdata.BigIntType = qclass({
+  $extend: BaseType,
+  $construct: BigIntType,
+
+  name: ["bigint"],
+  type: "string",
+
+  compileType: function(c, vOut, v, def) {
+    c.failIf("!" + c.declareData(null, isBigInt) + "(" + v + ")",
+      c.error(c.str("InvalidBigInt")));
+    return v;
+  }
+});
+qdata.addType(new BigIntType());
+
+// ============================================================================
 // [SchemaType - Color]
 // ============================================================================
 
@@ -2071,7 +2164,7 @@ function isMAC(s, sep) {
   if (typeof sep !== "number")
     sep = 58; // ':'.
 
-  // Mac has a format "AA:BB:CC:DD:EE:FF" which is exactly 17 characters long.
+  // MAC is written as "AA:BB:CC:DD:EE:FF" which is exactly 17 characters long.
   if (s.length !== 17)
     return false;
 
@@ -2122,8 +2215,13 @@ qdata.addType(new MACType());
 // [SchemaType - IPV4 / IPV6]
 // ============================================================================
 
-function isIPV4(s) {
-  // The smallest possible IPV4 address is "W.X.Y.Z", which is 7 characters long.
+function isIP(s, allowPort) {
+  return isIPV4(s, allowPort) || isIPV6(s, allowPort);
+}
+qdata_util.isIP = isIP;
+
+function isIPV4(s, allowPort) {
+  // The shortest possible IPV4 address is "W.X.Y.Z", which is 7 characters long.
   var len = s.length;
   if (len < 7)
     return false;
@@ -2131,48 +2229,202 @@ function isIPV4(s) {
   var i = 0;
   var n = 1;
 
+  // Parse the IP part.
   for (;;) {
     // Parse the first digit.
-    var c0 = s.charCodeAt(i++);
+    var c0 = s.charCodeAt(i);
     if (c0 < 48 || c0 > 57)
       return false;
     c0 -= 48;
 
-    if (i === len)
+    if (++i === len)
       return n === 4;
 
     // Parse one or two consecutive digits and validate the value to be <= 256.
-    var c1 = s.charCodeAt(i++);
-    if (c1 >= 48 && c0 <= 57) {
+    var c1 = s.charCodeAt(i);
+    if (c1 >= 48 && c1 <= 57) {
       if (c0 === 0)
         return false;
 
-      if (i === len)
+      if (++i === len)
         return n === 4;
 
       c0 = c0 * 10 + c1 - 48;
-      c1 = s.charCodeAt(i++);
+      c1 = s.charCodeAt(i);
 
       if (c1 >= 48 && c1 <= 57) {
         c0 = c0 * 10 + c1 - 48;
         if (c0 > 255)
           return false;
 
-        if (i === len)
+        if (++i === len)
           return n === 4;
-        c1 = s.charCodeAt(i++);
+        c1 = s.charCodeAt(i);
       }
     }
 
-    if (c1 !== 46 || i === len || ++n > 4)
+    if (c1 !== 46) {
+      if (c1 === 58 && allowPort && n === 4)
+        break;
+      return false;
+    }
+
+    if (++i === len)
+      return false;
+
+    // Maximum 4 components separated by ".".
+    if (++n >= 5)
       return false;
   }
+
+  // Parse the port value.
+  if (++i === len)
+    return false;
+
+  // Parse the first digit.
+  var port = s.charCodeAt(i) - 48;
+  if (port < 0 || port > 9)
+    return false;
+
+  // Parse the consecutive digits.
+  while (++i !== len) {
+    var c0 = s.charCodeAt(i);
+    if (c0 < 48 || c0 > 57)
+      return false;
+
+    // Prevent ports padded by zeros and values outside of 16-bit domain.
+    port = port * 10 + c0 - 48;
+    if (port === 0 || port > 65535)
+      return false;
+  }
+
+  return true;
 }
 qdata_util.isIPV4 = isIPV4;
 
-function isIPV6(s) {
-  // TODO: Implement.
-  return false;
+function isIPV6(s, allowPort) {
+  // The shortest possible IPV6 address is "::", which is 2 characters long.
+  var len = s.length;
+  if (len < 2)
+    return false;
+
+  var i = 0;         // Index to `s`.
+  var numValues = 0; // How many components have been parsed.
+  var collapsed = 0; // Whether the collapsed version `::` has been used.
+
+  var c0 = s.charCodeAt(0);
+  var c1;
+
+  // Parse "[...]:port" if allowed.
+  if (c0 === 91) {
+    if (!allowPort)
+      return false;
+
+    var port = 0;
+    var scale = 1;
+
+    for (;;) {
+      c0 = s.charCodeAt(--len);
+      if (c0 >= 48 && c0 <= 57) {
+        c0 -= 48;
+
+        port  += c0 * scale;
+        scale *= 10;
+
+        // Port is a 16-bit number, thus it cannot be greater than 65535.
+        if (port > 65535)
+          return false;
+        continue;
+      }
+
+      // Parse ":" before the port value.
+      if (c0 === 58)
+        break;
+
+      return false;
+    }
+
+    // Parse "]" that is before the ":port" part and refuse "[]:port" syntax
+    // without any IP address within [].
+    if (s.charCodeAt(--len) !== 93 || ++i >= len)
+      return false;
+    c0 = s.charCodeAt(i);
+  }
+
+  // Parse leading "::", but refuse to parse leading ":".
+  if (c0 === 58) {
+    if ((i += 2) > len || s.charCodeAt(i - 1) !== 58)
+      return false;
+
+    // Multicast "::" form.
+    if (i === len)
+      return true;
+
+    c0 = s.charCodeAt(i);
+    collapsed = 1;
+  }
+
+  for (;;) {
+    // Parse "X...XXXX" number.
+    if (c0 < 48 || (c0 > 57 && (((c1 = c0 | 0x20)) < 97 || c1 > 102)))
+      break;
+
+    if (++numValues > 8)
+      return false;
+
+    if (++i === len) break;
+    c0 = s.charCodeAt(i);
+
+    // Parse at most 3 more HEX characters.
+    if (c0 >= 48 && (c0 <= 57 || (((c1 = c0 | 0x20)) >= 97 && c1 <= 102))) {
+      if (++i === len) break;
+      c0 = s.charCodeAt(i);
+
+      if (c0 >= 48 && (c0 <= 57 || (((c1 = c0 | 0x20)) >= 97 && c1 <= 102))) {
+        if (++i === len) break;
+        c0 = s.charCodeAt(i);
+
+        if (c0 >= 48 && (c0 <= 57 || (((c1 = c0 | 0x20)) >= 97 && c1 <= 102))) {
+          if (++i === len) break;
+          c0 = s.charCodeAt(i);
+        }
+      }
+    }
+
+    // Parse ":" or "::"
+    if (c0 !== 58)
+      break;
+
+    // Refuse ":" at the end of the input
+    if (++i === len)
+      return false;
+
+    // Refuse "::" if occured multiple times.
+    c0 = s.charCodeAt(i);
+    if (c0 === 58) {
+      if (++collapsed !== 1)
+        return false;
+
+      if (++i === len) break;
+      c0 = s.charCodeAt(i);
+    }
+  }
+
+  if (i !== len)
+    return false;
+
+  if (collapsed) {
+    // Collapsed form having 8 or more components is invalid.
+    if (numValues >= 8)
+      return false;
+  }
+  else {
+    // Non-collapsed for requires exactly 8 components.
+    if (numValues !== 8)
+      return false;
+  }
+
+  return true;
 }
 qdata_util.isIPV6 = isIPV6;
 
@@ -2183,7 +2435,7 @@ qdata.IPType = qclass({
   $extend: BaseType,
   $construct: IPType,
 
-  name: ["ipv4", "ipv6"],
+  name: ["ip", "ipv4", "ipv6"],
   type: "string",
 
   compileType: function(c, vOut, v, def) {
@@ -2191,7 +2443,13 @@ qdata.IPType = qclass({
     var err;
     var fn;
 
+    var allowPort = def.$allowPort ? true : false;
+
     switch (type) {
+      case "ip":
+        err = "InvalidIP";
+        fn = qdata_util.isIP;
+        break;
       case "ipv4":
         err = "InvalidIPV4";
         fn = qdata_util.isIPV4;
@@ -2204,7 +2462,7 @@ qdata.IPType = qclass({
         throwRuntimeError("Invalid type '" + type + "'.");
     }
 
-    c.failIf("!" + c.declareData(null, fn) + "(" + v + ")",
+    c.failIf("!" + c.declareData(null, fn) + "(" + v + ", " + allowPort + ")",
       c.error(c.str(err)));
 
     return v;
@@ -2850,7 +3108,7 @@ qdata.ArrayType = qclass({
       cond.push(vLen + " > " + def.$maxLength);
 
     if (cond.length) {
-      c.failIf(cond.join(" && "),
+      c.failIf(cond.join(" || "),
         c.error(c.str("InvalidLength")));
       c.otherwise();
     }
