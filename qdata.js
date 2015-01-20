@@ -18,6 +18,12 @@ var qdata = {};
 // Version information in a "major.minor.patch" form.
 qdata.VERSION = "0.1.0";
 
+// `qdata.qclass`
+//
+// Link to the `qclass` library used by `qdata` (useful mostly in NPM based
+// environment).
+qdata.qclass = qclass;
+
 // `qdata.kNoOptions`
 //
 // No data processing options. This constant has been added so the code that
@@ -1048,13 +1054,11 @@ qclass({
     var minEq = 0;
     var maxEq = 0;
 
-    // Handle $gt, $ge, and $min.
-    if (def.$ge  != null && (min === null || min <= def.$ge )) { min = def.$ge ; minEq = 1; }
+    // Handle $gt and $min.
     if (def.$min != null && (min === null || min <= def.$min)) { min = def.$min; minEq = 1; }
     if (minValue != null && (min === null || min <= minValue)) { min = minValue; minEq = 1; }
 
-    // Handle $lt, $le, and $max.
-    if (def.$le  != null && (max === null || max >= def.$le )) { max = def.$le ; maxEq = 1; }
+    // Handle $lt and $max.
     if (def.$max != null && (max === null || max >= def.$max)) { max = def.$max; maxEq = 1; }
     if (maxValue != null && (max === null || max >= maxValue)) { max = maxValue; maxEq = 1; }
 
@@ -1697,7 +1701,25 @@ qdata.BooleanType = qclass({
   name: ["boolean", "bool"],
   type: "boolean",
 
-  compileType: function(c, vOut, v, def) {}
+  compileType: function(c, vOut, v, def) {
+    var allowed = def.$allowed;
+
+    // This is a boolean specific.
+    if (allowed != null && allowed.length > 0) {
+      var isTrue  = allowed.indexOf(true ) !== -1;
+      var isFalse = allowed.indexOf(false) !== -1;
+
+      var cond = null;
+
+      if (isTrue && !isFalse)
+        cond = v + " !== true";
+      if (!isTrue && isFalse)
+        cond = v + " === true";
+
+      if (cond)
+        c.failIf(cond, c.error(c.str("NotAllowed")));
+    }
+  }
 });
 qdata.addType(new BooleanType());
 
@@ -1705,6 +1727,7 @@ qdata.addType(new BooleanType());
 // [SchemaType - Number]
 // ============================================================================
 
+// TODO: $allowed
 function NumberType() {
   BaseType.call(this);
 }
@@ -1849,6 +1872,7 @@ qdata.addType(new NumberType());
 //   - [1F] US  Unit Separator
 var isInvalidTextRE = /[\x00-\x08\x0B-\x0C\x0E-\x1F]/;
 
+// TODO: $allowed
 function StringType() {
   BaseType.call(this);
 }
@@ -1860,25 +1884,41 @@ qdata.StringType = qclass({
   type: "string",
 
   compileType: function(c, vOut, v, def) {
+    var isEmpty = def.$empty;
+
     var len = def.$length;
     var min = def.$minLength;
     var max = def.$maxLength;
 
-    if (len != null)
-      c.failIf(v + ".length !== " + len,
-        c.error(c.str("InvalidLength")));
+    if (typeof isEmpty === "boolean") {
+      if (isEmpty) {
+        // Can be empty, however the minimum length can be still specified to
+        // restrict non-empty strings.
+        if (min !== null) {
+          if (min <= 1)
+            min = null;
+          else
+            c.passIf("!" + v);
+        }
+      }
+      else {
+        // Can't be empty, patch min/max length if necessary.
+        if (min === null && max === null)
+          len = 1;
+        else if (min === null || min < 1)
+          min = 1;
+      }
+    }
 
-    if (min != null && max == null)
-      c.failIf(v + ".length < " + min,
-        c.error(c.str("InvalidLength")));
+    var cond = [];
 
-    if (min == null && max != null)
-      c.failIf(v + ".length > " + max,
-        c.error(c.str("InvalidLength")));
+    if (len != null) cond.push(v + ".length !== " + len);
+    if (min != null) cond.push(v + ".length < " + min);
+    if (max != null) cond.push(v + ".length > " + max);
 
-    if (min != null && max != null)
-      c.failIf(v + ".length < " + min + " || " + v + " > " + max,
-        c.error(this.str("InvalidLength")));
+    if (cond.length)
+      c.failIf(cond.join(" || "),
+        c.error(c.str("InvalidLength")));
 
     if (def.$type === "text")
       c.failIf(c.declareData(null, isInvalidTextRE) + ".test(" + v + ")",
@@ -1897,6 +1937,7 @@ qdata.addType(new StringType());
 // [SchemaType - Char]
 // ============================================================================
 
+// TODO: $allowed
 function CharType() {
   BaseType.call(this);
 }
@@ -1908,7 +1949,14 @@ qdata.CharType = qclass({
   type: "string",
 
   compileType: function(c, vOut, v, def) {
-    c.failIf(v + ".length !== 1", c.error(c.str("InvalidChar")));
+    var cond;
+
+    if (def.$empty === true)
+      cond = v + ".length > 1";
+    else
+      cond = v + ".length !== 1";
+
+    c.failIf(cond, c.error(c.str("InvalidChar")));
     return v;
   }
 });
@@ -1974,6 +2022,7 @@ function isBigInt(s, min, max) {
 }
 qdata_util.isBigInt = isBigInt;
 
+// TODO: $allowed
 function BigIntType() {
   BaseType.call(this);
 }
@@ -1985,8 +2034,10 @@ qdata.BigIntType = qclass({
   type: "string",
 
   compileType: function(c, vOut, v, def) {
-    c.failIf("!" + c.declareData(null, isBigInt) + "(" + v + ")",
-      c.error(c.str("InvalidBigInt")));
+    var cond = "!" + c.declareData(null, isBigInt) + "(" + v + ")";
+    if (def.$empty === true)
+      cond = v + " && " + cond;
+    c.failIf(cond, c.error(c.str("InvalidBigInt")));
     return v;
   }
 });
@@ -2077,7 +2128,7 @@ var ColorNames = {
 };
 qdata_util.ColorNames = ColorNames;
 
-function isColor(s, allowNames, extraNames) {
+function isColor(s, cssNames, extraNames) {
   var len = s.length;
   if (!len)
     return false;
@@ -2097,14 +2148,14 @@ function isColor(s, allowNames, extraNames) {
     return true;
   }
 
-  if (allowNames === false && extraNames != null)
+  if (cssNames === false && extraNames != null)
     return false;
 
   // Need lowercased color name from here (a bit overhead, but necessary).
   s = s.toLowerCase();
 
   // Validate named entities.
-  if (allowNames !== false && hasOwnProperty.call(ColorNames, s))
+  if (cssNames !== false && hasOwnProperty.call(ColorNames, s))
     return true;
 
   // Validate extra table (can contain values like "currentColor", "none", ...)
@@ -2126,14 +2177,13 @@ qdata.ColorType = qclass({
   type: "string",
 
   compileType: function(c, vOut, v, def) {
-    var errorCode = "InvalidColor";
-    var allowNames = true;
+    var cssNames = true;
     var extraNames = null;
 
-    if (def.$allowNames === false) {
-      allowNames = def.$allowNames;
-      if (typeof allowNames !== "boolean")
-        throwRuntimeError("Invalid $allowNames property '" + allowNames + "'.");
+    if (def.$cssNames === false) {
+      cssNames = def.$cssNames;
+      if (typeof cssNames !== "boolean")
+        throwRuntimeError("Invalid $cssNames property '" + cssNames + "'.");
     }
 
     if (def.$extraNames != null) {
@@ -2148,9 +2198,11 @@ qdata.ColorType = qclass({
     if (extraNames)
       extra = c.declareData(null, extraNames);
 
-    c.failIf("!" + fn + "(" + v + ", " + allowNames + ", " + extra + ")",
-      c.error(c.str(errorCode)));
+    var cond = "!" + fn + "(" + v + ", " + cssNames + ", " + extra + ")";
+    if (def.$empty === true)
+      cond = v + " && " + cond;
 
+    c.failIf(cond, c.error(c.str("InvalidColor")));
     return v;
   }
 });
@@ -2204,8 +2256,11 @@ qdata.MACType = qclass({
     if (sep.length !== 1)
       throwRuntimeError("Invalid MAC address separator '" + sep + "'.");
 
-    c.failIf("!" + c.declareData(null, isMAC) + "(" + v + ", " + sep.charCodeAt(0) + ")",
-      c.error(c.str(err)));
+    var cond = "!" + c.declareData(null, isMAC) + "(" + v + ", " + sep.charCodeAt(0) + ")";
+    if (def.$empty === true)
+      cond = v + " && " + cond;
+
+    c.failIf(cond, c.error(c.str(err)));
     return v;
   }
 });
@@ -2462,9 +2517,11 @@ qdata.IPType = qclass({
         throwRuntimeError("Invalid type '" + type + "'.");
     }
 
-    c.failIf("!" + c.declareData(null, fn) + "(" + v + ", " + allowPort + ")",
-      c.error(c.str(err)));
+    var cond = "!" + c.declareData(null, fn) + "(" + v + ", " + allowPort + ")";
+    if (def.$empty === true)
+      cond = v + " && " + cond;
 
+    c.failIf(cond, c.error(c.str(err)));
     return v;
   }
 });
@@ -2869,13 +2926,17 @@ qdata.DateType = qclass({
     if (def.$leapSecond === true)
       hasLeapSecond = true;
 
-    c.failIf("(" +
+    var cond = "(" +
       vErr + " = " + validator + ".exec(" +
         v + ", " +
         hasLeapYear + ", " +
         hasLeapSecond + ")" +
-      ")", vErr);
+      ")";
 
+    if (def.$empty === true)
+      cond = v + " && " + cond;
+
+    c.failIf(cond, vErr);
     return v;
   },
 

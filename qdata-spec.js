@@ -472,22 +472,16 @@ describe("QData", function() {
     failLon.forEach(function(value) { fail(value, SchemaLon); });
   });
 
-  it("should validate number - $min/$max $gt/$lt $ge/$le", function() {
+  it("should validate number - $min/$max $gt/$lt", function() {
     ["int", "number"].forEach(function(type) {
       pass(0, qdata.schema({ $type: type, $min: 0, $max: 5 }));
       pass(5, qdata.schema({ $type: type, $min: 0, $max: 5 }));
-
-      pass(0, qdata.schema({ $type: type, $ge: 0, $le: 5 }));
-      pass(5, qdata.schema({ $type: type, $ge: 0, $le: 5 }));
 
       pass(1, qdata.schema({ $type: type, $gt: 0, $lt: 5 }));
       pass(4, qdata.schema({ $type: type, $gt: 0, $lt: 5 }));
 
       fail(-1, qdata.schema({ $type: type, $min: 0, $max: 5 }));
       fail( 6, qdata.schema({ $type: type, $min: 0, $max: 5 }));
-
-      fail(-1, qdata.schema({ $type: type, $ge: 0, $le: 5 }));
-      fail( 6, qdata.schema({ $type: type, $ge: 0, $le: 5 }));
 
       fail( 0, qdata.schema({ $type: type, $gt: 0, $lt: 5 }));
       fail( 5, qdata.schema({ $type: type, $gt: 0, $lt: 5 }));
@@ -659,9 +653,9 @@ describe("QData", function() {
   });
 
   it("should validate color - color names", function() {
-    var SchemaDefault       = qdata.schema({ $type: "color" });
-    var SchemaAllowNames    = qdata.schema({ $type: "color", $allowNames: true  });
-    var SchemaDisallowNames = qdata.schema({ $type: "color", $allowNames: false });
+    var SchemaDefault          = qdata.schema({ $type: "color" });
+    var SchemaAllowCssNames    = qdata.schema({ $type: "color", $cssNames: true  });
+    var SchemaDisallowCssNames = qdata.schema({ $type: "color", $cssNames: false });
 
     for (var k in qdata.util.colorNames) {
       var K = k.toUpperCase();
@@ -669,13 +663,13 @@ describe("QData", function() {
       pass(k, SchemaDefault);
       pass(K, SchemaDefault);
 
-      pass(k, SchemaAllowNames);
-      pass(K, SchemaAllowNames);
+      pass(k, SchemaAllowCssNames);
+      pass(K, SchemaAllowCssNames);
 
-      fail(k      , SchemaDisallowNames);
-      fail(K      , SchemaDisallowNames);
-      fail(k + " ", SchemaDisallowNames);
-      fail("#" + k, SchemaDisallowNames);
+      fail(k      , SchemaDisallowCssNames);
+      fail(K      , SchemaDisallowCssNames);
+      fail(k + " ", SchemaDisallowCssNames);
+      fail("#" + k, SchemaDisallowCssNames);
     }
   });
 
@@ -687,9 +681,9 @@ describe("QData", function() {
     };
 
     var Schema = qdata.schema({
-      $type: "color",
-      $allowNames: true,
-      $extraNames: ExtraNames
+      $type         : "color",
+      $cssNames     : true,
+      $extraNames   : ExtraNames
     });
 
     pass("#FFF"        , Schema);
