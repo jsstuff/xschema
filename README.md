@@ -10,7 +10,7 @@ The performance is not the only aspect and feature offered by QData. The library
 
 The schema structure is always declarative and most of the schemas can be serialized back to JSON (QData calls it a normalized JSON). The library also allows to associate a custom information called `metadata` with any field. Metadata is completely ignored by QData library, but other tools can take advantage of it (for example you can associate a SQL table names with your entities and use them in your DB layer).
 
-Additionally, QData has several data processing options that help to deal with common problems like implementing data insertion, updating, deletion, and querying. Processing options can also be used to dismiss or filter out objects' properties that are not defined (useful when extracting information from request's body) and error accumulation (validation doesn't stop on the first error).
+Additionally, QData has several data processing options that help to deal with common problems like implementing data insertion, updating, deletion, and querying. Processing options can also be used to filter out objects' properties that are not defined (useful when extracting information from request's body or from more objects mixed together) and to accumulate all validation errors to have a complete report.
 
 Disclaimer
 ----------
@@ -20,7 +20,7 @@ QData library has been designed to solve common, but also very specific problems
 Introduction
 ------------
 
-QData uses a declarative approach to build schemas, but it comes with its own syntax instead of relying on existing solutions like JSONSchema. The main reason for such move was to simplify the way schemas are defined by introducing shortcuts and directives that start with `$` character. Shortcuts are used to simplify declaration of the most common concepts (for example an array of integers can be written as `$type: int[]`) and directives are used to configure the type itself. Object's members are always defined without a `$` prefix, but it's possible to define also members that start with `$` by using escaping `$` as `\\$` (escaping and schema normalization is explained later).
+QData uses a declarative approach to build schemas, but it comes with its own syntax instead of relying on existing solutions like JSONSchema. The main reason for such move was to simplify the way schemas are defined by introducing shortcuts and directives that start with `$` character. Shortcuts are used to simplify declaration of the most common concepts (for example an array of integers can be written as `$type: "int[]"`) and directives are used to configure the type itself. Object's members are always defined without a `$` prefix, but it's possible to define also members that start with `$` by escaping it as `\\$` (escaping and schema normalization is explained later).
 
 ```JS
 var PersonSchema = qdata.schema({
@@ -47,7 +47,7 @@ The example above defines a schema called `PersonSchema`, which is an `object` h
 
 Confused by `string` vs `text` type? Well, `string` is _any_ string in JavaScript in contrast to `text`, which is a string that doesn't contain `\u0000-\u0008`, `\u000B-\u000C`, and `\u000E-\u001F` characters. These characters have special meaning and in many cases their presence in user data is unwanted and may be dangerous.
 
-Confused by `[]` suffix in `keywords` member? That is one of QData shortcuts to define an array, which can also be defined by using `array` type like this:
+Confused by `[]` suffix in `keywords` member? That is a QData shortcut that defines an array, which can also be defined by using `array` type like this:
 
 ```JS
 var KeywordsSchemaLong = {
@@ -216,7 +216,7 @@ Directive Name           | Value      | Default | Description
 `$undefined`             | `bool`     | `false` | Specifies if the value can be `undefined`
 `$empty`                 | `bool`     | `true`  | Specifies if the string can be an empty
 `$cssNames`              | `bool`     | `true`  | Specifies if CSS color names are allowed
-`$extraNames`            | `set[]`    | `null`  | A set (dictionary having `key: true`) that contains extra color names that are allowed
+`$extraNames`            | `set`      | `null`  | A set (dictionary having `key: true`) that contains extra color names that are allowed
 
 MAC Address
 -----------
