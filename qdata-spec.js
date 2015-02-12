@@ -5,8 +5,8 @@ var assert = require("assert");
 var qclass = require("qclass");
 var qdata = require("./qdata");
 
-var deepCopy = qdata.deepCopy;
-var deepEqual = qdata.deepEqual;
+var isEqual = qdata.isEqual;
+var cloneDeep = qdata.cloneDeep;
 
 function TestError(message, schema, input, output, expected) {
   var e = Error(message);
@@ -52,7 +52,7 @@ function pass(input, schema, options, access, expected) {
   if (arguments.length <= 4)
     expected = input;
 
-  if (!deepEqual(output, expected)) {
+  if (!isEqual(output, expected)) {
     if (arguments.length <= 4)
       throw new TestError("Result didn't match the input data.", schema, input, output);
     else
@@ -84,51 +84,51 @@ function assertThrow(fn) {
 }
 
 describe("QData", function() {
-  it("should test utilities - deep equal", function() {
+  it("should test utilities - isEqual", function() {
     // Basics.
-    assert(deepEqual(null     , null     ));
-    assert(deepEqual(undefined, undefined));
-    assert(deepEqual(true     , true     ));
-    assert(deepEqual(false    , false    ));
-    assert(deepEqual(0        , 0        ));
-    assert(deepEqual(0.10     , 0.10     ));
-    assert(deepEqual(""       , ""       ));
-    assert(deepEqual("string" , "string" ));
-    assert(deepEqual(Infinity , Infinity ));
-    assert(deepEqual(-Infinity, -Infinity));
-    assert(deepEqual(NaN      , NaN      ));
-    assert(deepEqual({ a: 0 } , { a: 0 } ));
-    assert(deepEqual([0, 1, 2], [0, 1, 2]));
+    assert(isEqual(null     , null     ));
+    assert(isEqual(undefined, undefined));
+    assert(isEqual(true     , true     ));
+    assert(isEqual(false    , false    ));
+    assert(isEqual(0        , 0        ));
+    assert(isEqual(0.10     , 0.10     ));
+    assert(isEqual(""       , ""       ));
+    assert(isEqual("string" , "string" ));
+    assert(isEqual(Infinity , Infinity ));
+    assert(isEqual(-Infinity, -Infinity));
+    assert(isEqual(NaN      , NaN      ));
+    assert(isEqual({ a: 0 } , { a: 0 } ));
+    assert(isEqual([0, 1, 2], [0, 1, 2]));
 
-    assert(!deepEqual(null, undefined));
-    assert(!deepEqual(undefined, null));
+    assert(!isEqual(null, undefined));
+    assert(!isEqual(undefined, null));
 
-    assert(!deepEqual(0, "0"));
-    assert(!deepEqual("0", 0));
+    assert(!isEqual(0, "0"));
+    assert(!isEqual("0", 0));
 
-    assert(!deepEqual(false, "false"));
-    assert(!deepEqual("true", true));
+    assert(!isEqual(false, "false"));
+    assert(!isEqual("true", true));
 
-    assert(!deepEqual("", null));
-    assert(!deepEqual(null, ""));
+    assert(!isEqual("", null));
+    assert(!isEqual(null, ""));
 
-    assert(!deepEqual(0, null));
-    assert(!deepEqual(null, 0));
+    assert(!isEqual(0, null));
+    assert(!isEqual(null, 0));
 
-    assert(!deepEqual(null, {}));
-    assert(!deepEqual({}, null));
+    assert(!isEqual(null, {}));
+    assert(!isEqual({}, null));
 
-    assert(!deepEqual(null, []));
-    assert(!deepEqual([], null));
+    assert(!isEqual(null, []));
+    assert(!isEqual([], null));
 
-    assert(!deepEqual({ a: undefined }, {}));
-    assert(!deepEqual({}, { a: undefined }));
+    assert(!isEqual({ a: undefined }, {}));
+    assert(!isEqual({}, { a: undefined }));
 
-    assert(!deepEqual({}, []));
-    assert(!deepEqual([], {}));
+    assert(!isEqual({}, []));
+    assert(!isEqual([], {}));
 
     // Object equality.
-    assert(deepEqual({
+    assert(isEqual({
       boolValue: false,
       numberValue: 42,
       stringValue: "string",
@@ -162,11 +162,11 @@ describe("QData", function() {
     aCyclic.cyclic = bCyclic;
     bCyclic.cyclic = aCyclic;
 
-    assertThrow(function() { deepEqual(aCyclic, bCyclic); });
-    assertThrow(function() { deepEqual(bCyclic, aCyclic); });
+    assertThrow(function() { isEqual(aCyclic, bCyclic); });
+    assertThrow(function() { isEqual(bCyclic, aCyclic); });
   });
 
-  it("should test utilities - deep copy", function() {
+  it("should test utilities - cloneDeep", function() {
     var orig = {
       a: true,
       b: false,
@@ -177,9 +177,9 @@ describe("QData", function() {
       },
       f: [NaN, Infinity, -Infinity, 0.1122]
     };
-    var copy = deepCopy(orig);
+    var copy = cloneDeep(orig);
 
-    assert(deepEqual(copy, orig));
+    assert(isEqual(copy, orig));
     assert(copy !== orig);
     assert(copy.e !== orig.e);
     assert(copy.f !== orig.f);
@@ -255,8 +255,8 @@ describe("QData", function() {
     assert(AnimalEnum.$valueToKey(-1)  === undefined);
     assert(AnimalEnum.$valueToKey("0") === undefined);
 
-    assert(deepEqual(AnimalEnum.$keyMap, AnimalDef));
-    assert(deepEqual(AnimalEnum.$keyList, [
+    assert(isEqual(AnimalEnum.$keyMap, AnimalDef));
+    assert(isEqual(AnimalEnum.$keyList, [
       "Horse",
       "Dog",
       "Cat",
@@ -264,14 +264,14 @@ describe("QData", function() {
       "Hamster"
     ]));
 
-    assert(deepEqual(AnimalEnum.$valueMap, {
+    assert(isEqual(AnimalEnum.$valueMap, {
       "0": "Horse",
       "1": "Dog",
       "2": "Cat",
       "3": "Hamster",
       "4": "Mouse"
     }));
-    assert(deepEqual(AnimalEnum.$valueList, [
+    assert(isEqual(AnimalEnum.$valueList, [
       0, 1, 2, 3, 4
     ]));
 
@@ -328,12 +328,12 @@ describe("QData", function() {
     // so Array value has to map to "Object" string.
     assert(TypeIdNonUniqueEnum.$valueToKey(TypeIdNonUniqueEnum.Array ) === "Object");
 
-    assert(deepEqual(TypeIdNonUniqueEnum.$valueMap, {
+    assert(isEqual(TypeIdNonUniqueEnum.$valueMap, {
       "1299": "String",
       "3345": "Number",
       "6563": "Object"
     }));
-    assert(deepEqual(TypeIdNonUniqueEnum.$valueList, [1299, 3345, 6563]));
+    assert(isEqual(TypeIdNonUniqueEnum.$valueList, [1299, 3345, 6563]));
 
     assert(TypeIdNonUniqueEnum.$min === 1299);
     assert(TypeIdNonUniqueEnum.$max === 6563);
@@ -359,7 +359,7 @@ describe("QData", function() {
     };
     var ReservedEnum = qdata.enum(ReservedDef);
 
-    assert(deepEqual(ReservedEnum.$keyMap, ReservedDef));
+    assert(isEqual(ReservedEnum.$keyMap, ReservedDef));
 
     assert(ReservedEnum.$hasKey("constructor"         ) === true );
     assert(ReservedEnum.$hasKey("__defineGetter__"    ) === true );
@@ -383,16 +383,10 @@ describe("QData", function() {
     assertThrow(function() { qdata.enum({ $reservedKey   : 1        }); });
   });
 
-  it("should validate null/undefined", function() {
+  it("should validate null and fail if undefined", function() {
     ["bool", "int", "number", "string", "text", "date", "datetime", "object"].forEach(function(type) {
-      pass(null     , qdata.schema({ $type: type, $null: true, $undefined: true }));
-      pass(undefined, qdata.schema({ $type: type, $null: true, $undefined: true }));
-
       pass(null     , qdata.schema({ $type: type, $null: true      }));
-      pass(undefined, qdata.schema({ $type: type, $undefined: true }));
-
       fail(undefined, qdata.schema({ $type: type, $null: true      }));
-      fail(null     , qdata.schema({ $type: type, $undefined: true }));
     });
   });
 
@@ -1178,6 +1172,28 @@ describe("QData", function() {
     pass({ "$type": "int", "\\value": "13" }, def);
   });
 
+  it("should validate object - default fields", function() {
+    var def = qdata.schema({
+      a: { $type: "bool"  , $default: true    },
+      b: { $type: "int"   , $default: 42      },
+      c: { $type: "double", $default: 3.14    },
+      d: { $type: "string", $default: "qdata" },
+      e: { $type: "object", $default: {}      }
+    });
+
+    pass({}, def, 0, null, {
+      a: true,
+      b: 42,
+      c: 3.14,
+      d: "qdata",
+      e: {}
+    });
+
+    // QData should always copy all defaults.
+    assert(qdata.process({}, def, 0, null).e !==
+           qdata.process({}, def, 0, null).e);
+  });
+
   it("should validate object - strict/extract", function() {
     var def = qdata.schema({
       a: { $type: "bool" },
@@ -1193,17 +1209,20 @@ describe("QData", function() {
       }
     };
 
-    var noise1 = deepCopy(data);
+    var noise1 = cloneDeep(data);
     noise1.someNoise = true;
 
-    var noise2 = deepCopy(noise1);
+    var noise2 = cloneDeep(noise1);
     noise2.nested.anotherNoise = true;
 
-    pass(noise1, def, qdata.kExtractTopFields, null, data);
-    pass(noise2, def, qdata.kExtractAllFields, null, data);
+    pass(noise1, def, qdata.kExtractTop, null, data);
+    pass(noise2, def, qdata.kExtractAll, null, data);
 
     fail(noise1, def, qdata.kNoOptions);
-    fail(noise2, def, qdata.kExtractTopFields);
+    fail(noise1, def, qdata.kExtractNested);
+
+    fail(noise2, def, qdata.kNoOptions);
+    fail(noise2, def, qdata.kExtractTop);
   });
 
   it("should validate array - nested values", function() {
@@ -1217,34 +1236,26 @@ describe("QData", function() {
 
     defs.forEach(function(def) {
       [false, true].forEach(function(canBeNull) {
-        [false, true].forEach(function(canBeUndefined) {
-          var type = def.type;
+        var type = def.type;
 
-          var passData = def.pass;
-          var failData = def.fail;
+        var passData = def.pass;
+        var failData = def.fail.concat([undefined]);
 
-          var Schema = qdata.schema({
-            $type: "array",
-            $data: {
-              $type: type,
-              $null: canBeNull ? true : false,
-              $undefined: canBeUndefined ? true : false
-            }
-          });
-
-          if (canBeNull)
-            passData = passData.concat([null]);
-          else
-            failData = failData.concat([null]);
-
-          if (canBeUndefined)
-            passData = passData.concat([undefined]);
-          else
-            failData = failData.concat([undefined]);
-
-          passData.forEach(function(value) { pass([value], Schema); });
-          failData.forEach(function(value) { fail([value], Schema); });
+        var Schema = qdata.schema({
+          $type: "array",
+          $data: {
+            $type: type,
+            $null: canBeNull ? true : false
+          }
         });
+
+        if (canBeNull)
+          passData = passData.concat([null]);
+        else
+          failData = failData.concat([null]);
+
+        passData.forEach(function(value) { pass([value], Schema); });
+        failData.forEach(function(value) { fail([value], Schema); });
       });
     });
   });

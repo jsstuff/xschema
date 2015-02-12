@@ -29,9 +29,9 @@ qdata.qclass = qclass;
 // No data processing options. This constant has been added so the code that
 // is using data processing can be more clear in cases where no options are
 // used.
-var kNoOptions = qdata.kNoOptions = 0x0000;
+var kNoOptions = qdata.kNoOptions = 0;
 
-// `qdata.kExtractTopFields`
+// `qdata.kExtractTop`
 //
 // Extract top fields from the source object.
 //
@@ -39,18 +39,54 @@ var kNoOptions = qdata.kNoOptions = 0x0000;
 // keys/values and you want to extract everything matching your schema out of
 // it. Only keys defined in the schema are considered, others ignored silently.
 //
-// NOTE: This option can be combined with `kExtractAllFields`, in such case the
+// It's an error if user access control (UAC) is enabled and the source object
+// contains a property that the user doesn't have access to. In such case a
+// "PermissionDenied" error will be generated.
+//
+// NOTE: This option can be combined with `kExtractAll`, in such case the
 // latter has priority.
-var kExtractTopFields = qdata.kExtractTopFields = 0x0001;
+var kExtractTop = qdata.kExtractTop = 0x0001;
 
-// `qdata.kExtractAllFields`
+// `qdata.kExtractNested`
 //
-// Extract all fields from any source object.
+// Extract nested fields from the source object.
 //
-// This is like `kExtractTopFields`, but it takes effect for any object, top
-// level or nested. This option can be efficiently used to filter properties
-// from source objects into properties defined by the schema.
-var kExtractAllFields = qdata.kExtractAllFields = 0x0002;
+// This option is used in case you have a top level object that doesn't contain
+// any other properties than defined by the schema, but nested objects can. When
+// combined with `qdata.kExtractTop` it efficiently forms `qdata.kExtractAll`.
+//
+// Extraction from nested objects follows the same rules as extraction from top
+// level object. See `qdata.kExtractTop` for more detailed information.
+var kExtractNested = qdata.kExtractNested = 0x0002;
+
+// `qdata.kExtractAll`
+//
+// Extract all fields from the source object and all nested objects.
+//
+// This is like `kExtractTop`, but it takes effect for any object, top level or
+// nested. This option can be efficiently used to filter properties from source
+// objects into properties defined by the schema.
+//
+// NOTE: This is a combination of both `qdata.kExtractTop` and `qdata.kExtractNested`.
+var kExtractAll = qdata.kExtractAll = 0x0003;
+
+// `qdata.kDeltaMode`
+//
+// Delta mode allows to validate a data that contains only changes (deltas).
+// When used all required fields become optional and default values won't
+// be used to substitute data that is not present.
+//
+// NOTE: Delta updating makes sense when updating something that already exists,
+// but it doesn't make sense for data insertion, where you probably don't want
+// to omit what is 'required'. If your stack doesn't use delta updates or you
+// use `qdata` for an input validation only, this feature can be completely
+// ignored.
+var kDeltaMode = qdata.kDeltaMode = 0x0004;
+
+// \internal
+//
+// Flag used internally to generate code for `qdata.test()` like validation.
+var kTestMode = 0x0008;
 
 // `qdata.kAccumulateErrors`
 //
@@ -61,12 +97,7 @@ var kExtractAllFields = qdata.kExtractAllFields = 0x0002;
 // found. This option is useful in cases that you want to see all problems
 // of the input data - for example you want to highlight fields that are
 // wrong on the client or perform an additional processing/fixing.
-var kAccumulateErrors = qdata.kAccumulateErrors = 0x0004;
-
-// \internal
-//
-// Flag used internally to generate a code for `qdata.test()`.
-var kTestModeOnly = 0x0008;
+var kAccumulateErrors = qdata.kAccumulateErrors = 0x1000;
 
 // \internal
 //
@@ -74,25 +105,24 @@ var kTestModeOnly = 0x0008;
 // not here are always checked in the validator function itself and won't cause
 // a new function to be generated when one is already present (even if it was
 // generated with some different options)
-var kFuncCacheMask = kExtractTopFields | kExtractAllFields | kTestModeOnly;
+var kFuncCacheMask = kExtractAll | kDeltaMode | kTestMode;
 
 // \internal
 //
 // Maximum number of functions that can be generated per one final schema. This
 // is basically a last flag shifted one bit left. For example if the last bit is
 // 0x8 the total number of functions generated per schema to cover all possible
-// combinations would be 16 (indexed 0...15).
-var kFuncCacheCount = 0x0008 << 1;
+// combinations would be 16 (indexes 0...15).
+var kFuncCacheCount = kFuncCacheMask + 1;
 
 // Min/Max safe integer limits - 53 bits.
 //
-// NOTE: These should be fully compliant with ES6 `Number.isSafeInteger()`
+// NOTE: These should be fully compliant with ES6 `Number.isSafeInteger()`.
 var kSafeIntMin = qdata.kSafeIntMin = -9007199254740991;
 var kSafeIntMax = qdata.kSafeIntMax =  9007199254740991;
 
-// Min/Max year that can be used in date/datetime.
-var kYearMin = qdata.kYearMin = 1;
-var kYearMax = qdata.kYearMax = 9999;
+// Minimum year that can be used in date/datetime.
+var kYearMin = 1;
 
 // ============================================================================
 // [Tuning]
@@ -110,13 +140,8 @@ var kTuneUseObjectKeysAsCount = false;
 // [Internals]
 // ============================================================================
 
-var toString = Object.prototype.toString;
-var hasOwnProperty = Object.prototype.hasOwnProperty;
-
-function isObject(obj) {
-  return obj.constructor === Object || toString.call(obj) === "[object Object]";
-}
-
+var freeze = Object.freeze;
+var hasOwn = Object.prototype.hasOwnProperty;
 var isArray = Array.isArray;
 
 // \internal
@@ -124,7 +149,16 @@ var isArray = Array.isArray;
 // Unsafe properties are properties that collide with `Object.prototype`. These
 // are always checked by using hasOwnProperty() even if the field can't contain
 // `undefined` value.
-var unsafeProperties = Object.getOwnPropertyNames(Object.prototype);
+//
+// `UnsafeProperties` is a list, not object!
+var UnsafeProperties = Object.getOwnPropertyNames(Object.prototype);
+
+// \internal
+//
+// Properties, which are never copied to the destination schema object.
+var IgnoreProperties = {
+  $a: true // Shortcut to setup both `$r` and `$w` properties.
+};
 
 // \internal
 //
@@ -142,6 +176,9 @@ var MangledType = {
   string : "s"
 };
 
+// Dummy empty object used to replace null/undefined arguments.
+var NoObject = freeze({});
+
 // ============================================================================
 // [Errors]
 // ============================================================================
@@ -155,16 +192,14 @@ function RuntimeError(message) {
   this.name = "RuntimeError";
   this.message = message;
   this.stack = e.stack || "";
+
+  if (this.stack)
+    this.stack = "Runtime" + this.stack;
 }
 qdata.RuntimeError = qclass({
   $extend: Error,
   $construct: RuntimeError
 });
-
-function throwRuntimeError(msg) {
-  throw new RuntimeError(msg);
-}
-qdata.throwRuntimeError = throwRuntimeError;
 
 // \class SchemaError
 //
@@ -185,11 +220,19 @@ function SchemaError(errors) {
   this.message = "Data is not valid according to the schema.";
   this.stack = e.stack || "";
   this.errors = errors;
+
+  if (this.stack)
+    this.stack = "Schema" + this.stack;
 }
 qdata.SchemaError = qclass({
   $extend: Error,
   $construct: SchemaError
 });
+
+function throwRuntimeError(msg) {
+  throw new RuntimeError(msg);
+}
+qdata.throwRuntimeError = throwRuntimeError;
 
 function throwSchemaError(errors) {
   throw new SchemaError(errors);
@@ -218,21 +261,36 @@ function typeOf(val) {
 }
 qdata.typeOf = typeOf;
 
-function copyObject(obj) {
-  var dst = {};
-  for (var k in obj)
-    dst[k] = obj[k];
-  return dst;
-}
+// \function `qdata.cloneWeak(v)`
+//
+// Perform a weak clone of variable `v`. If the variable is an array, a new
+// array is returned containing
+function cloneWeak(v) {
+  if (!v || typeof v !== "object")
+    return v;
 
-function _deepCopy(obj) {
+  if (isArray(v))
+    return v.slice();
+
+  // TODO: Should we use Object.create() ?
+  var dstObj = {};
+  var srcObj = v;
+
+  for (var k in srcObj)
+    dstObj[k] = srcObj[k];
+
+  return dstObj;
+}
+qdata.cloneWeak = cloneWeak;
+
+function _cloneDeep(obj) {
   if (isArray(obj)) {
     var dstArr = [];
     var srcArr = obj;
 
     for (var i = 0, len = srcArr.length; i < len; i++) {
       var child = srcArr[i];
-      dstArr.push((!child || typeof child !== "object") ? child : _deepCopy(child));
+      dstArr.push((!child || typeof child !== "object") ? child : _cloneDeep(child));
     }
 
     return dstArr;
@@ -243,20 +301,21 @@ function _deepCopy(obj) {
 
     for (var k in srcObj) {
       var element = srcObj[k];
-      dstObj[k] = (!element || typeof element !== "object") ? element : _deepCopy(element);
+      dstObj[k] = (!element || typeof element !== "object") ? element : _cloneDeep(element);
     }
 
     return dstObj;
   }
 }
 
-function deepCopy(value) {
-  return (!value || typeof value !== "object") ? value : _deepCopy(value);
+// \function `qdata.cloneDeep(v)`
+function cloneDeep(v) {
+  return (!v || typeof v !== "object") ? v : _cloneDeep(v);
 }
-qdata.deepCopy = deepCopy;
+qdata.cloneDeep = cloneDeep;
 
 // \internal
-function _deepEqual(a, b, buffer) {
+function _isEqual(a, b, buffer) {
   var aType = typeof a;
   var bType = typeof b;
 
@@ -299,7 +358,7 @@ function _deepEqual(a, b, buffer) {
       if (aValue === bValue)
         continue;
 
-      if (!_deepEqual(aValue, bValue, buffer))
+      if (!_isEqual(aValue, bValue, buffer))
         return false;
     }
 
@@ -322,18 +381,18 @@ function _deepEqual(a, b, buffer) {
     buffer.push(b);
 
     for (k in a) {
-      if (!hasOwnProperty.call(a, k))
+      if (!hasOwn.call(a, k))
         continue;
 
-      if (!hasOwnProperty.call(b, k))
+      if (!hasOwn.call(b, k))
         return false;
     }
 
     for (k in b) {
-      if (!hasOwnProperty.call(b, k))
+      if (!hasOwn.call(b, k))
         continue;
 
-      if (!hasOwnProperty.call(a, k))
+      if (!hasOwn.call(a, k))
         return false;
 
       aValue = a[k];
@@ -342,7 +401,7 @@ function _deepEqual(a, b, buffer) {
       if (aValue === bValue)
         continue;
 
-      if (!_deepEqual(aValue, bValue, buffer))
+      if (!_isEqual(aValue, bValue, buffer))
         return false;
     }
 
@@ -353,13 +412,13 @@ function _deepEqual(a, b, buffer) {
   }
 }
 
-// \function `qdata.deepEqual(a, b)`
+// \function `qdata.isEqual(a, b)`
 //
 // Get whether the values `a` and `b` are deep equal.
-function deepEqual(a, b) {
-  return (a === b) ? true : _deepEqual(a, b, []);
+function isEqual(a, b) {
+  return (a === b) ? true : _isEqual(a, b, []);
 }
-qdata.deepEqual = deepEqual;
+qdata.isEqual = isEqual;
 
 // ============================================================================
 // [Util]
@@ -472,7 +531,76 @@ qdata_util.toCamelCase = toCamelCase;
 // [Enum]
 // ============================================================================
 
-function _sortIntFn(a, b) { return a - b; }
+function Enum_sortIntFn(a, b) { return a - b; }
+
+// \function `Enum.$hasKey(key)`
+//
+// Get whether the enum has `key`.
+function Enum_$hasKey(key) {
+  if (typeof key !== "string")
+    return undefined;
+
+  return hasOwn.call(this.$keyMap, key);
+}
+
+// \function `Enum.$keyToValue(key)`
+//
+// Get a value based on `key`.
+function Enum_$keyToValue(key) {
+  if (typeof key !== "string")
+    return undefined;
+
+  var map = this.$keyMap;
+  return hasOwn.call(map, key) ? map[key] : undefined;
+}
+
+// \function `Enum.$hasValue(value)`
+//
+// Get whether the enum has `value`.
+function Enum_$hasValue(value) {
+  if (typeof value !== "number")
+    return false;
+
+  var str = String(value);
+  return hasOwn.call(this.$valueMap, str);
+}
+
+// \internal
+function Enum_$hasValueSequential(value) {
+  if (typeof value !== "number")
+    return false;
+
+  var min = this.$min;
+  var max = this.$max;
+
+  return !(value < min || value > max || Math.floor(value) !== value);
+}
+
+// \function `Enum.$valueToKey(value)`
+//
+// Get a key based on `value`.
+function Enum_$valueToKey(value) {
+  if (typeof value !== "number")
+    return undefined;
+
+  var map = this.$valueMap;
+  var str = String(value);
+  return hasOwn.call(map, str) ? map[str] : undefined;
+}
+
+// \internal
+function Enum_$valueToKeySequential(value) {
+  if (typeof value !== "number")
+    return undefined;
+
+  var min = this.$min;
+  var max = this.$max;
+
+  if (value < min || value > max || Math.floor(value) !== value)
+    return undefined;
+
+  return this.$valueKeys[value - min];
+}
 
 // \function `qdata.enum(def)`
 //
@@ -494,8 +622,6 @@ function Enum(def) {
   if (!def || typeof def !== "object")
     throwRuntimeError("qdata.enum() - Invalid definition of type '" + typeOf(def) + "' passed.");
 
-  var p = Enum.prototype;
-
   var keyList      = [];
   var valueMap     = {};
   var valueList    = [];
@@ -505,10 +631,10 @@ function Enum(def) {
   var sequential   = true;
 
   // Move these functions closer to the object.
-  this.$hasKey     = p.$hasKey;
-  this.$keyToValue = p.$keyToValue;
-  this.$hasValue   = p.$hasValue;
-  this.$valueToKey = p.$valueToKey;
+  this.$hasKey     = Enum_$hasKey;
+  this.$keyToValue = Enum_$keyToValue;
+  this.$hasValue   = Enum_$hasValue;
+  this.$valueToKey = Enum_$valueToKey;
 
   this.$keyMap     = def;       // Mapping of keys to values.
   this.$keyList    = keyList;   // Array containing all keys.
@@ -523,7 +649,7 @@ function Enum(def) {
   this.$sequential = true;      // True if all values form a sequence and don't overlap.
 
   for (var key in def) {
-    if (!hasOwnProperty.call(def, key))
+    if (!hasOwn.call(def, key))
       continue;
 
     var val = def[key];
@@ -532,7 +658,7 @@ function Enum(def) {
     if (!key || key.charCodeAt(0) === 36 || typeof val !== "number" || !isFinite(val))
       throwRuntimeError("qdata.enum() - Invalid key/value pair '" + key +"' -> '" + str + "'.");
 
-    if (!hasOwnProperty.call(valueMap, str)) {
+    if (!hasOwn.call(valueMap, str)) {
       valueMap[str] = key;
       valueList.push(val);
     }
@@ -549,7 +675,7 @@ function Enum(def) {
 
   // Compute $min, $max, and $sequential properties.
   if (valueList.length) {
-    valueList.sort(_sortIntFn);
+    valueList.sort(Enum_sortIntFn);
 
     var a = valueList[0];
     var b = valueList[valueList.length - 1];
@@ -575,8 +701,8 @@ function Enum(def) {
           valueKeys.push(valueMap[String(valueList[i])]);
         }
 
-        this.$hasValue = p.hasValue_Sequential;
-        this.$valueToKey = p.$valueToKey_Sequential;
+        this.$hasValue = Enum_$hasValueSequential;
+        this.$valueToKey = Enum_$valueToKeySequential;
       }
     }
   }
@@ -585,70 +711,7 @@ function Enum(def) {
   this.$unique = unique;
   this.$sequential = sequential;
 }
-qdata.enum = qclass({
-  $construct: Enum,
-
-  // Get whether the enum has `key`.
-  $hasKey: function(key) {
-    if (typeof key !== "string")
-      return undefined;
-
-    return hasOwnProperty.call(this.$keyMap, key);
-  },
-
-  // Get a value based on `key`.
-  $keyToValue: function(key) {
-    if (typeof key !== "string")
-      return undefined;
-
-    var map = this.$keyMap;
-    return hasOwnProperty.call(map, key) ? map[key] : undefined;
-  },
-
-  // Get whether the enum has `value`.
-  $hasValue: function(value) {
-    if (typeof value !== "number")
-      return false;
-
-    var str = String(value);
-    return hasOwnProperty.call(this.$valueMap, str);
-  },
-
-  // \internal
-  $hasValue_Sequential: function(value) {
-    if (typeof value !== "number")
-      return false;
-
-    var min = this.$min;
-    var max = this.$max;
-
-    return !(value < min || value > max || Math.floor(value) !== value);
-  },
-
-  // Get a key based on `value`.
-  $valueToKey: function(value) {
-    if (typeof value !== "number")
-      return undefined;
-
-    var map = this.$valueMap;
-    var str = String(value);
-    return hasOwnProperty.call(map, str) ? map[str] : undefined;
-  },
-
-  // \internal
-  $valueToKey_Sequential: function(value) {
-    if (typeof value !== "number")
-      return undefined;
-
-    var min = this.$min;
-    var max = this.$max;
-
-    if (value < min || value > max || Math.floor(value) !== value)
-      return undefined;
-
-    return this.$valueKeys[value - min];
-  }
-});
+qdata.enum = Enum;
 
 // ============================================================================
 // [CoreCompiler]
@@ -746,7 +809,7 @@ qclass({
     name = this._sanityIdentifierName(name);
     exp = exp || "";
 
-    if (hasOwnProperty.call(locals, name)) {
+    if (hasOwn.call(locals, name)) {
       if (locals[name] !== exp)
         throwRuntimeError("Can't redeclare local variable '" + name + "' with different initialization '" + exp + "'");
     }
@@ -769,7 +832,7 @@ qclass({
     name = this._sanityIdentifierName(name);
     exp = exp || "";
 
-    if (hasOwnProperty.call(globals, name)) {
+    if (hasOwn.call(globals, name)) {
       if (globals[name] !== exp)
         throwRuntimeError("Can't redeclare global variable '" + name + "' with different initialization '" + exp + "'");
     }
@@ -785,7 +848,7 @@ qclass({
     var map = this._dataToVar;
 
     if (!name) {
-      if (hasOwnProperty.call(map, exp))
+      if (hasOwn.call(map, exp))
         name = map[exp];
       else
         name = this._makeUniqueName();
@@ -1016,16 +1079,14 @@ qclass({
     this.arg("options");
 
     this.declareData("qdata", this._env);
-
-    if (this.hasOption(kExtractTopFields) || this.hasOption(kExtractAllFields))
-      this.setExtract(true);
+    this.setExtract(this.hasOption(kExtractTop));
 
     var vIn = "input";
     var vOut = this.compileType(vIn, def);
 
     this.nl();
 
-    if (!this.hasOption(kTestModeOnly))
+    if (!this.hasOption(kTestMode))
       this.emit("return " + vOut + ";");
     else
       this.emit("return true;");
@@ -1138,7 +1199,7 @@ qclass({
 
   failIf: function(cond, err) {
     this.ifElseIf(cond);
-    if (this.hasOption(kTestModeOnly))
+    if (this.hasOption(kTestMode))
       this.emit("return false;");
     else
       this.emitError(err);
@@ -1148,7 +1209,7 @@ qclass({
   },
 
   emitError: function(err) {
-    if (this.hasOption(kTestModeOnly)) {
+    if (this.hasOption(kTestMode)) {
       this.emit("return false;");
     }
     else {
@@ -1216,145 +1277,235 @@ var _isArrayFieldRE = /\[(\d+)?(\.\.)?(\d+)?]$/;
 
 // \internal
 //
-// Translate the given schema definition into an internal format that can
-// be used by `qdata` library. This function is called for root type and
-// all children it contains, basically per recognized type.
-function _schemaField(def, env, priv) {
-  // Safe defaults.
-  var name = def.$type || "object";
-  var defData = def.$data;
+// Test if the given UAC role is valid (forbid some characters that can violate
+// with future boolean algebra that can be applied to UAC system).
+var _isInvalidUAC = /[\x00-\x1F\s\[\]\{\}\(\)\&\|\^\!%@]/g;
 
-  var hasNull = false;
-  var hasUndef = false;
+function normalizeUAC(uac, op, inherit) {
+  if (!uac || uac === "inherit")
+    uac = inherit;
 
-  var obj, k;
+  if (uac === "__proto__")
+    return null;
 
-  // If the $type ends with "?" it implies `{ $null: true }` definition.
-  if (_isOptionalFieldRE.test(name)) {
-    name = name.substr(0, name.length - 1);
-    hasNull = true;
+  if (uac === "*")
+    return "any";
+  uac = uac.replace("@", op);
 
-    // Prevent from having invalid type that contains for example "??" by mistake.
-    if (_isOptionalFieldRE.test(name))
-      throwRuntimeError("Invalid type '" + def.$type + "'.");
-  }
+  if (_isInvalidUAC.test(uac))
+    return null;
 
-  // If the $type ends with "[...]" it implies `{ $type: "array", $data: ... }`.
-  // In this case all definitions specified in `def` are related to the array
-  // elements, not the array itself. However, it's possible to specify basics
-  // like array length, minimum length, and maximum length.
-  var m = name.match(_isArrayFieldRE);
+  return uac;
+}
 
-  if (!m && name.indexOf("[") !== -1)
-    throwRuntimeError("Invalid type '" + def.$type + "'.");
+// \internal
+//
+// Schema builder is responsible for translating a non-normalized schema into
+// a normalized schema that can be actually used by extractors and validators.
+function SchemaBuilder(env, options) {
+  if (!options)
+    options = NoObject;
 
-  if (m) {
-    var nested = copyObject(def);
-    nested.$type = name.substr(0, name.length - m[0].length);
+  // The environment the schema is bound to (qdata or inherited).
+  this.env = env;
+  this.options = options;
 
-    var minLen = m[1] ? parseInt(m[1]) : null;
-    var maxLen = m[3] ? parseInt(m[3]) : null;
+  // All user access roles that appeared in all fields, nested inclusive. The
+  // `uac@Id` field is used as an ID generator for each user access role per a
+  // schema instance (various schemas will have different IDs for the same UACs).
+  this.uacReadMap = {};
+  this.uacReadIdGen = 0;
+  this.uacReadDefault = normalizeUAC(options.$r || options.$a, "r", "any");
 
-    if (minLen !== null && maxLen !== null && minLen > maxLen)
-      throwRuntimeError("Invalid type '" + def.$type + "'.");
+  this.uacWriteMap = {};
+  this.uacWriteIdGen = 0;
+  this.uacWriteDefault = normalizeUAC(options.$w || options.$a, "w", "any");
+}
+qclass({
+  $construct: SchemaBuilder,
 
-    obj = {
-      $type     : "array",
-      $data     : _schemaField(nested, env, null),
-      $null     : hasNull,
-      $undefined: false,
-      $_qPrivate: priv
+  // \internal
+  //
+  // Called once per schema, it adds the root field.
+  build: function(def) {
+    // The member `$_qPrivate` is considered private and used exclusively by
+    // the QData library. This is the only reserved property so far.
+    var priv = {
+      env        : this.env,
+      uacReadMap : this.uacReadMap,
+      uacWriteMap: this.uacWriteMap,
+      cache      : new Array(kFuncCacheCount)
     };
 
-    if (m[2]) {
-      // [min..], [..max] or [min..max] syntax.
-      if (minLen !== null) obj.$minLength = minLen;
-      if (maxLen !== null) obj.$maxLength = maxLen;
+    return this.field(def, null, priv);
+  },
+
+  // \internal
+  //
+  // Translate the given schema definition into an internal format that can
+  // be used by `qdata` library. This function is called for root type and
+  // all children it contains, basically per recognized type.
+  field: function(def, parent, priv) {
+    // Safe defaults.
+    var type = def.$type || "object";
+    var obj, k;
+
+    var defData = def.$data;
+    var nullable = false;
+
+    // If the $type ends with "?" it implies `{ $null: true }` definition.
+    if (_isOptionalFieldRE.test(type)) {
+      type = type.substr(0, type.length - 1);
+      nullable = true;
+
+      // Prevent from having invalid type that contains for example "??" by mistake.
+      if (_isOptionalFieldRE.test(type))
+        throwRuntimeError("Invalid type '" + def.$type + "'.");
+    }
+
+    // If the $type ends with "[...]" it implies `{ $type: "array", $data: ... }`.
+    // In this case all definitions specified in `def` are related to the array
+    // elements, not the array itself. However, it's possible to specify basics
+    // like array length, minimum length, and maximum length inside "[...]".
+    var m = type.match(_isArrayFieldRE);
+    if (!m && type.indexOf("[") !== -1)
+      throwRuntimeError("Invalid type '" + def.$type + "'.");
+
+    var r = this.processReadUAC(def.$r || def.$a, parent);
+    var w = this.processWriteUAC(def.$w || def.$a, parent);
+    var g = def.$g || "default";
+
+    if (m) {
+      var nested = cloneWeak(def);
+      nested.$type = type.substr(0, type.length - m[0].length);
+
+      var minLen = m[1] ? parseInt(m[1]) : null;
+      var maxLen = m[3] ? parseInt(m[3]) : null;
+
+      if (minLen !== null && maxLen !== null && minLen > maxLen)
+        throwRuntimeError("Invalid type '" + def.$type + "'.");
+
+      obj = {
+        $type     : "array",
+        $data     : null,
+        $null     : nullable,
+        $r        : r,
+        $w        : w,
+        $g        : g,
+        $_qPrivate: priv
+      };
+      obj.$data = this.field(nested, obj, null);
+
+      if (m[2]) {
+        // [min..], [..max] or [min..max] syntax.
+        if (minLen !== null) obj.$minLength = minLen;
+        if (maxLen !== null) obj.$maxLength = maxLen;
+      }
+      else {
+        // [length] syntax.
+        if (minLen !== null) obj.$length = minLen;
+      }
     }
     else {
-      // [length] syntax.
-      if (minLen !== null) obj.$length = minLen;
-    }
-  }
-  else {
-    if (typeof def.$null === "boolean")
-      hasNull = def.$null;
+      if (typeof def.$null === "boolean")
+        nullable = def.$null;
 
-    if (typeof def.$undefined === "boolean")
-      hasUndef = def.$undefined;
+      obj = {
+        $type     : type,
+        $data     : null,
+        $null     : nullable,
+        $r        : r,
+        $w        : w,
+        $g        : g,
+        $_qPrivate: priv
+      };
 
-    obj = {
-      $type     : name,
-      $data     : null,
-      $null     : hasNull,
-      $undefined: hasUndef,
-      $_qPrivate: priv
-    };
+      if (type === "object") {
+        var $data = obj.$data = {};
 
-    if (name === "object") {
-      var $data = obj.$data = {};
+        for (k in def) {
+          var kDef = def[k];
 
-      for (k in def) {
-        var kDef = def[k];
+          // Properties are stored in `obj` itself, however, object fields are
+          // stored always in `obj.$data`. This is just a way to distinguish
+          // qdata properties from object's properties.
+          if (!isPropertyName(k))
+            $data[unescapeFieldName(k)] = this.field(kDef, obj, null);
+          else if (!hasOwn.call(obj, k) && IgnoreProperties[k] !== true)
+            obj[k] = kDef;
+        }
 
-        // Properties are stored in `obj` itself, however, object fields are
-        // stored always in `obj.$data`. This is just a way to distinguish
-        // qdata properties from object's properties.
-        if (!isPropertyName(k))
-          $data[unescapeFieldName(k)] = _schemaField(kDef, env, null);
-        else if (!hasOwnProperty.call(obj, k))
-          obj[k] = kDef;
+        if (defData != null) {
+          if (typeof defData !== "object")
+            throwRuntimeError("Property '$data' has to be object, not '" + typeOf(defData) + "'.");
+
+          for (k in defData) {
+            kDef = defData[k];
+            $data[k] = this.field(kDef, obj, null);
+          }
+        }
       }
+      else {
+        for (k in def) {
+          if (!isPropertyName(k))
+            throwRuntimeError("Data field '" + k + "'can't be used by '" + type + "' type.");
 
-      if (defData != null) {
-        if (typeof defData !== "object")
-          throwRuntimeError("Property '$data' has to be object, not '" + typeOf(defData) + "'.");
+          if (!hasOwn.call(obj, k))
+            obj[k] = def[k];
+        }
 
-        for (k in defData) {
-          kDef = defData[k];
-          $data[k] = _schemaField(kDef, env, null);
+        if (defData != null) {
+          if (typeof defData !== "object")
+            throwRuntimeError("Property '$data' has to be object, not '" + typeOf(defData) + "'.");
+
+          obj.$data = this.field(defData, obj, null);
         }
       }
     }
-    else {
-      for (k in def) {
-        if (!isPropertyName(k))
-          throwRuntimeError("Data field '" + k + "'can't be used by '" + name + "' type.");
 
-        if (!hasOwnProperty.call(obj, k))
-          obj[k] = def[k];
-      }
+    // Validate that the postprocessed object is valid and can be compiled.
+    var TypeObject = this.env.getType(obj.$type);
+    if (!TypeObject)
+      throwRuntimeError("Unknown type '" + obj.$type + "'.");
 
-      if (defData != null) {
-        if (typeof defData !== "object")
-          throwRuntimeError("Property '$data' has to be object, not '" + typeOf(defData) + "'.");
+    if (typeof TypeObject.hook === "function")
+      TypeObject.hook(obj, this.env);
 
-        obj.$data = _schemaField(defData, env, null);
-      }
-    }
+    return obj;
+  },
+
+  // Process a given `uac` and return a normalized string that doesn't contain
+  // virtual UACs like "inherit" (also handles null/empty string as "inherit").
+  processReadUAC: function(uacOrig, parent) {
+    var uac = normalizeUAC(uacOrig, "r", parent ? parent.$r : this.uacReadDefault);
+    if (uac === null)
+      throwRuntimeError("Invalid UAC '" + uacOrig + "'.");
+
+    if (uac !== "none" && uac !== "any" && !hasOwn.call(this.uacReadMap, uac))
+      this.uacReadMap[uac] = this.uacReadIdGen++;
+
+    return uac;
+  },
+
+  processWriteUAC: function(uacOrig, parent) {
+    var uac = normalizeUAC(uacOrig, "w", parent ? parent.$w : this.uacWriteDefault);
+    if (uac === null)
+      throwRuntimeError("Invalid UAC '" + uacOrig + "'.");
+
+    if (uac !== "none" && uac !== "any" && !hasOwn.call(this.uacWriteMap, uac))
+      this.uacWriteMap[uac] = this.uacWriteIdGen++;
+
+    return uac;
   }
-
-  // Validate that the postprocessed object is valid and can be compiled.
-  var type = env.getType(obj.$type);
-  if (!type)
-    throwRuntimeError("Unknown type '" + obj.$type + "'.");
-
-  if (typeof type.hook === "function")
-    type.hook(obj, env);
-
-  return obj;
-}
+});
 
 // \function `qdata.schema(def)`
 //
 // Processes the given definition `def` and creates a schema that can be used
 // and compiled by `qdata` library. It basically normalizes the input object
 // and calls `type` and `rule` hooks on it.
-function schema(def) {
-  // The member `$_qPrivate` is considered private and used exclusively by the
-  // QData library. This is the only reserved property so far.
-  var priv = { fnCache: new Array(kFuncCacheCount) };
-  return _schemaField(def, this || qdata, priv);
+function schema(def, options) {
+  return (new SchemaBuilder(this || qdata, options)).build(def);
 }
 qdata.schema = schema;
 
@@ -1374,12 +1525,12 @@ var _errorsGlobal = null;
 // \internal
 //
 // Compile and return a function that can be used to process data based on the
-// definition `def` and options given in `fnIndex` (options and processing mode).
-function compile(env, def, fnIndex) {
-  var fnCache = def.$_qPrivate.fnCache;
-  var fn = (new SchemaCompiler(env, fnIndex)).compileFunc(def);
+// definition `def` and options given in `index` (options and processing mode).
+function compile(env, def, index) {
+  var cache = def.$_qPrivate.cache;
+  var fn = (new SchemaCompiler(env, index)).compileFunc(def);
 
-  fnCache[fnIndex] = fn;
+  cache[index] = fn;
   return fn;
 }
 
@@ -1388,13 +1539,13 @@ function compile(env, def, fnIndex) {
 // Process the given `data` by using a definition `def`, `options` and `access`
 // rights. The function specific for the validation type and options is compiled
 // on demand and then cached.
-function process(data, def, _options, access) {
+qdata.process = function(data, def, _options, access) {
   var options = typeof _options === "number" ? (_options | 0) : 0;
 
-  var fnCache = def.$_qPrivate.fnCache;
-  var fnIndex = options & kFuncCacheMask;
+  var cache = def.$_qPrivate.cache;
+  var index = options & kFuncCacheMask;
 
-  var fn = fnCache[fnIndex] || compile(this || qdata, def, fnIndex);
+  var fn = cache[index] || compile(this || qdata, def, index);
   var errors = _errorsGlobal || [];
 
   _errorsGlobal = null;
@@ -1405,23 +1556,21 @@ function process(data, def, _options, access) {
 
   _errorsGlobal = errors;
   return result;
-}
-qdata.process = process;
+};
 
 // \function `qdata.test(data, def, options, access)`
 //
 // Tests the given `data` by using a definition `def`, `options` and `access`
 // right.
-function test(data, def, _options, access) {
-  var options = typeof _options === "number" ? _options | kTestModeOnly : kTestModeOnly;
+qdata.test = function(data, def, _options, access) {
+  var options = typeof _options === "number" ? _options | kTestMode : kTestMode;
 
-  var fnCache = def.$_qPrivate.fnCache;
-  var fnIndex = options & kFuncCacheMask;
+  var cache = def.$_qPrivate.cache;
+  var index = options & kFuncCacheMask;
 
-  var fn = fnCache[fnIndex] || compile(this || qdata, def, fnIndex);
+  var fn = cache[index] || compile(this || qdata, def, index);
   return fn(null, data, options, access);
-}
-qdata.test = test;
+};
 
 // ============================================================================
 // [Schema - Customize]
@@ -1443,11 +1592,10 @@ qdata.rules = {};
 // Get a type by `name`.
 //
 // The function also matches type aliases.
-function getType(name) {
+qdata.getType = function(name) {
   var types = this.types;
-  return (hasOwnProperty.call(types, name)) ? types[name] : null;
-}
-qdata.getType = getType;
+  return (hasOwn.call(types, name)) ? types[name] : null;
+};
 
 // \function `qdata.addType(t)`
 //
@@ -1473,7 +1621,7 @@ qdata.getType = getType;
 //   compile: Function(c, v, def) { ... }
 // }
 // ```
-function addType(data) {
+qdata.addType = function(data) {
   var types = this.types;
 
   if (!isArray(data))
@@ -1489,22 +1637,20 @@ function addType(data) {
   }
 
   return this;
-}
-qdata.addType = addType;
+};
 
 // \function `qdata.getRule(name)`
 //
 // Get a rule by `name`.
-function getRule(name) {
+qdata.getRule = function(name) {
   var rules = this.rules;
-  return (hasOwnProperty.call(rules, name)) ? rules[name] : null;
-}
-qdata.getRule = getRule;
+  return (hasOwn.call(rules, name)) ? rules[name] : null;
+};
 
 // \function `qdata.addRule(rule)`
 //
 // Add a rule or rules to the `qdata` environment.
-function addRule(data) {
+qdata.addRule = function(data) {
   var rules = this.rules;
 
   if (!isArray(data))
@@ -1516,8 +1662,7 @@ function addRule(data) {
   }
 
   return this;
-}
-qdata.addRule = addRule;
+};
 
 // \function `qdata.customize(opt)`
 //
@@ -1550,7 +1695,7 @@ qdata.addRule = addRule;
 // The advantage of this approach is that changes are not made globally and the
 // new types or rules can be accessed only through the new `qdata` like object
 // returned.
-function customize(opt) {
+qdata.customize = function(opt) {
   if (opt == null)
     opt = {};
 
@@ -1559,12 +1704,12 @@ function customize(opt) {
       "qdata.customize(opt) - The `opt` parameter has to be an object, received " + typeOf(opt) + ".");
 
   // Create a new `qdata` like object.
-  var obj = copyObject(this || qdata);
+  var obj = cloneWeak(this || qdata);
   var tmp;
 
   // Clone members that can change.
-  obj.types = copyObject(obj.types);
-  obj.rules = copyObject(obj.rules);
+  obj.types = cloneWeak(obj.types);
+  obj.rules = cloneWeak(obj.rules);
 
   // Customize types and/or rules if provided.
   tmp = opt.types;
@@ -1576,8 +1721,17 @@ function customize(opt) {
     obj.addRule(tmp);
 
   return obj;
-}
-qdata.customize = customize;
+};
+
+// \function `qdata.freeze()`
+//
+// Freeze the object (deep) to prevent any future modifications.
+qdata.freeze = function() {
+  freeze(this.types);
+  freeze(this.rules);
+
+  return freeze(this);
+};
 
 // ============================================================================
 // [SchemaType - Base]
@@ -1614,39 +1768,28 @@ qdata.BaseType = qclass({
     var vOut = v;
 
     var typeError = this.typeError || TypeToError[type];
-
     var isNull = def.$null;
-    var isUndef = def.$undefined;
 
     // Object and Array types require `vOut` variable to be different than `vIn`.
     if (type === "object" || type === "array") {
-      if (!c.hasOption(kTestModeOnly))
+      if (!c.hasOption(kTestMode))
         vOut = c.addLocal("out", c.mangledType(type));
     }
 
     // Emit type check that considers `null` and `undefined` values if specified.
     if (type === "object") {
-      var constructor = type === "array" ? "Array" : "Object";
+      var ctor = type === "array" ? "Array" : "Object";
       var toStringFn = c.declareGlobal("toString", "Object.prototype.toString");
       var cond = "";
 
       c.emit(vOut + " = " + vIn + ";");
 
-      if (isNull && isUndef) {
-        c.passIf(vIn + " == null");
-      }
-      else if (isNull) {
+      if (isNull)
         c.passIf(vIn + " === null");
-      }
-      else if (isUndef) {
-        c.passIf(vIn + " === undefined");
-        cond = vIn + " === null || ";
-      }
-      else {
+      else
         cond = vIn + " == null || ";
-      }
 
-      cond += "(" + vIn + ".constructor !== " + constructor + " && " + toStringFn + ".call(" + v + ") !== \"[object " + constructor + "]\")";
+      cond += "(" + vIn + ".constructor !== " + ctor + " && " + toStringFn + ".call(" + v + ") !== \"[object " + ctor + "]\")";
       c.failIf(cond, c.error(c.str(typeError)));
 
       this.compileType(c, vOut, vIn, def);
@@ -1657,12 +1800,8 @@ qdata.BaseType = qclass({
       else
         c.ifElseIf("typeof " + vIn + " !== \"" + type + "\"");
 
-      if (def.$null && def.$undefined)
-        cond = vIn + " != null";
-      else if (def.$null)
+      if (isNull)
         cond = vIn + " !== null";
-      else if (def.$undefined)
-        cond = vIn + " !== undefined";
       else
         cond = null;
 
@@ -1694,7 +1833,7 @@ qdata.BaseType = qclass({
 function BooleanType() {
   BaseType.call(this);
 }
-qdata.BooleanType = qclass({
+qclass({
   $extend: BaseType,
   $construct: BooleanType,
 
@@ -1705,7 +1844,7 @@ qdata.BooleanType = qclass({
     var allowed = def.$allowed;
 
     // This is a boolean specific.
-    if (allowed != null && allowed.length > 0) {
+    if (isArray(allowed) && allowed.length > 0) {
       var isTrue  = allowed.indexOf(true ) !== -1;
       var isFalse = allowed.indexOf(false) !== -1;
 
@@ -1731,7 +1870,7 @@ qdata.addType(new BooleanType());
 function NumberType() {
   BaseType.call(this);
 }
-qdata.NumberType = qclass({
+qclass({
   $extend: BaseType,
   $construct: NumberType,
 
@@ -1876,7 +2015,7 @@ var isInvalidTextRE = /[\x00-\x08\x0B-\x0C\x0E-\x1F]/;
 function StringType() {
   BaseType.call(this);
 }
-qdata.StringType = qclass({
+qclass({
   $extend: BaseType,
   $construct: StringType,
 
@@ -1941,7 +2080,7 @@ qdata.addType(new StringType());
 function CharType() {
   BaseType.call(this);
 }
-qdata.CharType = qclass({
+qclass({
   $extend: BaseType,
   $construct: CharType,
 
@@ -2026,7 +2165,7 @@ qdata_util.isBigInt = isBigInt;
 function BigIntType() {
   BaseType.call(this);
 }
-qdata.BigIntType = qclass({
+qclass({
   $extend: BaseType,
   $construct: BigIntType,
 
@@ -2155,11 +2294,11 @@ function isColor(s, cssNames, extraNames) {
   s = s.toLowerCase();
 
   // Validate named entities.
-  if (cssNames !== false && hasOwnProperty.call(ColorNames, s))
+  if (cssNames !== false && hasOwn.call(ColorNames, s))
     return true;
 
   // Validate extra table (can contain values like "currentColor", "none", ...)
-  if (extraNames != null && hasOwnProperty.call(extraNames, s))
+  if (extraNames != null && hasOwn.call(extraNames, s))
     return true;
 
   return false;
@@ -2169,7 +2308,7 @@ qdata_util.isColor = isColor;
 function ColorType() {
   BaseType.call(this);
 }
-qdata.ColorType = qclass({
+qclass({
   $extend: BaseType,
   $construct: ColorType,
 
@@ -2242,7 +2381,7 @@ qdata_util.isMAC = isMAC;
 function MACType() {
   BaseType.call(this);
 }
-qdata.MACType = qclass({
+qclass({
   $extend: BaseType,
   $construct: MACType,
 
@@ -2486,7 +2625,7 @@ qdata_util.isIPV6 = isIPV6;
 function IPType() {
   BaseType.call(this);
 }
-qdata.IPType = qclass({
+qclass({
   $extend: BaseType,
   $construct: IPType,
 
@@ -2640,7 +2779,7 @@ var DateFactory = {
   get: function(format) {
     var cache = this.cache;
 
-    if (hasOwnProperty.call(cache, format))
+    if (hasOwn.call(cache, format))
       return cache[format];
 
     var detail = this.inspect(format);
@@ -2708,7 +2847,7 @@ var DateFactory = {
     for (i = 0, len = parts.length; i < len; i++) {
       var part = parts[i];
 
-      if (hasOwnProperty.call(DateComponents, part)) {
+      if (hasOwn.call(DateComponents, part)) {
         var data = DateComponents[part];
         var symb = part.charAt(0);
 
@@ -2785,7 +2924,7 @@ var DateFactory = {
       var part = parts[i];
       var symb = part.charAt(0);
 
-      if (hasOwnProperty.call(detail, symb)) {
+      if (hasOwn.call(detail, symb)) {
         var data = detail[symb];
         var jLen = data.len;
 
@@ -2894,7 +3033,7 @@ var DateFactory = {
 function DateType() {
   BaseType.call(this);
 }
-qdata.DateType = qclass({
+qclass({
   $extend: BaseType,
   $construct: DateType,
 
@@ -2956,7 +3095,7 @@ qdata.addType(new DateType());
 function ObjectType() {
   BaseType.call(this);
 }
-qdata.ObjectType = qclass({
+qclass({
   $extend: BaseType,
   $construct: ObjectType,
 
@@ -2985,7 +3124,7 @@ qdata.ObjectType = qclass({
 
     var i;
     var path = c.getPath();
-    var extract = c.setExtract(c.hasOption(kExtractAllFields));
+    var extract = c.setExtract(c.hasOption(kExtractNested));
 
     // Collect information regarding mandatory and optional keys.
     for (eKey in fields) {
@@ -3014,25 +3153,36 @@ qdata.ObjectType = qclass({
         eKey = mandatoryFields[i];
         eDef = fields[eKey];
 
-        var isUnsafeProperty = eDef.$undefined || unsafeProperties.indexOf(eKey) !== -1;
+        var isUnsafeProperty = UnsafeProperties.indexOf(eKey) !== -1;
+        var isDefaultProperty = eDef.$default !== undefined;
+
+        if (isUnsafeProperty || isDefaultProperty)
+          c.declareGlobal("hasOwn", "Object.prototype.hasOwnProperty");
+
+        c.addPath('"."', c.str(eKey));
 
         eMangledType = c.mangledType(eDef);
         eIn = c.addLocal(eKey, eMangledType);
 
-        c.addPath('"."', c.str(eKey));
-        if (isUnsafeProperty) {
-          c.declareGlobal("hasOwnProperty", "Object.prototype.hasOwnProperty");
-          c.emit("if (hasOwnProperty.call(" + v + ", " + c.str(eKey) + ")) {");
-        }
-        c.emit(eIn + " = " + v + "[" + c.str(eKey) + "];");
+        if (isUnsafeProperty || isDefaultProperty)
+          c.emit("if (hasOwn.call(" + v + ", " + c.str(eKey) + ")) {");
 
+        c.emit(eIn + " = " + v + "[" + c.str(eKey) + "];");
         eOut = c.compileType(eIn, eDef);
         mandatoryVars.push(eOut);
 
-        if (isUnsafeProperty) {
+        if (isUnsafeProperty || isDefaultProperty) {
           c.emit("}");
           c.emit("else {");
-          c.emitError(c.error(c.str("RequiredField")));
+
+          if (isDefaultProperty) {
+            c.emit(eOut + " = " + JSON.stringify(eDef.$default) + ";");
+            c.emit(vLen + "--;"); // Default property doesn't count.
+          }
+          else {
+            c.emitError(c.error(c.str("RequiredField")));
+          }
+
           c.emit("}");
         }
 
@@ -3041,7 +3191,7 @@ qdata.ObjectType = qclass({
         c.done();
       }
 
-      if (!c.hasOption(kTestModeOnly)) {
+      if (!c.hasOption(kTestMode)) {
         c.emit(vOut + " = {");
         for (i = 0; i < mandatoryFields.length; i++) {
           eKey = mandatoryFields[i];
@@ -3053,7 +3203,7 @@ qdata.ObjectType = qclass({
       }
     }
     else {
-      if (!c.hasOption(kTestModeOnly)) {
+      if (!c.hasOption(kTestMode)) {
         c.emit(vOut + " = {};");
       }
     }
@@ -3064,8 +3214,8 @@ qdata.ObjectType = qclass({
 
         c.nl();
 
-        c.declareGlobal("hasOwnProperty", "Object.prototype.hasOwnProperty");
-        c.emit("if (hasOwnProperty.call(" + v + ", " + c.str(eKey) + ")) {");
+        c.declareGlobal("hasOwn", "Object.prototype.hasOwnProperty");
+        c.emit("if (hasOwn.call(" + v + ", " + c.str(eKey) + ")) {");
 
         eMangledType = c.mangledType(eDef);
         eIn = c.addLocal(eKey, eMangledType);
@@ -3078,7 +3228,7 @@ qdata.ObjectType = qclass({
         eOut = c.compileType(eIn, eDef);
         c.setPath(path);
 
-        if (!c.hasOption(kTestModeOnly))
+        if (!c.hasOption(kTestMode))
           c.emit(vOut + "[" + c.str(eKey) + "] = " + eOut + ";");
 
         c.emit("}");
@@ -3099,7 +3249,7 @@ qdata.ObjectType = qclass({
         c.emit("if (" + vLen + " !== 0) {");
       }
 
-      if (c.hasOption(kTestModeOnly)) {
+      if (c.hasOption(kTestMode)) {
         c.emit("return false;");
       }
       else {
@@ -3122,7 +3272,7 @@ qdata.ObjectType = qclass({
     var list = [];
 
     for (var k in src)
-      if (!hasOwnProperty.call(dst, k))
+      if (!hasOwn.call(dst, k))
         list.push(k);
 
     return {
@@ -3141,7 +3291,7 @@ qdata.addType(new ObjectType());
 function ArrayType() {
   BaseType.call(this);
 }
-qdata.ArrayType = qclass({
+qclass({
   $extend: BaseType,
   $construct: ArrayType,
 
@@ -3155,7 +3305,7 @@ qdata.ArrayType = qclass({
     c.otherwise();
     c.emit(vLen + " = " + v + ".length;");
 
-    if (!c.hasOption(kTestModeOnly))
+    if (!c.hasOption(kTestMode))
       c.emit(vOut + " = [];");
 
     var cond = [];
@@ -3189,7 +3339,7 @@ qdata.ArrayType = qclass({
     var prevPath = c.addPath("", '"[" + ' + vIdx + ' + "]"');
     var eOut = c.compileType(eIn, eDef);
 
-    if (!c.hasOption(kTestModeOnly))
+    if (!c.hasOption(kTestMode))
       c.emit(vOut + ".push(" + eOut + ");");
 
     c.emit("}");
@@ -3231,6 +3381,7 @@ qdata.addRule({
       var field = data[key];
 
       // TODO: Implement.
+      
     }
 
     def.$pkArray = pkArray;
@@ -3245,7 +3396,7 @@ qdata.addRule({
 // [Exports]
 // ============================================================================
 
-$export[$as] = qdata;
+$export[$as] = qdata.freeze();
 
 }).apply(this, typeof module === "object"
   ? [require("qclass"), module, "exports"]
