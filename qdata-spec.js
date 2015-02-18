@@ -8,20 +8,73 @@ var qdata = require("./qdata");
 var isEqual = qdata.isEqual;
 var cloneDeep = qdata.cloneDeep;
 
-function TestError(message, schema, input, output, expected) {
-  var e = Error(message);
-  var s = "TestError: " + message + "\n";
+function repeatString(s, n) {
+  var result = "";
+  for (var i = 0; i < n; i++)
+    result += s;
+  return result;
+}
 
-  if (arguments.length > 1) s += "schema = "   + JSON.stringify(schema  , null, 2) + "\n";
-  if (arguments.length > 2) s += "input = "    + JSON.stringify(input   , null, 2) + "\n";
-  if (arguments.length > 3) s += "output = "   + JSON.stringify(output  , null, 2) + "\n";
-  if (arguments.length > 4) s += "expected = " + JSON.stringify(expected, null, 2) + "\n";
+function serializeSchema(schema) {
+  var tmp = {};
+  for (var k in schema) {
+    if (k === "$_qPrivate" && schema[k] != null)
+      tmp[k] = "<...>";
+    else
+      tmp[k] = schema[k];
+  }
+  return tmp;
+}
 
-  console.log("\n" + s);
+function serializeOptions(options) {
+  var arr = [];
+
+  if ((options & qdata.kExtractAll) === qdata.kExtractTop)
+    arr.push("kExtractTop");
+
+  if ((options & qdata.kExtractAll) === qdata.kExtractNested)
+    arr.push("kExtractNested");
+
+  if ((options & qdata.kExtractAll) === qdata.kExtractAll)
+    arr.push("kExtractAll");
+
+  if ((options & qdata.kDeltaMode) !== 0)
+    arr.push("kDeltaMode");
+
+  if ((options & qdata.kAccumulateErrors) !== 0)
+    arr.push("kAccumulateErrors");
+
+  return arr;
+}
+
+function serializeFailure(reason, schema, options, access, input, output, expected, errors) {
+  var e = "ERROR - " + reason;
+  var s = e + "\n" + repeatString("-", e.length) + "\n";
+
+  if (schema   !== undefined) s += "schema"   + " = " + JSON.stringify(serializeSchema(schema), null, 2) + "\n";
+  if (options  !== undefined) s += "options"  + " = " + JSON.stringify(serializeOptions(options)) + "\n";
+  if (access   !== undefined) s += "access"   + " = " + JSON.stringify(access, null, 2) + "\n";
+  if (input    !== undefined) s += "input"    + " = " + JSON.stringify(input, null, 2) + "\n";
+  if (output   !== undefined) s += "output"   + " = " + JSON.stringify(output, null, 2) + "\n";
+  if (expected !== undefined) s += "expected" + " = " + JSON.stringify(expected, null, 2) + "\n";
+  if (errors   !== undefined) s += "Errors"   + " = " + JSON.stringify(errors, null, 2) + "\n";
+
+  try {
+    var fn = qdata._getProcessCompiled(schema, options, access);
+    s += "process = " + fn.toString();
+  }
+  catch (ex) {
+    s += "process = <Invalid function generated>";
+  }
+
+  return reason + "\n" + s;
+}
+
+function TestError(message) {
+  this.message = message;
 
   this.name = "TestError";
-  this.message = s;
-  this.stack = e.stack;
+  this.stack = "Test" + Error(message).stack;
 }
 qclass({
   $extend: Error,
@@ -32,45 +85,42 @@ function pass(input, schema, options, access, expected) {
   var output = null;
   var err = null;
 
-  if (err)
-    throw err;
-
   try {
     output = qdata.process(input, schema, options, access);
   }
   catch (ex) {
-    console.log("Schema should have passed:");
-    console.log(JSON.stringify(schema, null, 2));
-    console.log(JSON.stringify(input));
-
     err = ex;
   }
 
-  if (err)
+  if (err) {
+    var errors = err instanceof qdata.SchemaError ? err.errors : undefined;
+    console.log(serializeFailure(
+      "Should have passed", schema, options, access, input, undefined, expected, errors));
     throw err;
+  }
 
   if (arguments.length <= 4)
     expected = input;
 
   if (!isEqual(output, expected)) {
-    if (arguments.length <= 4)
-      throw new TestError("Result didn't match the input data.", schema, input, output);
-    else
-      throw new TestError("Result didn't match the input data.", schema, input, output, expected);
+    throw new TestError(serializeFailure(
+      "Didn't match the expected output", schema, options, access, input, output, arguments.length <= 4 ? undefined : expected));
   }
 }
 
-function fail(input, schema, options) {
+function fail(input, schema, options, access) {
   var output = null;
 
   try {
-    output = qdata.process(input, schema, options);
+    output = qdata.process(input, schema, options, access);
   }
   catch (ex) {
+    if (!(ex instanceof qdata.SchemaError))
+      console.log("ERROR: " + ex);
     return;
   }
 
-  throw new TestError("Validation should have failed", schema, input, output);
+  throw new TestError(serializeFailure("Should have failed", schema, options, access, input, output));
 }
 
 function assertThrow(fn) {
@@ -1093,6 +1143,13 @@ describe("QData", function() {
     assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-MM-DD ss" }); });
   });
 
+  it("should validate object - empty object", function() {
+    var def = qdata.schema({});
+
+    pass({}, def);
+    fail({ a: true }, def);
+  });
+
   it("should validate object - mandatory fields", function() {
     var def = qdata.schema({
       a: { $type: "bool"   },
@@ -1223,6 +1280,30 @@ describe("QData", function() {
 
     fail(noise2, def, qdata.kNoOptions);
     fail(noise2, def, qdata.kExtractTop);
+  });
+
+  it("should validate object - delta mode", function() {
+    var def = qdata.schema({
+      a: { $type: "bool" },
+      b: { $type: "int"  },
+      nested: {
+        c: { $type: "string"   },
+        d: { $type: "string[]" }
+      }
+    });
+
+    pass({ a: true }, def, qdata.kDeltaMode);
+    pass({ b: 1234 }, def, qdata.kDeltaMode);
+
+    pass({ a: true, nested: {} }, def, qdata.kDeltaMode);
+    pass({ b: 1234, nested: {} }, def, qdata.kDeltaMode);
+
+    pass({ a: true, nested: { c: "qdata" } }, def, qdata.kDeltaMode);
+    pass({ b: 1234, nested: { d: ["qqq"] } }, def, qdata.kDeltaMode);
+
+    // This is just a delta mode, invalid properties shouldn't be allowed.
+    fail({ invalid: true }, def);
+    fail({ nested: { invalid: true } }, def);
   });
 
   it("should validate array - nested values", function() {
@@ -1420,6 +1501,102 @@ describe("QData", function() {
     assertThrow(function() { qdata.schema({ $type: "int[]??"  }); });
     assertThrow(function() { qdata.schema({ $type: "int?[]??" }); });
     assertThrow(function() { qdata.schema({ $type: "int??[]?" }); });
+  });
+
+  it("should validate access rights - write one ($w)", function() {
+    var def = qdata.schema({
+      a: { $type: "bool"     , $r: "*", $w: "basic" },
+      b: { $type: "int"      , $r: "*", $w: "basic" },
+      c: { $type: "string"   , $r: "*", $w: "basic" },
+      d: { $type: "object"   , $r: "*", $w: "extra" },
+      e: { $type: "string[]" , $r: "*", $w: "extra" }
+    });
+
+    var data = {
+      a: true,
+      b: 0,
+      c: "qdata",
+      d: {},
+      e: ["test"]
+    };
+
+    // `null` disables access rights checking (the default).
+    pass(data, def, qdata.kNoOptions, null, data);
+    pass(data, def, qdata.kNoOptions, { basic: true, extra: true }, data);
+
+    // Empty object means enabled access rights checks, but no access rights.
+    fail(data, def, qdata.kNoOptions, {});
+
+    // Incomplete access rights.
+    fail(data, def, qdata.kNoOptions, { basic: true });
+    fail(data, def, qdata.kNoOptions, { extra: true });
+
+    // Delta mode cares only about access rights required by the fields specified.
+    pass({ a: true                        }, def, qdata.kDeltaMode, { basic: true });
+    pass({ a: true, b: 0                  }, def, qdata.kDeltaMode, { basic: true });
+    pass({ a: true, b: 0, c: "s"          }, def, qdata.kDeltaMode, { basic: true });
+    pass({ d: {}                          }, def, qdata.kDeltaMode, { extra: true });
+    pass({ e: []                          }, def, qdata.kDeltaMode, { extra: true });
+
+    // No access.
+    fail({ a: true, b: 0, c: "s", d: null }, def, qdata.kDeltaMode, { basic: true });
+    fail({ a: true, b: 0, c: "s", d: {}   }, def, qdata.kDeltaMode, { basic: true });
+    fail({ a: true, b: 0, c: "s", e: null }, def, qdata.kDeltaMode, { basic: true });
+    fail({ a: true, b: 0, c: "s", e: []   }, def, qdata.kDeltaMode, { basic: true });
+    fail({ a: true                        }, def, qdata.kDeltaMode, { extra: true });
+    fail({ a: true, b: 0                  }, def, qdata.kDeltaMode, { extra: true });
+    fail({ a: true, b: 0, c: "s"          }, def, qdata.kDeltaMode, { extra: true });
+  });
+
+  it("should validate access rights - write multi ($w)", function() {
+    var def = qdata.schema({
+      a: { $type: "int", $r: "*", $w: "a"   },
+      b: { $type: "int", $r: "*", $w: "a|b" },
+      c: { $type: "int", $r: "*", $w: "a|c" },
+      d: { $type: "int", $r: "*", $w: "b|c" }
+    });
+
+    var data = {
+      a: 0,
+      b: 1,
+      c: 2,
+      d: 3
+    };
+
+    // `null` disables access rights checking (the default).
+    pass(data, def, qdata.kNoOptions, null);
+    pass(data, def, qdata.kNoOptions, { a: true, b: true });
+    pass(data, def, qdata.kNoOptions, { a: true, c: true });
+    fail(data, def, qdata.kNoOptions, { b: true, c: true });
+
+    pass({ a: 0 }, def, qdata.kDeltaMode, { a: true });
+    pass({ b: 0 }, def, qdata.kDeltaMode, { a: true });
+    pass({ b: 0 }, def, qdata.kDeltaMode, { b: true });
+    pass({ c: 0 }, def, qdata.kDeltaMode, { a: true });
+    pass({ c: 0 }, def, qdata.kDeltaMode, { c: true });
+    pass({ d: 0 }, def, qdata.kDeltaMode, { b: true });
+    pass({ d: 0 }, def, qdata.kDeltaMode, { c: true });
+
+    fail({ a: 0 }, def, qdata.kDeltaMode, { b: true });
+    fail({ b: 0 }, def, qdata.kDeltaMode, { c: true });
+    fail({ c: 0 }, def, qdata.kDeltaMode, { b: true });
+    fail({ d: 0 }, def, qdata.kDeltaMode, { a: true });
+  });
+
+  it("should validate access rights - invalid expression ($r / $w)", function() {
+    var invalid = [
+      "__proto__", "**",
+      "|", " |", "| ", "||", " || ",
+      "&", " &", "& ", "&&", " && ",
+      "|a", "a|", "a|b|",
+      "|@", "@|", "@|@|"
+    ];
+
+    invalid.forEach(function(access) {
+      assertThrow(function() { qdata.schema({ field: { $type: "int", $a: access } }); });
+      assertThrow(function() { qdata.schema({ field: { $type: "int", $r: access } }); });
+      assertThrow(function() { qdata.schema({ field: { $type: "int", $w: access } }); });
+    });
   });
 
   it("should accumulate errors", function() {

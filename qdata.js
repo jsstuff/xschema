@@ -39,9 +39,9 @@ var kNoOptions = qdata.kNoOptions = 0;
 // keys/values and you want to extract everything matching your schema out of
 // it. Only keys defined in the schema are considered, others ignored silently.
 //
-// It's an error if user access control (UAC) is enabled and the source object
-// contains a property that the user doesn't have access to. In such case a
-// "PermissionDenied" error will be generated.
+// It's an error if user access control is enabled and the source object
+// contains a property that the user doesn't have access to. In such case
+// a "PermissionDenied" error will be generated.
 //
 // NOTE: This option can be combined with `kExtractAll`, in such case the
 // latter has priority.
@@ -86,7 +86,12 @@ var kDeltaMode = qdata.kDeltaMode = 0x0004;
 // \internal
 //
 // Flag used internally to generate code for `qdata.test()` like validation.
-var kTestMode = 0x0008;
+var kTestOnly = 0x0008;
+
+// \internal
+//
+// Flag used internally to force code generator to emit access rights checks.
+var kTestAccess = 0x0010;
 
 // `qdata.kAccumulateErrors`
 //
@@ -105,7 +110,7 @@ var kAccumulateErrors = qdata.kAccumulateErrors = 0x1000;
 // not here are always checked in the validator function itself and won't cause
 // a new function to be generated when one is already present (even if it was
 // generated with some different options)
-var kFuncCacheMask = kExtractAll | kDeltaMode | kTestMode;
+var kFuncCacheMask = kExtractAll | kDeltaMode | kTestOnly | kTestAccess;
 
 // \internal
 //
@@ -157,7 +162,16 @@ var UnsafeProperties = Object.getOwnPropertyNames(Object.prototype);
 //
 // Properties, which are never copied to the destination schema object.
 var IgnoreProperties = {
-  $a: true // Shortcut to setup both `$r` and `$w` properties.
+  $a      : true, // Shortcut to setup both `$r` and `$w`.
+
+  $rExp   : true, // Read access control expression.
+  $wExp   : true, // Write access control expression.
+
+  $pkArray: true, // List of primary key names.
+  $pkMap  : true, // Map of primary key names (value is always true).
+
+  $fkArray: true, // List of foreign key names.
+  $fkMap  : true  // Map of foreign key names (value is the "entity.field").
 };
 
 // \internal
@@ -178,6 +192,17 @@ var MangledType = {
 
 // Dummy empty object used to replace null/undefined arguments.
 var NoObject = freeze({});
+
+// Some useful regexps.
+var reNewLine = /\n/g;                        // Newline (test).
+var reUnescapeFieldName = /\\(.)/g;           // Unescape field name (replace).
+var reInvalidIdentifier = /[^A-Za-z0-9_\$]/;  // Invalid identifier (test).
+var reOptionalField = /\?$/;                  // Optional type suffix "...?" (match).
+var reArrayField = /\[(\d+)?(\.\.)?(\d+)?]$/; // Array type suffix "...[xxx]" (match).
+
+// Test if the given access right is valid (forbid some characters that can
+// violate with future boolean algebra that can be applied to UAC system).
+var reInvalidAccessName = /[\x00-\x1F\s\(\)\[\]\{\}\&\|\*\^\!%@]/;
 
 // ============================================================================
 // [Errors]
@@ -240,26 +265,120 @@ function throwSchemaError(errors) {
 qdata.throwSchemaError = throwSchemaError;
 
 // ============================================================================
-// [Core]
+// [Util]
 // ============================================================================
 
-// \function `qdata.typeOf(val)`
+// \namespace `qdata.util`
+//
+// QData utility functions.
+var qutil = qdata.util = {};
+
+// \function `qdata.typeOf(arg)`
 //
 // Get extended type of the object.
-function typeOf(val) {
-  var type = typeof val;
-  if (type !== "object")
-    return type;
-
-  if (val === null)
-    return "null";
-
-  if (isArray(val))
-    return "array";
-
-  return "object";
+function typeOf(arg) {
+  var type = typeof arg;
+  return type !== "object" ? type : arg === null ? "null" : isArray(arg) ? "array" : "object";
 }
 qdata.typeOf = typeOf;
+
+// \function `qdata.util.isPropertyName(s)`
+//
+// Get whether the string `s` is a qdata's property name (ie it starts with "$").
+function isPropertyName(s) {
+  return s.charCodeAt(0) === 36;
+}
+qutil.isPropertyName = isPropertyName;
+
+// \function `qdata.util.isVariableName(s)`
+//
+// Get whether the string `s` is a valid JS variable name:
+//
+//   - `s` is not an empty string.
+//   - `s` starts with ASCII letter [A-Za-z], underscore [_] or a dollar sign [$].
+//   - `s` may contain ASCII numeric characters, but not the first char.
+//
+// Please note that EcmaScript allows to use any unicode alphanumeric and
+// ideographic characters to be used in a variable name, but this function
+// doesn't allow these, only ASCII characters are considered. It basically
+// follows the same convention as C/C++, with dollar sign [$] included.
+function isVariableName(s) {
+  if (!s)
+    return false;
+
+  var c;
+  return !reInvalidIdentifier.test(s) && ((c = s.charCodeAt(0)) < 48 || c >= 58);
+}
+qutil.isVariableName = isVariableName;
+
+// \function `qdata.util.escapeRegExp(s)`
+//
+// Escape a string `s` so it can be used in regexp for exact matching. For
+// example a string "[]" will be escaped to "\\[\\]".
+function escapeRegExp(s) {
+  return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+}
+qutil.escapeRegExp = escapeRegExp;
+
+// \function `qdata.util.unescapeFieldName(s)`
+//
+// Unescape a given object's field name `s` to a real name (qdata specific).
+function unescapeFieldName(s) {
+  return s.replace(reUnescapeFieldName, "$1");
+}
+qutil.unescapeFieldName = unescapeFieldName;
+
+// \internal
+//
+// Returns `"." + s` or `[s]` depending on the content of `s`. Basically used
+// to emit optimized Object's property accessor (the idea is just to make code
+// shorter, it doesn't matter for JavaScript VM in the end).
+function getObjectProperty(s) {
+  return isVariableName(s) ? "." + s : "[" + JSON.stringify(s) + "]";
+}
+
+function joinObjectKeys(obj, sep) {
+  var s = "";
+  for (var k in obj) {
+    if (s)
+      s += sep;
+    s += k;
+  }
+  return s;
+}
+
+// \function `qdata.util.toCamelCase(s)`
+//
+// Make a string camelcased.
+//
+// This version of `toCamelCase()` preserves words that start with an uppercased
+// character, so for example "CamelCased" string will be properly converted to
+// "camelCased".
+//
+// Examples:
+//
+//   toCamelCase("ThisIsString")   -> "thisIsString"
+//   toCamelCase("this-is-string") -> "thisIsString"
+//   toCamelCase("THIS_IS_STRING") -> "thisIsString"
+//   toCamelCase("this-isString")  -> "thisIsString"
+//   toCamelCase("THIS_IsSTRING")  -> "thisIsString"
+var toCamelCase = (function() {
+  var re1 = /[A-Z]+/g;
+  var fn1 = function(m) { return m[0] + m.substr(1).toLowerCase(); };
+
+  var re2 = /[_-][A-Za-z]/g;
+  var fn2 = function(m) { return m.substr(1).toUpperCase(); };
+
+  function toCamelCase(s) {
+    s = s.replace(re1, fn1);
+    s = s.replace(re2, fn2);
+
+    return s.charAt(0).toLowerCase() + s.substr(1);
+  }
+
+  return toCamelCase;
+})();
+qutil.toCamelCase = toCamelCase;
 
 // \function `qdata.cloneWeak(v)`
 //
@@ -272,7 +391,7 @@ function cloneWeak(v) {
   if (isArray(v))
     return v.slice();
 
-  // TODO: Should we use Object.create() ?
+  // TODO: Should we use Object.create() instead?
   var dstObj = {};
   var srcObj = v;
 
@@ -419,113 +538,6 @@ function isEqual(a, b) {
   return (a === b) ? true : _isEqual(a, b, []);
 }
 qdata.isEqual = isEqual;
-
-// ============================================================================
-// [Util]
-// ============================================================================
-
-// \namespace `qdata.util`
-//
-// QData utility functions.
-var qdata_util = qdata.util = {};
-
-// ============================================================================
-// [String]
-// ============================================================================
-
-// \internal
-//
-// Find a new line \n.
-var newLineRE = /\n/g;
-
-// \internal
-//
-// Used to unescape property name.
-var unescapeFieldNameRE = /\\(.)/g;
-
-// \internal
-//
-// Used to sanity an identifier.
-var invalidIdentifierRE = /[^A-Za-z0-9_\$]/g;
-
-// \function `qdata.util.isPropertyName(s)`
-//
-// Get whether the string `s` is a qdata's property name (ie it starts with "$").
-function isPropertyName(s) {
-  return s.charCodeAt(0) === 36;
-}
-qdata_util.isPropertyName = isPropertyName;
-
-// \function `qdata.util.isVariableName(s)`
-//
-// Get whether the string `s` is a valid JS variable name:
-//
-//   - `s` is not an empty string.
-//   - `s` starts with ASCII letter [A-Za-z], underscore [_] or a dollar sign [$].
-//   - `s` may contain ASCII numeric characters, but not the first char.
-//
-// Please note that EcmaScript allows to use any unicode alphanumeric and
-// ideographic characters to be used in a variable name, but this function
-// doesn't allow these, only ASCII characters are considered. It basically
-// follows the same convention as C/C++, with dollar sign [$] included.
-function isVariableName(s) {
-  if (!s)
-    return false;
-
-  var c;
-  return !invalidIdentifierRE.test(s) && ((c = s.charCodeAt(0)) < 48 || c >= 58);
-}
-qdata_util.isVariableName = isVariableName;
-
-// \function `qdata.util.escapeRegExp(s)`
-//
-// Escape a string `s` so it can be used in regexp for exact matching. For
-// example a string "[]" will be escaped to "\\[\\]".
-function escapeRegExp(s) {
-  return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
-}
-qdata_util.escapeRegExp = escapeRegExp;
-
-// \function `qdata.util.unescapeFieldName(s)`
-//
-// Unescape a given object's field name `s` to a real name (qdata specific).
-function unescapeFieldName(s) {
-  return s.replace(unescapeFieldNameRE, "$1");
-}
-qdata_util.unescapeFieldName = unescapeFieldName;
-
-// \function `qdata.util.toCamelCase(s)`
-//
-// Make a string camelcased.
-//
-// This version of `toCamelCase()` preserves words that start with an uppercased
-// character, so for example "CamelCased" string will be properly converted to
-// "camelCased".
-//
-// Examples:
-//
-//   toCamelCase("ThisIsString")   -> "thisIsString"
-//   toCamelCase("this-is-string") -> "thisIsString"
-//   toCamelCase("THIS_IS_STRING") -> "thisIsString"
-//   toCamelCase("this-isString")  -> "thisIsString"
-//   toCamelCase("THIS_IsSTRING")  -> "thisIsString"
-var toCamelCase = (function() {
-  var re1 = /[A-Z]+/g;
-  var fn1 = function(m) { return m[0] + m.substr(1).toLowerCase(); };
-
-  var re2 = /[_-][A-Za-z]/g;
-  var fn2 = function(m) { return m.substr(1).toUpperCase(); };
-
-  function toCamelCase(s) {
-    s = s.replace(re1, fn1);
-    s = s.replace(re2, fn2);
-
-    return s.charAt(0).toLowerCase() + s.substr(1);
-  }
-
-  return toCamelCase;
-})();
-qdata_util.toCamelCase = toCamelCase;
 
 // ============================================================================
 // [Enum]
@@ -712,6 +724,108 @@ function Enum(def) {
   this.$sequential = sequential;
 }
 qdata.enum = Enum;
+
+// ============================================================================
+// [BitArray]
+// ============================================================================
+
+// \internal
+var kNumBits = 31;
+
+// \class `BitArray`
+//
+// \internal
+//
+// A simple bitarray implementation that uses integers having `kNumBits`. The
+// reason for such class is to avoid having integers with the highest bit set
+// as it can dramaticaly decrease possible optimizations by JavaScript VM (V8).
+var BitArray = qclass({
+  $construct: function(bits) {
+    this.bits = bits || [];
+  },
+
+  clone: function() {
+    return new BitArray(this.bits.slice());
+  },
+
+  test: function(n) {
+    var bits = this.bits;
+
+    var idx = Math.floor(n / kNumBits);
+    var msk = 1 << Math.floor(n % kNumBits);
+
+    if (idx >= bits.length)
+      throwRuntimeError("BitArray.test() - Out of range (n=" + n + " len=" + (bits.length * kNumBits) + ").");
+
+    return (bits[idx] & msk) !== 0;
+  },
+
+  equals: function(other) {
+    var a = this.bits;
+    var b = other.bits;
+
+    var len = a.length;
+    if (len !== b.length)
+      return false;
+
+    for (var i = 0; i < len; i++)
+      if (a[i] !== b[i])
+        return false;
+
+    return true;
+  },
+
+  combine: function(op, arg) {
+    var bits = this.bits;
+
+    if (typeof arg === "number") {
+      var idx = Math.floor(arg / kNumBits);
+      var msk = 1 << Math.floor(arg % kNumBits);
+
+      if (idx >= bits.length)
+        throwRuntimeError("BitArray.combine(" + arg + ") - Out of range (max=" + (bits.length * kNumBits) + ").");
+
+      switch (op) {
+        case "or"    : bits[idx] |= msk; break;
+        case "and"   : bits[idx] &= msk; break;
+        case "andnot": bits[idx] &=~msk; break;
+        default: throwRuntimeError("Invalid operator '" + op + "'.");
+      }
+    }
+    else {
+      var src = arg.bits;
+      var len = bits.length;
+
+      if (len !== src.length)
+        throwRuntimeError("BitArray.combine([...]) - Length mismatch (" + len + " vs " + src.length + ").");
+
+      var i = 0;
+      switch (op) {
+        case "or"    : for (; i < len; i++) bits[i] |= src[i]; break;
+        case "and"   : for (; i < len; i++) bits[i] &= src[i]; break;
+        case "andnot": for (; i < len; i++) bits[i] &=~src[i]; break;
+        default: throwRuntimeError("Invalid operator '" + op + "'.");
+      }
+    }
+
+    return this;
+  },
+
+  $statics: {
+    newEmpty: function(num) {
+      var bits = [];
+      for (var i = 0, n = Math.floor((num + (kNumBits - 1)) / kNumBits); i < n; i++)
+        bits.push(0);
+      return new BitArray(bits);
+    }
+  }
+});
+
+// ============================================================================
+// []
+// ============================================================================
+
+// TODO:
 
 // ============================================================================
 // [CoreCompiler]
@@ -914,20 +1028,17 @@ qclass({
 
   ifElseIf: function(cond) {
     var keyword = (++this._ifElseCount === 1) ? "if" : "else if";
-    this.emit(keyword + " (" + cond + ") {");
-    return this;
+    return this.emit(keyword + " (" + cond + ") {");
   },
 
   otherwise: function() {
     var keyword = this._ifElseCount > 0 ? "else" : "if (1)";
     this._ifElseCount = 0;
-    this.emit(keyword + " {");
-    return this;
+    return this.emit(keyword + " {");
   },
 
   end: function() {
-    this.emit("}");
-    return this;
+    return this.emit("}");
   },
 
   str: function(s) {
@@ -984,7 +1095,7 @@ qclass({
       s = s.substr(0, s.length - 1);
 
     var indentation = this._indentation;
-    return indentation + s.replace(newLineRE, "\n" + indentation) + "\n";
+    return indentation + s.replace(reNewLine, "\n" + indentation) + "\n";
   },
 
   serialize: function() {
@@ -1025,20 +1136,15 @@ qclass({
 
     try {
       body = this.serialize();
+      // console.log(body);
       fn = new Function(this._dataName, body);
 
       return fn(this._data);
     }
     catch (ex) {
-      console.log("=========================================");
-      console.log("INVALID CODE:");
-      console.log(body);
-      console.log("EXCEPTION:");
-      console.log(ex);
-
       throwRuntimeError("Invalid code generated", {
-        body   : body,
-        message: ex.message
+        message: ex.message,
+        body: body
       });
     }
   }
@@ -1064,10 +1170,14 @@ function mergePath(a, b) {
 function SchemaCompiler(env, options) {
   CoreCompiler.call(this);
 
-  this._env = env;          // Schema environment (`qdata` or customized).
-  this._options = options;  // Schema validation options.
-  this._extract = false;    // Whether to extract properties from this level.
-  this._path = "\"\"";      // Path to the current scope (code).
+  this._env = env;            // Schema environment (`qdata` or customized).
+  this._options = options;    // Schema validation options.
+  this._extract = false;      // Whether to extract properties from this level.
+  this._path = "\"\"";        // Path to the current scope (code).
+
+  this._accessMap = null;     // Access rights map (key to index).
+  this._accessCount = 0;      // Count of access rights in the map.
+  this._accessGranted = null; // Granted access rights (at the time accessed).
 }
 qclass({
   $extend: CoreCompiler,
@@ -1077,16 +1187,22 @@ qclass({
     this.arg("errors");
     this.arg("input");
     this.arg("options");
+    this.arg("access");
 
     this.declareData("qdata", this._env);
     this.setExtract(this.hasOption(kExtractTop));
+
+    if (this.hasOption(kTestAccess)) {
+      this._accessMap = def.$_qPrivate.wMap;
+      this._prepareAccess("access");
+    }
 
     var vIn = "input";
     var vOut = this.compileType(vIn, def);
 
     this.nl();
 
-    if (!this.hasOption(kTestMode))
+    if (!this.hasOption(kTestOnly))
       this.emit("return " + vOut + ";");
     else
       this.emit("return true;");
@@ -1106,6 +1222,45 @@ qclass({
 
   hasOption: function(option) {
     return (this._options & option ) !== 0;
+  },
+
+  _prepareAccess: function(accVar) {
+    var map = this._accessMap;
+    var count = 0;
+    var didWork = false;
+
+    for (var key in map) {
+      var id = map[key];
+      var v, m;
+
+      if (id < kNumBits) {
+        v = "ac0";
+        m = 1 << id;
+      }
+      else {
+        // This happens only if the schema is large and has more than `kNumBits`
+        // access control rights. Handled as a special case as divs/mods are slow.
+        v = "ac" + Math.floor(id / kNumBits);
+        m = 1 << Math.floor(id % kNumBits);
+      }
+
+      if (!didWork) {
+        didWork = true;
+        this.nl();
+      }
+
+      this.declareVariable(v, "0");
+      this.emit("if (" + accVar + getObjectProperty(key) + " === true) " +
+        v + " |= " + "0x" + m.toString(16) + ";");
+
+      count++;
+    }
+
+    if (didWork)
+      this.nl();
+
+    this._accessCount = count;
+    this._accessGranted = BitArray.newEmpty(count);
   },
 
   emitNumberCheck: function(def, v, minValue, maxValue, isInt, isFinite) {
@@ -1164,7 +1319,7 @@ qclass({
   },
 
   addLocal: function(name, mangledType) {
-    return this.declareVariable("_" + this._scopeIndex + (mangledType || "") + "_" + name);
+    return this.declareVariable(name + "$" + (mangledType || "") + this._scopeIndex);
   },
 
   // Get a type-prefix of type defined by `def`.
@@ -1172,34 +1327,22 @@ qclass({
     var env = this._env;
 
     // Default mangled type is an object.
+    var type;
     var mangled = "o";
 
-    if (typeof def.$type === "string") {
-      var type = env.getType(def.$type);
-      if (type)
-        mangled = MangledType[type.type] || "x";
-    }
+    if (typeof def.$type === "string" && (type = env.getType(def.$type)) != null)
+      mangled = MangledType[type.type] || "z";
 
     return mangled;
   },
 
-  emitIf: function(cond, body) {
-    this.ifElseIf(cond)
-      .emit(body)
-      .end();
-    return this;
-  },
-
   passIf: function(cond, vOut, vIn) {
-    if (vOut === vIn)
-      return this.emitIf(cond, "// PASS.");
-    else
-      return this.emitIf(cond, vOut + " = " + vIn + ";");
+    return this.ifElseIf(cond).emit(vIn === vOut ? "// OK." : vOut + " = " + vIn + ";").end();
   },
 
   failIf: function(cond, err) {
     this.ifElseIf(cond);
-    if (this.hasOption(kTestMode))
+    if (this.hasOption(kTestOnly))
       this.emit("return false;");
     else
       this.emitError(err);
@@ -1209,12 +1352,16 @@ qclass({
   },
 
   emitError: function(err) {
-    if (this.hasOption(kTestMode)) {
+    if (this.hasOption(kTestOnly)) {
       this.emit("return false;");
     }
     else {
       this.emit("errors.push(" + err + ");");
-      this.emit("if ((options & " + (kAccumulateErrors) + ") === 0) return false;");
+
+      // Better to preprocess `options & kAccumulateErrors) and just use a bool
+      // to perform a quick check. It's much faster and generates less code.
+      this.declareVariable("quick", "(options & " + kAccumulateErrors + ") === 0");
+      this.emit("if (quick) return false;");
     }
     return this;
   },
@@ -1265,37 +1412,120 @@ qclass({
 // [SchemaBuilder]
 // ============================================================================
 
-// \internal
-//
-// Test if the given key is an optional type "...?".
-var _isOptionalFieldRE = /\?$/;
+var SchemaAccess = qclass({
+  $construct: function(type, initial, inherit) {
+    this.type = type;
+    this.inherit = "";
 
-// \internal
-//
-// Test if the given key is an array type "...[xxx]".
-var _isArrayFieldRE = /\[(\d+)?(\.\.)?(\d+)?]$/;
+    this.map = {};
+    this.len = 0;
 
-// \internal
-//
-// Test if the given UAC role is valid (forbid some characters that can violate
-// with future boolean algebra that can be applied to UAC system).
-var _isInvalidUAC = /[\x00-\x1F\s\[\]\{\}\(\)\&\|\^\!%@]/g;
+    // Used as a temporary map to prevent creating maps every time a string is
+    // going to be normalized. Signature is incremented every time `tmpMap` is
+    // used so it doesn't matter what was there previously. It's for matching
+    // the same names during a single run of `process()`.
+    this.tmpMap = {};
+    this.tmpSig = 0;
 
-function normalizeUAC(uac, op, inherit) {
-  if (!uac || uac === "inherit")
-    uac = inherit;
+    this.inherit = this.process(initial, inherit || "any");
+  },
 
-  if (uac === "__proto__")
-    return null;
+  add: function(name) {
+    var map = this.map;
+    var id;
 
-  if (uac === "*")
-    return "any";
-  uac = uac.replace("@", op);
+    if (!hasOwn.call(map, name)) {
+      id = this.len++;
+      map[name] = id;
+    }
+    else {
+      id = map[name];
+    }
 
-  if (_isInvalidUAC.test(uac))
-    return null;
+    return id;
+  },
 
-  return uac;
+  // Process a given access string `s` and return a normalized one that doesn't
+  // contain virtual access rights like "inherit" (also handles null/empty
+  // string as "inherit").
+  process: function(s, inherit) {
+    var output = "";
+
+    if (!s || s.indexOf("|") === -1) {
+      output = this.normalize(s ? s.trim() : "", inherit);
+      if (output === null)
+        throwRuntimeError("Invalid access string '" + s + "'.");
+      return output;
+    }
+
+    var names = s.split("|");
+    var tmpMap = this.tmpMap;
+    var tmpSig = this.tmpSig++;
+
+    for (var i = 0, len = names.length; i < len; i++) {
+      var name = names[i].trim();
+      if (!name)
+        throwRuntimeError("Invalid access string '" + s + "'.");
+
+      var normalized = this.normalize(name, inherit);
+      if (normalized === null)
+        throwRuntimeError("Invalid access string '" + s + "' (can't normalize '" + name + "').");
+
+      if (normalized === "any")
+        return "any";
+
+      if (tmpMap[normalized] !== tmpSig) {
+        if (output) output += "|";
+        output += normalized;
+        tmpMap[normalized] = tmpSig;
+      }
+    }
+
+    return output;
+  },
+
+  // \internal
+  //
+  // Normalize an access control string `s` (can contain only one name).
+  normalize: function(s, inherit) {
+    // Handled implicit / explicit inheritance.
+    if (!s || s === "inherit")
+      s = inherit || this.inherit;
+
+    // Banned name, can't be stored in JS object.
+    if (s === "__proto__")
+      return null;
+
+    // Handle "*", which means "any".
+    if (s === "*" || s === "any")
+      return "any";
+
+    // Handle "@", which will be modified depending on `type` (usually "r" or "w").
+    s = s.replace("@", this.type);
+
+    // Check if the access control name is correct (i.e. doesn't contain any
+    // characters we don't consider valid). This also checks for symbols like
+    // '&' and '|', which should have been handled before name normalization.
+    if (reInvalidAccessName.test(s))
+      return null;
+
+    if (s !== "none")
+      this.add(s);
+
+    return s;
+  }
+});
+
+function mergeBits(bits, map, s) {
+  var names = s.split("|");
+
+  for (var i = 0, len = names.length; i < len; i++) {
+    var index = map[names[i]];
+    if (typeof index === "number")
+      bits.combine("or", index);
+  }
+
+  return bits;
 }
 
 // \internal
@@ -1310,16 +1540,9 @@ function SchemaBuilder(env, options) {
   this.env = env;
   this.options = options;
 
-  // All user access roles that appeared in all fields, nested inclusive. The
-  // `uac@Id` field is used as an ID generator for each user access role per a
-  // schema instance (various schemas will have different IDs for the same UACs).
-  this.uacReadMap = {};
-  this.uacReadIdGen = 0;
-  this.uacReadDefault = normalizeUAC(options.$r || options.$a, "r", "any");
-
-  this.uacWriteMap = {};
-  this.uacWriteIdGen = 0;
-  this.uacWriteDefault = normalizeUAC(options.$w || options.$a, "w", "any");
+  // All user access control rights that appeared in all fields, nested inclusive.
+  this.rAccess = new SchemaAccess("r", options.$r || options.$a || null, "any");
+  this.wAccess = new SchemaAccess("w", options.$w || options.$a || null, "any");
 }
 qclass({
   $construct: SchemaBuilder,
@@ -1331,10 +1554,10 @@ qclass({
     // The member `$_qPrivate` is considered private and used exclusively by
     // the QData library. This is the only reserved property so far.
     var priv = {
-      env        : this.env,
-      uacReadMap : this.uacReadMap,
-      uacWriteMap: this.uacWriteMap,
-      cache      : new Array(kFuncCacheCount)
+      env  : this.env,
+      rMap : this.rAccess.map,
+      wMap : this.wAccess.map,
+      cache: new Array(kFuncCacheCount)
     };
 
     return this.field(def, null, priv);
@@ -1354,12 +1577,12 @@ qclass({
     var nullable = false;
 
     // If the $type ends with "?" it implies `{ $null: true }` definition.
-    if (_isOptionalFieldRE.test(type)) {
+    if (reOptionalField.test(type)) {
       type = type.substr(0, type.length - 1);
       nullable = true;
 
       // Prevent from having invalid type that contains for example "??" by mistake.
-      if (_isOptionalFieldRE.test(type))
+      if (reOptionalField.test(type))
         throwRuntimeError("Invalid type '" + def.$type + "'.");
     }
 
@@ -1367,13 +1590,29 @@ qclass({
     // In this case all definitions specified in `def` are related to the array
     // elements, not the array itself. However, it's possible to specify basics
     // like array length, minimum length, and maximum length inside "[...]".
-    var m = type.match(_isArrayFieldRE);
-    if (!m && type.indexOf("[") !== -1)
-      throwRuntimeError("Invalid type '" + def.$type + "'.");
+    var m = type.match( reArrayField);
+    if (!m) {
+      if (type.indexOf("[") !== -1)
+        throwRuntimeError("Invalid type '" + def.$type + "'.");
 
-    var r = this.processReadUAC(def.$r || def.$a, parent);
-    var w = this.processWriteUAC(def.$w || def.$a, parent);
-    var g = def.$g || "default";
+      if (typeof def.$null === "boolean")
+        nullable = def.$null;
+    }
+
+    var r = def.$r || def.$a || null;
+    var w = def.$w || def.$a || null;
+
+    obj = {
+      $type     : type,
+      $data     : null,
+      $null     : nullable,
+      $g        : def.$g || "default",
+      $r        : r,
+      $w        : w,
+      $rExp     : this.rAccess.process(r, parent ? parent.$rExp : null),
+      $wExp     : this.wAccess.process(w, parent ? parent.$wExp : null),
+      $_qPrivate: priv
+    };
 
     if (m) {
       var nested = cloneWeak(def);
@@ -1385,15 +1624,7 @@ qclass({
       if (minLen !== null && maxLen !== null && minLen > maxLen)
         throwRuntimeError("Invalid type '" + def.$type + "'.");
 
-      obj = {
-        $type     : "array",
-        $data     : null,
-        $null     : nullable,
-        $r        : r,
-        $w        : w,
-        $g        : g,
-        $_qPrivate: priv
-      };
+      obj.$type = "array";
       obj.$data = this.field(nested, obj, null);
 
       if (m[2]) {
@@ -1407,19 +1638,6 @@ qclass({
       }
     }
     else {
-      if (typeof def.$null === "boolean")
-        nullable = def.$null;
-
-      obj = {
-        $type     : type,
-        $data     : null,
-        $null     : nullable,
-        $r        : r,
-        $w        : w,
-        $g        : g,
-        $_qPrivate: priv
-      };
-
       if (type === "object") {
         var $data = obj.$data = {};
 
@@ -1472,30 +1690,6 @@ qclass({
       TypeObject.hook(obj, this.env);
 
     return obj;
-  },
-
-  // Process a given `uac` and return a normalized string that doesn't contain
-  // virtual UACs like "inherit" (also handles null/empty string as "inherit").
-  processReadUAC: function(uacOrig, parent) {
-    var uac = normalizeUAC(uacOrig, "r", parent ? parent.$r : this.uacReadDefault);
-    if (uac === null)
-      throwRuntimeError("Invalid UAC '" + uacOrig + "'.");
-
-    if (uac !== "none" && uac !== "any" && !hasOwn.call(this.uacReadMap, uac))
-      this.uacReadMap[uac] = this.uacReadIdGen++;
-
-    return uac;
-  },
-
-  processWriteUAC: function(uacOrig, parent) {
-    var uac = normalizeUAC(uacOrig, "w", parent ? parent.$w : this.uacWriteDefault);
-    if (uac === null)
-      throwRuntimeError("Invalid UAC '" + uacOrig + "'.");
-
-    if (uac !== "none" && uac !== "any" && !hasOwn.call(this.uacWriteMap, uac))
-      this.uacWriteMap[uac] = this.uacWriteIdGen++;
-
-    return uac;
   }
 });
 
@@ -1534,16 +1728,27 @@ function compile(env, def, index) {
   return fn;
 }
 
+// \internal
+qdata._getProcessCompiled = function(def, options, access) {
+  var index = (options || 0) & kFuncCacheMask;
+  if (access)
+    index |= kTestAccess;
+  return compile(this || qdata, def, index);
+};
+
 // \function `qdata.process(data, def, options, access)`
 //
 // Process the given `data` by using a definition `def`, `options` and `access`
 // rights. The function specific for the validation type and options is compiled
 // on demand and then cached.
 qdata.process = function(data, def, _options, access) {
-  var options = typeof _options === "number" ? (_options | 0) : 0;
+  var options = typeof _options === "number" ? _options : 0;
 
   var cache = def.$_qPrivate.cache;
   var index = options & kFuncCacheMask;
+
+  if (access)
+    index |= kTestAccess;
 
   var fn = cache[index] || compile(this || qdata, def, index);
   var errors = _errorsGlobal || [];
@@ -1563,10 +1768,13 @@ qdata.process = function(data, def, _options, access) {
 // Tests the given `data` by using a definition `def`, `options` and `access`
 // right.
 qdata.test = function(data, def, _options, access) {
-  var options = typeof _options === "number" ? _options | kTestMode : kTestMode;
+  var options = typeof _options === "number" ? _options | kTestOnly : kTestOnly;
 
   var cache = def.$_qPrivate.cache;
   var index = options & kFuncCacheMask;
+
+  if (access)
+    index |= kTestAccess;
 
   var fn = cache[index] || compile(this || qdata, def, index);
   return fn(null, data, options, access);
@@ -1745,14 +1953,35 @@ var TypeToError = {
   string : "ExpectedString"
 };
 
+function inputVarToOutputVar(v) {
+  return v.lastIndexOf("in", 0) === 0 ? v.replace("in", "out") : null;
+}
+
+function compileAccessCheck(data, negate) {
+  var s = "";
+
+  var op = negate ? "&" : "|";
+  var eq = negate ? "===" : "!==";
+
+  for (var i = 0, len = data.length; i < len; i++) {
+    var msk = data[i];
+    if (!msk)
+      continue;
+
+    if (s)
+      s += " || ";
+    s += "(" + "ac" + String(i) + " " + op + " 0x" + msk.toString(16) + ") " + eq + " 0";
+  }
+
+  return s;
+}
+
 function BaseType() {}
 qdata.BaseType = qclass({
   $construct: BaseType,
 
-  // Field type ("array", "date", "color", ...), not strictly js type-name.
-  name: null,
-  // JavaScript type ("array", "boolean", "number", "object", "string").
-  type: null,
+  name: null, // Field type ("array", "date", "color", ...), not strictly js type-name.
+  type: null, // JavaScript type ("array", "boolean", "number", "object", "string").
 
   // Verify the definition `def` and throw `RuntimeError` if it's not valid.
   verify: function(def) {
@@ -1772,8 +2001,22 @@ qdata.BaseType = qclass({
 
     // Object and Array types require `vOut` variable to be different than `vIn`.
     if (type === "object" || type === "array") {
-      if (!c.hasOption(kTestMode))
-        vOut = c.addLocal("out", c.mangledType(type));
+      if (!c.hasOption(kTestOnly))
+        vOut = c.declareVariable(inputVarToOutputVar(v));
+    }
+
+    // Emit access rights check.
+    var prevAccess = c._accessGranted;
+    var checkAccess = null;
+
+    if (c.hasOption(kTestAccess)) {
+      if (def.$wExp !== "any") {
+        var curAccess = mergeBits(prevAccess.clone(), c._accessMap, def.$wExp);
+        if (!prevAccess.equals(curAccess)) {
+          c._accessGranted = curAccess;
+          checkAccess = compileAccessCheck(curAccess.clone().combine("andnot", prevAccess).bits, true);
+        }
+      }
     }
 
     // Emit type check that considers `null` and `undefined` values if specified.
@@ -1783,6 +2026,9 @@ qdata.BaseType = qclass({
       var cond = "";
 
       c.emit(vOut + " = " + vIn + ";");
+
+      if (checkAccess)
+        c.failIf(checkAccess, c.error(c.str("InvalidAccess")));
 
       if (isNull)
         c.passIf(vIn + " === null");
@@ -1795,6 +2041,9 @@ qdata.BaseType = qclass({
       this.compileType(c, vOut, vIn, def);
     }
     else {
+      if (checkAccess)
+        c.failIf(checkAccess, c.error(c.str("InvalidAccess")));
+
       if (type === "array")
         c.ifElseIf("!Array.isArray(" + vIn + ")");
       else
@@ -1816,6 +2065,10 @@ qdata.BaseType = qclass({
 
       c.end();
       this.compileType(c, vOut, vIn, def);
+    }
+
+    if (prevAccess) {
+      c._accessGranted = prevAccess;
     }
 
     return vOut;
@@ -2159,7 +2412,7 @@ function isBigInt(s, min, max) {
 
   return true;
 }
-qdata_util.isBigInt = isBigInt;
+qutil.isBigInt = isBigInt;
 
 // TODO: $allowed
 function BigIntType() {
@@ -2265,7 +2518,7 @@ var ColorNames = {
   whitesmoke          : "#f5f5f5",
   yellow              : "#ffff00", yellowgreen         : "#9acd32"
 };
-qdata_util.ColorNames = ColorNames;
+qutil.ColorNames = ColorNames;
 
 function isColor(s, cssNames, extraNames) {
   var len = s.length;
@@ -2303,7 +2556,7 @@ function isColor(s, cssNames, extraNames) {
 
   return false;
 }
-qdata_util.isColor = isColor;
+qutil.isColor = isColor;
 
 function ColorType() {
   BaseType.call(this);
@@ -2376,7 +2629,7 @@ function isMAC(s, sep) {
       return false;
   }
 }
-qdata_util.isMAC = isMAC;
+qutil.isMAC = isMAC;
 
 function MACType() {
   BaseType.call(this);
@@ -2412,7 +2665,7 @@ qdata.addType(new MACType());
 function isIP(s, allowPort) {
   return isIPV4(s, allowPort) || isIPV6(s, allowPort);
 }
-qdata_util.isIP = isIP;
+qutil.isIP = isIP;
 
 function isIPV4(s, allowPort) {
   // The shortest possible IPV4 address is "W.X.Y.Z", which is 7 characters long.
@@ -2494,7 +2747,7 @@ function isIPV4(s, allowPort) {
 
   return true;
 }
-qdata_util.isIPV4 = isIPV4;
+qutil.isIPV4 = isIPV4;
 
 function isIPV6(s, allowPort) {
   // The shortest possible IPV6 address is "::", which is 2 characters long.
@@ -2620,7 +2873,7 @@ function isIPV6(s, allowPort) {
 
   return true;
 }
-qdata_util.isIPV6 = isIPV6;
+qutil.isIPV6 = isIPV6;
 
 function IPType() {
   BaseType.call(this);
@@ -2642,15 +2895,15 @@ qclass({
     switch (type) {
       case "ip":
         err = "InvalidIP";
-        fn = qdata_util.isIP;
+        fn = qutil.isIP;
         break;
       case "ipv4":
         err = "InvalidIPV4";
-        fn = qdata_util.isIPV4;
+        fn = qutil.isIPV4;
         break;
       case "ipv6":
         err = "InvalidIPV6";
-        fn = qdata_util.isIPV6;
+        fn = qutil.isIPV6;
         break;
       default:
         throwRuntimeError("Invalid type '" + type + "'.");
@@ -2694,7 +2947,7 @@ var leapSecondDates = {
     /* 2012: */ 0x10, /* 2013: */ 0x00, /* 2014: */ 0x00, /* 2015: */ 0x10
   ]
 };
-qdata_util.leapSecondDates = leapSecondDates;
+qutil.leapSecondDates = leapSecondDates;
 
 // \internal
 var DateComponents = {
@@ -2723,7 +2976,7 @@ var DateComponents = {
 function isLeapYear(year) {
   return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0) ? 1 : 0;
 }
-qdata_util.isLeapYear = isLeapYear;
+qutil.isLeapYear = isLeapYear;
 
 // \function `data.util.hasLeapSecond(year, month, day)`
 //
@@ -2751,7 +3004,7 @@ function isLeapSecondDate(year, month, date) {
 
   return (array[index] & msk) !== 0;
 }
-qdata_util.isLeapSecondDate = isLeapSecondDate;
+qutil.isLeapSecondDate = isLeapSecondDate;
 
 // \internal
 //
@@ -3123,8 +3376,11 @@ qclass({
     var eIn, eOut;
 
     var i;
+    var prop;
+
     var path = c.getPath();
     var extract = c.setExtract(c.hasOption(kExtractNested));
+    var deltaMode = c.hasOption(kDeltaMode);
 
     // Collect information regarding mandatory and optional keys.
     for (eKey in fields) {
@@ -3133,7 +3389,13 @@ qclass({
       if (eDef == null || typeof eDef !== "object")
         throwRuntimeError("Invalid field definition, expected object, got " + typeOf(eDef) + ".");
 
-      if (eDef.$optional)
+      var optional = !!eDef.$optional;
+
+      // Make the field optional when using `kDeltaMode`.
+      if (!optional && (deltaMode && eDef.$delta !== false))
+        optional = true;
+
+      if (optional)
         optionalFields.push(eKey);
       else
         mandatoryFields.push(eKey);
@@ -3142,7 +3404,7 @@ qclass({
     // If the extraction mode is off we have to make sure that there are no
     // properties in the source object that are not defined by the schema.
     if (!extract) {
-      vLen = c.addLocal("kl", "_");
+      vLen = c.addLocal("nKeys");
       c.emit(vLen + " = " + mandatoryFields.length + ";");
     }
 
@@ -3152,6 +3414,7 @@ qclass({
       for (i = 0; i < mandatoryFields.length; i++) {
         eKey = mandatoryFields[i];
         eDef = fields[eKey];
+        prop = getObjectProperty(eKey);
 
         var isUnsafeProperty = UnsafeProperties.indexOf(eKey) !== -1;
         var isDefaultProperty = eDef.$default !== undefined;
@@ -3162,12 +3425,12 @@ qclass({
         c.addPath('"."', c.str(eKey));
 
         eMangledType = c.mangledType(eDef);
-        eIn = c.addLocal(eKey, eMangledType);
+        eIn = c.addLocal("in$" + eKey, eMangledType);
 
         if (isUnsafeProperty || isDefaultProperty)
           c.emit("if (hasOwn.call(" + v + ", " + c.str(eKey) + ")) {");
 
-        c.emit(eIn + " = " + v + "[" + c.str(eKey) + "];");
+        c.emit(eIn + " = " + v + prop + ";");
         eOut = c.compileType(eIn, eDef);
         mandatoryVars.push(eOut);
 
@@ -3191,7 +3454,7 @@ qclass({
         c.done();
       }
 
-      if (!c.hasOption(kTestMode)) {
+      if (!c.hasOption(kTestOnly)) {
         c.emit(vOut + " = {");
         for (i = 0; i < mandatoryFields.length; i++) {
           eKey = mandatoryFields[i];
@@ -3203,7 +3466,7 @@ qclass({
       }
     }
     else {
-      if (!c.hasOption(kTestMode)) {
+      if (!c.hasOption(kTestOnly)) {
         c.emit(vOut + " = {};");
       }
     }
@@ -3211,6 +3474,8 @@ qclass({
     if (optionalFields.length) {
       for (i = 0; i < optionalFields.length; i++) {
         eKey = optionalFields[i];
+        eDef = fields[eKey];
+        prop = getObjectProperty(eKey);
 
         c.nl();
 
@@ -3218,18 +3483,18 @@ qclass({
         c.emit("if (hasOwn.call(" + v + ", " + c.str(eKey) + ")) {");
 
         eMangledType = c.mangledType(eDef);
-        eIn = c.addLocal(eKey, eMangledType);
+        eIn = c.addLocal("in$" + eKey, eMangledType);
 
         if (!extract)
           c.emit(vLen + "++;");
 
-        c.emit(eIn + " = " + v + "[" + c.str(eKey) + "];");
+        c.emit(eIn + " = " + v + prop + ";");
         c.addPath('"."', c.str(eKey));
         eOut = c.compileType(eIn, eDef);
         c.setPath(path);
 
-        if (!c.hasOption(kTestMode))
-          c.emit(vOut + "[" + c.str(eKey) + "] = " + eOut + ";");
+        if (!c.hasOption(kTestOnly))
+          c.emit(vOut + prop + " = " + eOut + ";");
 
         c.emit("}");
         c.done();
@@ -3249,7 +3514,7 @@ qclass({
         c.emit("if (" + vLen + " !== 0) {");
       }
 
-      if (c.hasOption(kTestMode)) {
+      if (c.hasOption(kTestOnly)) {
         c.emit("return false;");
       }
       else {
@@ -3299,13 +3564,13 @@ qclass({
   type: "array",
 
   compileType: function(c, vOut, v, def) {
-    var vIdx = c.addLocal("idx", "_");
-    var vLen = c.addLocal("len", "_");
+    var vIdx = c.addLocal("i", "x");
+    var vLen = c.addLocal("len", "x");
 
     c.otherwise();
     c.emit(vLen + " = " + v + ".length;");
 
-    if (!c.hasOption(kTestMode))
+    if (!c.hasOption(kTestOnly))
       c.emit(vOut + " = [];");
 
     var cond = [];
@@ -3339,7 +3604,7 @@ qclass({
     var prevPath = c.addPath("", '"[" + ' + vIdx + ' + "]"');
     var eOut = c.compileType(eIn, eDef);
 
-    if (!c.hasOption(kTestMode))
+    if (!c.hasOption(kTestOnly))
       c.emit(vOut + ".push(" + eOut + ");");
 
     c.emit("}");
