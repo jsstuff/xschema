@@ -109,18 +109,19 @@ function pass(input, schema, options, access, expected) {
 }
 
 function fail(input, schema, options, access) {
-  var output = null;
+  var output = undefined;
+  var message = "Should have failed";
 
   try {
     output = qdata.process(input, schema, options, access);
   }
   catch (ex) {
-    if (!(ex instanceof qdata.SchemaError))
-      console.log("ERROR: " + ex);
-    return;
+    if (ex instanceof qdata.SchemaError)
+      return;
+    message = "Should have thrown SchemaError (but thrown " + ex.name + ")";
   }
 
-  throw new TestError(serializeFailure("Should have failed", schema, options, access, input, output));
+  throw new TestError(serializeFailure(message, schema, options, access, input, output));
 }
 
 function assertThrow(fn) {

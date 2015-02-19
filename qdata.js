@@ -2030,10 +2030,13 @@ qdata.BaseType = qclass({
       if (checkAccess)
         c.failIf(checkAccess, c.error(c.str("InvalidAccess")));
 
-      if (isNull)
+      if (isNull) {
         c.passIf(vIn + " === null");
-      else
+        cond = vIn + " === undefined || ";
+      }
+      else {
         cond = vIn + " == null || ";
+      }
 
       cond += "(" + vIn + ".constructor !== " + ctor + " && " + toStringFn + ".call(" + v + ") !== \"[object " + ctor + "]\")";
       c.failIf(cond, c.error(c.str(typeError)));
