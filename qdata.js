@@ -160,22 +160,6 @@ var UnsafeProperties = Object.getOwnPropertyNames(Object.prototype);
 
 // \internal
 //
-// Properties, which are never copied to the destination schema object.
-var IgnoreProperties = {
-  $a      : true, // Shortcut to setup both `$r` and `$w`.
-
-  $rExp   : true, // Read access control expression.
-  $wExp   : true, // Write access control expression.
-
-  $pkArray: true, // List of primary key names.
-  $pkMap  : true, // Map of primary key names (value is always true).
-
-  $fkArray: true, // List of foreign key names.
-  $fkMap  : true  // Map of foreign key names (value is the "entity.field").
-};
-
-// \internal
-//
 // Mapping of JS types into a character that describes the type. This mapping
 // is used by `SchemaCompiler` to reduce the length of variable names and to map
 // distinct JS types to different variable names in case of the same property
@@ -190,8 +174,9 @@ var MangledType = {
   string : "s"
 };
 
-// Dummy empty object used to replace null/undefined arguments.
+// Dummy frozen objects.
 var NoObject = freeze({});
+var NoArray = freeze([]);
 
 // Some useful regexps.
 var reNewLine = /\n/g;                        // Newline (test).
@@ -328,25 +313,6 @@ function unescapeFieldName(s) {
 }
 qutil.unescapeFieldName = unescapeFieldName;
 
-// \internal
-//
-// Returns `"." + s` or `[s]` depending on the content of `s`. Basically used
-// to emit optimized Object's property accessor (the idea is just to make code
-// shorter, it doesn't matter for JavaScript VM in the end).
-function getObjectProperty(s) {
-  return isVariableName(s) ? "." + s : "[" + JSON.stringify(s) + "]";
-}
-
-function joinObjectKeys(obj, sep) {
-  var s = "";
-  for (var k in obj) {
-    if (s)
-      s += sep;
-    s += k;
-  }
-  return s;
-}
-
 // \function `qdata.util.toCamelCase(s)`
 //
 // Make a string camelcased.
@@ -379,6 +345,58 @@ var toCamelCase = (function() {
   return toCamelCase;
 })();
 qutil.toCamelCase = toCamelCase;
+
+// \internal
+//
+// Returns `"." + s` or `[s]` depending on the content of `s`. Basically used
+// to emit optimized Object's property accessor (the idea is just to make code
+// shorter, it doesn't matter for JavaScript VM in the end).
+function getObjectProperty(s) {
+  return isVariableName(s) ? "." + s : "[" + JSON.stringify(s) + "]";
+}
+
+// \function `qdata.util.isEmpty(obj)`
+//
+// Get whether the given object or array `obj` is empty, i.e. contains no keys
+// or no elements. The given parameter has to be an object or array instance,
+// otherwise the function may throw `TypeError`.
+function isEmpty(obj) {
+  if (isArray(obj)) {
+    return obj.length === 0;
+  }
+  else {
+    for (var k in obj)
+      return false;
+    return true;
+  }
+}
+qutil.isEmpty = isEmpty;
+
+// \function `qdata.util.mergeObject(a, b)`
+//
+// Merge content from object `b` into `a`, and return `a`.
+function mergeObject(a, b) {
+  if (b != null) {
+    for (var k in b)
+      a[k] = b[k];
+  }
+  return a;
+}
+qutil.mergeObject = mergeObject;
+
+function freezeOrNoArray(arr) { return !isEmpty(arr) ? freeze(arr) : NoArray; }
+function freezeOrNoObject(arr) { return !isEmpty(arr) ? freeze(arr) : NoObject; }
+
+// TODO: Not used.
+function joinObjectKeys(obj, sep) {
+  var s = "";
+  for (var k in obj) {
+    if (s)
+      s += sep;
+    s += k;
+  }
+  return s;
+}
 
 // \function `qdata.cloneWeak(v)`
 //
@@ -1173,6 +1191,7 @@ function SchemaCompiler(env, options) {
   this._env = env;            // Schema environment (`qdata` or customized).
   this._options = options;    // Schema validation options.
   this._extract = false;      // Whether to extract properties from this level.
+  this._delta = false;        // Whether we are in delta-mode (at the moment).
   this._path = "\"\"";        // Path to the current scope (code).
 
   this._accessMap = null;     // Access rights map (key to index).
@@ -1191,6 +1210,7 @@ qclass({
 
     this.declareData("qdata", this._env);
     this.setExtract(this.hasOption(kExtractTop));
+    this.setDelta(this.hasOption(kDeltaMode));
 
     if (this.hasOption(kTestAccess)) {
       this._accessMap = def.$_qPrivate.wMap;
@@ -1220,8 +1240,18 @@ qclass({
     return type.compile(this, vIn, def);
   },
 
-  hasOption: function(option) {
-    return (this._options & option ) !== 0;
+  hasOption: function(opt) {
+    return (this._options & opt) !== 0;
+  },
+
+  addOption: function(opt) {
+    this._options |= opt;
+    return this;
+  },
+
+  clearOption: function(opt) {
+    this._options &= ~opt;
+    return this;
   },
 
   _prepareAccess: function(accVar) {
@@ -1390,6 +1420,16 @@ qclass({
   setExtract: function(value) {
     var prev = this._extract;
     this._extract = value;
+    return prev;
+  },
+
+  getDelta: function() {
+    return this._delta;
+  },
+
+  setDelta: function(value) {
+    var prev = this._delta;
+    this._delta = value;
     return prev;
   },
 
@@ -1640,6 +1680,7 @@ qclass({
     else {
       if (type === "object") {
         var $data = obj.$data = {};
+        var artificalProperties = this.env.artificalProperties;
 
         for (k in def) {
           var kDef = def[k];
@@ -1649,7 +1690,7 @@ qclass({
           // qdata properties from object's properties.
           if (!isPropertyName(k))
             $data[unescapeFieldName(k)] = this.field(kDef, obj, null);
-          else if (!hasOwn.call(obj, k) && IgnoreProperties[k] !== true)
+          else if (!hasOwn.call(obj, k) && artificalProperties[k] !== true)
             obj[k] = kDef;
         }
 
@@ -1795,6 +1836,18 @@ qdata.types = {};
 // Rules supported by `qdata`. Mapping between a rule names and rule objects.
 qdata.rules = {};
 
+// \object `qdata.artificalProperties`
+//
+// Properties, which are artifically generated in the schema and will never be
+// copied from one schema to another in case of extending or inheriting. QData
+// rules can describe artifical properties that will be merged to the artifical
+// properties of the environment where the rule is defined.
+qdata.artificalProperties = {
+  $a      : true, // Shortcut to setup both `$r` and `$w` access information.
+  $rExp   : true, // Calculated read access (expression).
+  $wExp   : true  // Calculated write access (expression).
+};
+
 // \function `qdata.getType(name)`
 //
 // Get a type by `name`.
@@ -1867,6 +1920,9 @@ qdata.addRule = function(data) {
   for (var i = 0; i < data.length; i++) {
     var rule = data[i];
     rules[rule.name] = rule;
+
+    if (rule.artificalProperties)
+      mergeObject(this.artificalProperties, rule.artificalProperties);
   }
 
   return this;
@@ -1905,7 +1961,7 @@ qdata.addRule = function(data) {
 // returned.
 qdata.customize = function(opt) {
   if (opt == null)
-    opt = {};
+    opt = NoObject;
 
   if (typeOf(opt) !== "object")
     throwRuntimeError(
@@ -1918,6 +1974,7 @@ qdata.customize = function(opt) {
   // Clone members that can change.
   obj.types = cloneWeak(obj.types);
   obj.rules = cloneWeak(obj.rules);
+  obj.artificalProperties = cloneWeak(obj.artificalProperties);
 
   // Customize types and/or rules if provided.
   tmp = opt.types;
@@ -1937,6 +1994,7 @@ qdata.customize = function(opt) {
 qdata.freeze = function() {
   freeze(this.types);
   freeze(this.rules);
+  freeze(this.artificalProperties);
 
   return freeze(this);
 };
@@ -3382,8 +3440,11 @@ qclass({
     var prop;
 
     var path = c.getPath();
+    var delta = c.getDelta();
     var extract = c.setExtract(c.hasOption(kExtractNested));
-    var deltaMode = c.hasOption(kDeltaMode);
+
+    if (delta === true && def.$delta === false)
+      c.setDelta(false);
 
     // Collect information regarding mandatory and optional keys.
     for (eKey in fields) {
@@ -3394,9 +3455,10 @@ qclass({
 
       var optional = !!eDef.$optional;
 
-      // Make the field optional when using `kDeltaMode`.
-      if (!optional && (deltaMode && eDef.$delta !== false))
+      // Make the field optional when using delta-mode.
+      if (!optional && c.getDelta()) {
         optional = true;
+      }
 
       if (optional)
         optionalFields.push(eKey);
@@ -3513,7 +3575,7 @@ qclass({
       }
       else {
         c.emit("for (dummy in " + v + ") " + vLen + "--;");
-        c.emit("");
+        c.nl();
         c.emit("if (" + vLen + " !== 0) {");
       }
 
@@ -3529,7 +3591,9 @@ qclass({
     }
 
     c.end();
+
     c.setExtract(extract);
+    c.setDelta(delta);
 
     return vOut;
   },
@@ -3624,39 +3688,69 @@ qclass({
 qdata.addType(new ArrayType());
 
 // ============================================================================
-// [SchemaRule - Id]
+// [SchemaRule - Object]
 // ============================================================================
 
-// Processes `$pk` and `$fk` properties of "object" type and generate the
-// following
-//
+// Processes `$pk` and `$fk` properties of "object" and generate the following:
 //   - `$pkArray` - Primary key array.
-//   - `$pkMap`   - Primary key map.
+//   - `$pkMap`   - Primary key map (value is always `true`).
 //   - `$fkArray` - Foreign key array.
-//   - `$fkMap`   - Foreign key map.
+//   - `$fkMap`   - Foreign key map (value is always a string pointing to an "entity.field").
+//   - `$idArray` - Primary and foreign key array.
+//   - `$idMap`   - Primary and foreign key map (value is always `true`).
 qdata.addRule({
-  name: "id",
+  name: "object",
 
   hook: function(def, env) {
-    var pkArray = [];
-    var pkMap = {};
-
-    var fkArray = [];
-    var fkMap = {};
-
     var data = def.$data;
-    for (var key in data) {
-      var field = data[key];
 
-      // TODO: Implement.
-      
+    var pkArray = [], pkMap = {};
+    var fkArray = [], fkMap = {};
+    var idArray = [], idMap = {};
+
+    for (var k in data) {
+      var field = data[k];
+      var isId = false;
+
+      if (field.$pk) {
+        pkArray.push(k);
+        pkMap[k] = true;
+
+        isId = true;
+      }
+
+      if (field.$fk) {
+        fkArray.push(k);
+        fkMap[k] = field.$fk;
+
+        isId = true;
+      }
+
+      if (isId && !hasOwn.call(idMap, k)) {
+        idArray.push(k);
+        idMap[k] = true;
+      }
     }
 
-    def.$pkArray = pkArray;
-    def.$pkMap   = pkMap;
+    def.$pkArray = freezeOrNoArray(pkArray);
+    def.$pkMap   = freezeOrNoObject(pkMap);
 
-    def.$fkArray = fkArray;
-    def.$fkMap   = fkMap;
+    def.$fkArray = freezeOrNoArray(fkArray);
+    def.$fkMap   = freezeOrNoObject(fkMap);
+
+    def.$idArray = freezeOrNoArray(idArray);
+    def.$idMap   = freezeOrNoObject(idMap);
+  },
+
+  artificalProperties: {
+    $pkArray: true,
+    $pkMap  : true,
+
+    $fkArray: true,
+    $fkMap  : true,
+
+    $idArray: true,
+    $idMap  : true
   }
 });
 

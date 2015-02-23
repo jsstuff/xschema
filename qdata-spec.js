@@ -1307,6 +1307,30 @@ describe("QData", function() {
     fail({ nested: { invalid: true } }, def);
   });
 
+  it("should validate object - delta mode with $delta", function() {
+    var def = qdata.schema({
+      a: { $type: "bool" },
+      b: { $type: "int"  },
+      nested: {
+        $delta: false,
+        c: { $type: "string"   },
+        d: { $type: "string[]" }
+      }
+    });
+
+    pass({ a: true }, def, qdata.kDeltaMode);
+    pass({ b: 1234 }, def, qdata.kDeltaMode);
+
+    pass({ a: true, nested: { c: "qdata", d: ["qqq" ] } }, def, qdata.kDeltaMode);
+    pass({ b: 1234, nested: { c: "qdata", d: ["qqq" ] } }, def, qdata.kDeltaMode);
+
+    fail({ a: true, nested: {} }, def, qdata.kDeltaMode);
+    fail({ b: 1234, nested: {} }, def, qdata.kDeltaMode);
+
+    fail({ a: true, nested: { c: "qdata" } }, def, qdata.kDeltaMode);
+    fail({ b: 1234, nested: { d: ["qqq"] } }, def, qdata.kDeltaMode);
+  });
+
   it("should validate array - nested values", function() {
     var defs = [
       { type: "bool"  , pass: [false, true]         , fail: [0, 1, "string", NaN, Infinity, [], {}] },
