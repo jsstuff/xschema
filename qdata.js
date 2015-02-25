@@ -1158,13 +1158,12 @@ qclass({
   },
 
   toFunction: function() {
-    var body, fn;
+    var body = this.serialize();
+    var fn;
 
     try {
-      body = this.serialize();
       // console.log(body);
       fn = new Function(this._dataName, body);
-
       return fn(this._data);
     }
     catch (ex) {
@@ -1497,21 +1496,22 @@ var SchemaAccess = qclass({
   // contain virtual access rights like "inherit" (also handles null/empty
   // string as "inherit").
   process: function(s, inherit) {
-    var output = "";
+    if (!s || s === "inherit")
+      s = inherit || this.inherit;
 
-    if (!s || s.indexOf("|") === -1) {
-      output = this.normalize(s ? s.trim() : "", inherit);
-      if (output === null)
-        throwRuntimeError("Invalid access string '" + s + "'.");
-      return output;
-    }
+    // Fast-path (in case access control rights are not used).
+    if (s === "any" || s === "none")
+      return s;
 
     var names = s.split("|");
+    var name;
+
     var tmpMap = this.tmpMap;
     var tmpSig = this.tmpSig++;
 
-    for (var i = 0, len = names.length; i < len; i++) {
-      var name = names[i].trim();
+    var i = 0;
+    while (i < names.length) {
+      name = names[i].trim();
       if (!name)
         throwRuntimeError("Invalid access string '" + s + "'.");
 
@@ -1519,16 +1519,41 @@ var SchemaAccess = qclass({
       if (normalized === null)
         throwRuntimeError("Invalid access string '" + s + "' (can't normalize '" + name + "').");
 
-      if (normalized === "any")
-        return "any";
-
-      if (tmpMap[normalized] !== tmpSig) {
-        if (output) output += "|";
-        output += normalized;
+      if (normalized.indexOf("|") !== -1) {
+        // Prevent recursion, add to `names` we are interating over.
+        var array = normalized.split("|");
+        for (var j = 0; j < array.length; j++) {
+          name = array[j];
+          if (tmpMap[name] !== tmpSig)
+            names.push(name);
+        }
+      }
+      else {
         tmpMap[normalized] = tmpSig;
       }
+
+      i++;
     }
 
+    // It's an error if both "none" and "any" have been specified.
+    if (tmpMap.any === tmpSig && tmpMap.none === tmpSig)
+      throwRuntimeError("Access string can't have both 'any' and 'none' specified.");
+
+    // If there is 'any' or 'none' at least once it cancels effect of all others.
+    if (tmpMap.any  === tmpSig) return "any";
+    if (tmpMap.none === tmpSig) return "none";
+
+    // Construct a new string that is a combination of unique normalized access
+    // control names expanded by the previous loop.
+    var output = "";
+    for (name in tmpMap) {
+      if (tmpMap[name] === tmpSig) {
+        if (output) output += "|";
+
+        output += name;
+        this.add(name);
+      }
+    }
     return output;
   },
 
@@ -1536,6 +1561,10 @@ var SchemaAccess = qclass({
   //
   // Normalize an access control string `s` (can contain only one name).
   normalize: function(s, inherit) {
+    // Normalize special cases.
+    if (s === "*")
+      s = "any";
+
     // Check if the access control name is correct (i.e. doesn't contain any
     // characters we don't consider valid). This also checks for symbols like
     // '&' and '|', which should have been handled before name normalization.
@@ -1550,17 +1579,8 @@ var SchemaAccess = qclass({
     if (s === "__proto__")
       return null;
 
-    // Handle "*", which means "any".
-    if (s === "*" || s === "any")
-      return "any";
-
     // Handle "@", which will be modified depending on `type` (usually "r" or "w").
-    s = s.replace("@", this.type);
-
-    if (s !== "none")
-      this.add(s);
-
-    return s;
+    return s.replace("@", this.type);
   }
 });
 

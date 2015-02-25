@@ -118,7 +118,6 @@ Boolean type directives:
 Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
-`$undefined`             | `bool`     | `false` | Specifies if the value can be `undefined`
 `$allowed`               | `bool[]`   | `null`  | Array of boolean values that are allowed. This is useful to restrict the value to be always `true` or `false`, but it does nothing if the array is empty or both `true` and `false` values are specified.
 
 Number and Integer
@@ -145,7 +144,6 @@ Number type directives:
 Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
-`$undefined`             | `bool`     | `false` | Specifies if the value can be `undefined`
 `$allowed`               | `number[]` | `null`  | Array of numbers that are allowed. If this directive is used it cancels all directives that specify minimum, maximum, or any other number related constraints
 `$min`                   | `number`   | `null`  | Minimum value (the number has to be greater or equal than `$min`)
 `$max`                   | `number`   | `null`  | Maximum value (the number has to be lesser or equal than `$max`)
@@ -163,7 +161,6 @@ Character type directives:
 Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
-`$undefined`             | `bool`     | `false` | Specifies if the value can be `undefined`
 `$empty`                 | `bool`     | `false` | Specifies if the char can be an empty string
 `$allowed`               | `char[]`   | `null`  | Array of characters that are allowed
 
@@ -177,7 +174,6 @@ String type directives:
 Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
-`$undefined`             | `bool`     | `false` | Specifies if the value can be `undefined`
 `$empty`                 | `bool`     | `true`  | Specifies if the string can be an empty
 `$allowed`               | `string[]` | `null`  | Array of strings that are allowed. If this directive is used it cancels all directives related to string length validation, except `$empty` directive, which always applies, regardless of other constraints
 `$length`                | `number`   | `null`  | Exact string length
@@ -195,8 +191,7 @@ BigInt type directives:
 Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
-`$undefined`             | `bool`     | `false` | Specifies if the value can be `undefined`
-`$empty`                 | `bool`     | `true`  | Specifies if the string can be an empty
+`$empty`                 | `bool`     | `false` | Specifies if the string can be an empty
 `$allowed`               | `string[]` | `null`  | Array of strings that are allowed. If this directive is used it cancels `$min` and `$max` constraints
 `$min`                   | `string`   | `null`  | Minimum value (as string)
 `$max`                   | `string`   | `null`  | Maximum value (as string)
@@ -213,8 +208,7 @@ Color type directives:
 Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
-`$undefined`             | `bool`     | `false` | Specifies if the value can be `undefined`
-`$empty`                 | `bool`     | `true`  | Specifies if the string can be an empty
+`$empty`                 | `bool`     | `false` | Specifies if the string can be an empty
 `$cssNames`              | `bool`     | `true`  | Specifies if CSS color names are allowed
 `$extraNames`            | `set`      | `null`  | A set (dictionary having `key: true`) that contains extra color names that are allowed
 
@@ -228,8 +222,7 @@ MAC address type directives:
 Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
-`$undefined`             | `bool`     | `false` | Specifies if the value can be `undefined`
-`$empty`                 | `bool`     | `true`  | Specifies if the string can be an empty
+`$empty`                 | `bool`     | `false` | Specifies if the string can be an empty
 `$separator`             | `char`     | `:`     | Specifies separator used between MAC address components
 
 IP Address
@@ -242,8 +235,7 @@ IP address type directives:
 Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
-`$undefined`             | `bool`     | `false` | Specifies if the value can be `undefined`
-`$empty`                 | `bool`     | `true`  | Specifies if the string can be an empty
+`$empty`                 | `bool`     | `false` | Specifies if the string can be an empty
 `$allowPort`             | `bool`     | `false` | Specifies id port is also allowed
 
 Date and DateTime
@@ -286,8 +278,7 @@ Date+time type directives:
 Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
-`$undefined`             | `bool`     | `false` | Specifies if the value can be `undefined`
-`$empty`                 | `bool`     | `true`  | Specifies if the string can be an empty
+`$empty`                 | `bool`     | `false` | Specifies if the string can be an empty
 `$format`                | `string`   | `null`  | Specifies date+time format, see format options above
 `$leapYear`              | `bool`     | `true`  | Specifies whether to allow leap year date
 `$leapSecond`            | `bool`     | `false` | Specifies whether to allow leap second date+time
@@ -304,7 +295,6 @@ Object type directives:
 Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
-`$undefined`             | `bool`     | `false` | Specifies if the value can be `undefined`
 
 Array
 -----
