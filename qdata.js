@@ -1536,6 +1536,12 @@ var SchemaAccess = qclass({
   //
   // Normalize an access control string `s` (can contain only one name).
   normalize: function(s, inherit) {
+    // Check if the access control name is correct (i.e. doesn't contain any
+    // characters we don't consider valid). This also checks for symbols like
+    // '&' and '|', which should have been handled before name normalization.
+    if (s && reInvalidAccessName.test(s))
+      return null;
+
     // Handled implicit / explicit inheritance.
     if (!s || s === "inherit")
       s = inherit || this.inherit;
@@ -1550,12 +1556,6 @@ var SchemaAccess = qclass({
 
     // Handle "@", which will be modified depending on `type` (usually "r" or "w").
     s = s.replace("@", this.type);
-
-    // Check if the access control name is correct (i.e. doesn't contain any
-    // characters we don't consider valid). This also checks for symbols like
-    // '&' and '|', which should have been handled before name normalization.
-    if (reInvalidAccessName.test(s))
-      return null;
 
     if (s !== "none")
       this.add(s);
@@ -2179,7 +2179,7 @@ qdata.customize = function(opt) {
     throwRuntimeError(
       "qdata.customize(opt) - The `opt` parameter has to be an object, received " + typeOf(opt) + ".");
 
-  // Create a new `qdata` like object.
+  // Create a new object extending `qdata`.
   var obj = cloneWeak(this || qdata);
   var tmp;
 
@@ -3629,7 +3629,7 @@ qclass({
   type: "object",
 
   hook: function(def, env) {
-    var rules = qdata.rules;
+    var rules = env.rules;
 
     for (var k in rules) {
       var rule = rules[k];
