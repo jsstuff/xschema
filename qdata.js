@@ -3,6 +3,20 @@
 "use strict";
 
 // ============================================================================
+// [Config]
+// ============================================================================
+
+var SANITY = false;
+
+// ============================================================================
+// [Shortcuts]
+// ============================================================================
+
+var freeze = Object.freeze;
+var hasOwn = Object.prototype.hasOwnProperty;
+var isArray = Array.isArray;
+
+// ============================================================================
 // [QData]
 // ============================================================================
 
@@ -17,6 +31,12 @@ var qdata = {};
 //
 // Version information in a "major.minor.patch" form.
 qdata.VERSION = "0.1.0";
+
+// `qdata.SENTINEL`
+//
+// Private object that is used to check whether an object is a qdata instance.
+var SENTINEL = freeze({});
+qdata.SENTINEL = SENTINEL;
 
 // `qdata.qclass`
 //
@@ -144,10 +164,6 @@ var kTuneUseObjectKeysAsCount = false;
 // ============================================================================
 // [Internals]
 // ============================================================================
-
-var freeze = Object.freeze;
-var hasOwn = Object.prototype.hasOwnProperty;
-var isArray = Array.isArray;
 
 // \internal
 //
@@ -387,17 +403,6 @@ qutil.mergeObject = mergeObject;
 function freezeOrNoArray(arr) { return !isEmpty(arr) ? freeze(arr) : NoArray; }
 function freezeOrNoObject(arr) { return !isEmpty(arr) ? freeze(arr) : NoObject; }
 
-// TODO: Not used.
-function joinObjectKeys(obj, sep) {
-  var s = "";
-  for (var k in obj) {
-    if (s)
-      s += sep;
-    s += k;
-  }
-  return s;
-}
-
 // \function `qdata.cloneWeak(v)`
 //
 // Perform a weak clone of variable `v`. If the variable is an array, a new
@@ -420,10 +425,6 @@ function cloneWeak(v) {
 qdata.cloneWeak = cloneWeak;
 
 function _cloneDeep(obj) {
-  // Never clone `qdata` itself, handles case of `$_qPrivate`.
-  if (obj === qdata)
-    return obj;
-
   if (isArray(obj)) {
     var dstArr = [];
     var srcArr = obj;
@@ -436,6 +437,10 @@ function _cloneDeep(obj) {
     return dstArr;
   }
   else {
+    // Never clone `qdata` object and all objects that extended it `qdata`.
+    if (obj.SENTINEL === SENTINEL)
+      return obj;
+
     var dstObj = {};
     var srcObj = obj;
 
@@ -1596,6 +1601,13 @@ function extractDefData(def, data) {
   return dst;
 }
 
+function sanityNormalized(def) {
+  for (var k in def) {
+    if (!isDirectiveName(k))
+      throwRuntimeError("Found a non-directive '" + k + "' in normalized schema.");
+  }
+}
+
 // \internal
 //
 // Schema builder is responsible for translating a non-normalized schema into
@@ -1816,7 +1828,10 @@ qclass({
           }
 
           for (k in override) {
-            if (artificialProperties[k] === true || hasOwn.call(obj, k) || hasOwn.call(def, k))
+            if (artificialProperties[k] === true ||
+                !isDirectiveName(k) ||
+                hasOwn.call(obj, k) ||
+                hasOwn.call(def, k))
               continue;
 
             v = override[k];
@@ -1921,6 +1936,9 @@ qclass({
 
     if (typeof TypeObject.hook === "function")
       TypeObject.hook(obj, this.env);
+
+    if (SANITY)
+      sanityNormalized(obj);
 
     return obj;
   }
@@ -3792,8 +3810,7 @@ qclass({
     return vOut;
   },
 
-  // Called from compiled code to generate a list containing all invalid
-  // properties.
+  // Called from compiled code to generate a list containing all invalid properties.
   extractionFailed: function(dst, src, path) {
     var keys = [];
 
