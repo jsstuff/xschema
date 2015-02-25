@@ -18,10 +18,11 @@ function repeatString(s, n) {
 function serializeSchema(schema) {
   var tmp = {};
   for (var k in schema) {
-    if (k === "$_qPrivate" && schema[k] != null)
-      tmp[k] = "<...>";
+    var value = schema[k];
+    if (value == null || typeof value !== "object")
+      tmp[k] = value;
     else
-      tmp[k] = schema[k];
+      tmp[k] = k === "$_qPrivate" ? "<...>" : serializeSchema(value);
   }
   return tmp;
 }
@@ -57,7 +58,7 @@ function serializeFailure(reason, schema, options, access, input, output, expect
   if (input    !== undefined) s += "input"    + " = " + JSON.stringify(input, null, 2) + "\n";
   if (output   !== undefined) s += "output"   + " = " + JSON.stringify(output, null, 2) + "\n";
   if (expected !== undefined) s += "expected" + " = " + JSON.stringify(expected, null, 2) + "\n";
-  if (errors   !== undefined) s += "Errors"   + " = " + JSON.stringify(errors, null, 2) + "\n";
+  if (errors   !== undefined) s += "errors"   + " = " + JSON.stringify(errors, null, 2) + "\n";
 
   try {
     var fn = qdata._getProcessCompiled(schema, options, access);
@@ -240,10 +241,10 @@ describe("QData", function() {
   });
 
   it("should test utilities - string operations", function() {
-    assert(qdata.util.isPropertyName("$")           === true);
-    assert(qdata.util.isPropertyName("$property")   === true);
-    assert(qdata.util.isPropertyName("")            === false);
-    assert(qdata.util.isPropertyName("fieldName")   === false);
+    assert(qdata.util.isDirectiveName("$")          === true);
+    assert(qdata.util.isDirectiveName("$directive") === true);
+    assert(qdata.util.isDirectiveName("")           === false);
+    assert(qdata.util.isDirectiveName("fieldName")  === false);
 
     assert(qdata.util.isVariableName("someVar")     === true);
     assert(qdata.util.isVariableName("SomeVar")     === true);
@@ -1424,7 +1425,7 @@ describe("QData", function() {
     fail([0, 1, 2], defMax2);
   });
 
-  it("should properly handle type ending with '?'", function() {
+  it("should properly handle type shortcut {nullable} '?'", function() {
     var def = qdata.schema({
       a: { $type: "int"  },
       b: { $type: "int?" }
@@ -1439,7 +1440,7 @@ describe("QData", function() {
     fail({ a: 0, b: "string"  }, def);
   });
 
-  it("should properly handle type ending with '[]'", function() {
+  it("should properly handle type shortcut {array of type} '[]'", function() {
     var def = qdata.schema({
       a: { $type: "int"   },
       b: { $type: "int[]" }
@@ -1454,7 +1455,7 @@ describe("QData", function() {
     fail({ a: 0, b: ["s"] }, def);
   });
 
-  it("should properly handle type ending with '[x..y]'", function() {
+  it("should properly handle type shortcut {array of type} '[x..y]'", function() {
     var Exact  = qdata.schema({ $type: "int[2]"    });
     var Min    = qdata.schema({ $type: "int[2..]"  });
     var Max    = qdata.schema({ $type: "int[..2]"  });
@@ -1485,7 +1486,7 @@ describe("QData", function() {
     fail([0, 1, 2, 3, 4], MinMax);
   });
 
-  it("should properly handle type ending with '[]?'", function() {
+  it("should properly handle type shortcut {array of type?} '[]?'", function() {
     var def = qdata.schema({
       a: { $type: "int"    },
       b: { $type: "int[]?" }
@@ -1502,7 +1503,7 @@ describe("QData", function() {
     fail({ a: 0, b: ["s"]     }, def);
   });
 
-  it("should properly handle type ending with '?[]?'", function() {
+  it("should properly handle type shortcut {array? of type?} '?[]?'", function() {
     var def = qdata.schema({
       a: { $type: "int"     },
       b: { $type: "int?[]?" }
@@ -1520,12 +1521,110 @@ describe("QData", function() {
     fail({ a: 0, b: ["s"]     }, def);
   });
 
-  it("should properly handle invalid type ending", function() {
+  it("should properly handle type shortcut {invalid}", function() {
     assertThrow(function() { qdata.schema({ $type: "int??"    }); });
     assertThrow(function() { qdata.schema({ $type: "int??[]"  }); });
     assertThrow(function() { qdata.schema({ $type: "int[]??"  }); });
     assertThrow(function() { qdata.schema({ $type: "int?[]??" }); });
     assertThrow(function() { qdata.schema({ $type: "int??[]?" }); });
+  });
+
+  it("should extend schema - use as nested (directly)", function() {
+    var nestedDef = qdata.schema({
+      a: { $type: "bool" },
+      b: { $type: "int"  }
+    });
+
+    var rootDef = qdata.schema({
+      nested: nestedDef
+    });
+
+    pass({ nested: { a: true, b: 1234 } }, rootDef);
+  });
+
+  it("should extend schema - use as nested ($extend)", function() {
+    var nestedDef = qdata.schema({
+      a: { $type: "bool" },
+      b: { $type: "int"  }
+    });
+
+    var rootDef = qdata.schema({
+      nested: {
+        $extend: nestedDef
+      }
+    });
+
+    pass({ nested: { a: true, b: 1234 } }, rootDef);
+  });
+
+  it("should extend schema - add field", function() {
+    var s0 = qdata.schema({
+      a: { $type: "bool" },
+      b: { $type: "int"  }
+    });
+
+    var s1 = qdata.schema({
+      $extend: s0,
+      c: { $type: "string" }
+    });
+
+    var s2 = qdata.schema({
+      $extend: s1,
+      d: { $type: "string[]" }
+    });
+
+    pass({ a: true, b: 1234                         }, s0);
+    pass({ a: true, b: 1234, c: "qdata"             }, s1);
+    pass({ a: true, b: 1234, c: "qdata", d: ["qqq"] }, s2);
+  });
+
+  it("should extend schema - delete field", function() {
+    var s0 = qdata.schema({
+      a: { $type: "bool"     },
+      b: { $type: "int"      },
+      c: { $type: "string"   },
+      d: { $type: "string[]" }
+    });
+
+    var s1 = qdata.schema({
+      $extend: s0,
+      d: undefined
+    });
+
+    var s2 = qdata.schema({
+      $extend: s1,
+      c: undefined
+    });
+
+    pass({ a: true, b: 1234, c: "qdata", d: ["qqq"] }, s0);
+    pass({ a: true, b: 1234, c: "qdata"             }, s1);
+    pass({ a: true, b: 1234                         }, s2);
+
+    fail({ a: true, b: 1234, c: "qdata", d: ["qqq"] }, s1);
+    fail({ a: true, b: 1234, c: "qdata"             }, s2);
+  });
+
+  it("should extend schema - modify field (optional)", function() {
+    var s0 = qdata.schema({
+      a: { $type: "bool"   },
+      b: { $type: "int"    },
+      c: { $type: "string", $optional: true }
+    });
+
+    var s1 = qdata.schema({
+      $extend: s0,
+      a: { $optional: true  },
+      c: { $optional: false }
+    });
+
+    pass({ a: true, b: 1234             }, s0);
+    pass({ a: true, b: 1234, c: "qdata" }, s0);
+
+    pass({ a: true, b: 1234, c: "qdata" }, s1);
+    pass({          b: 1234, c: "qdata" }, s1);
+
+    fail({ a: true, b: 1234             }, s1);
+    fail({          b: 1234             }, s1);
   });
 
   it("should validate access rights - write one ($w)", function() {

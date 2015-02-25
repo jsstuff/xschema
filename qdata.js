@@ -267,13 +267,13 @@ function typeOf(arg) {
 }
 qdata.typeOf = typeOf;
 
-// \function `qdata.util.isPropertyName(s)`
+// \function `qdata.util.isDirectiveName(s)`
 //
-// Get whether the string `s` is a qdata's property name (ie it starts with "$").
-function isPropertyName(s) {
+// Get whether the string `s` is a qdata's directive name (ie it starts with "$").
+function isDirectiveName(s) {
   return s.charCodeAt(0) === 36;
 }
-qutil.isPropertyName = isPropertyName;
+qutil.isDirectiveName = isDirectiveName;
 
 // \function `qdata.util.isVariableName(s)`
 //
@@ -409,7 +409,6 @@ function cloneWeak(v) {
   if (isArray(v))
     return v.slice();
 
-  // TODO: Should we use Object.create() instead?
   var dstObj = {};
   var srcObj = v;
 
@@ -421,6 +420,10 @@ function cloneWeak(v) {
 qdata.cloneWeak = cloneWeak;
 
 function _cloneDeep(obj) {
+  // Never clone `qdata` itself, handles case of `$_qPrivate`.
+  if (obj === qdata)
+    return obj;
+
   if (isArray(obj)) {
     var dstArr = [];
     var srcArr = obj;
@@ -1235,7 +1238,7 @@ qclass({
     var type = this._env.getType(name);
 
     if (!type)
-      throwRuntimeError("Couldn't find handler for type " + name + ".");
+      throwRuntimeError("Can't find handler for type " + name + ".");
 
     return type.compile(this, vIn, def);
   },
@@ -1568,6 +1571,31 @@ function mergeBits(bits, map, s) {
   return bits;
 }
 
+function extractDefData(def, data) {
+  var dst = {};
+  var k;
+
+  for (k in def) {
+    if (isDirectiveName(k))
+      continue;
+    dst[unescapeFieldName(k)] = def[k];
+  }
+
+  if (data == null)
+    return dst;
+
+  if (typeof data !== "object")
+    throwRuntimeError("Directive '$data' has to be an object, not '" + typeOf(data) + "'.");
+
+  for (k in data) {
+    if (hasOwn.call(dst, k))
+      throwRuntimeError("Property '" + k + "' specified in both definition and $data directives.");
+    dst[k] = data[k];
+  }
+
+  return dst;
+}
+
 // \internal
 //
 // Schema builder is responsible for translating a non-normalized schema into
@@ -1591,70 +1619,133 @@ qclass({
   //
   // Called once per schema, it adds the root field.
   build: function(def) {
+    var def = this.field(def, null, null);
+
     // The member `$_qPrivate` is considered private and used exclusively by
-    // the QData library. This is the only reserved property so far.
-    var priv = {
+    // the QData library. This is the only reserved key so far.
+    def.$_qPrivate = {
       env  : this.env,
       rMap : this.rAccess.map,
       wMap : this.wAccess.map,
       cache: new Array(kFuncCacheCount)
     };
 
-    return this.field(def, null, priv);
+    return def;
   },
 
   // \internal
   //
-  // Translate the given schema definition into an internal format that can
-  // be used by `qdata` library. This function is called for root type and
-  // all children it contains, basically per recognized type.
-  field: function(def, parent, priv) {
-    // Safe defaults.
-    var type = def.$type || "object";
-    var obj, k;
+  // Translate the given schema definition into a normalized format that is used
+  // by `qdata` library. This function is called for root type and all children
+  // it contains, basically per recognized type.
+  field: function(def, override, parent) {
+    // If the definition extends another one, we switch it to `def` and use the
+    // former as `override`. The `$extend` directive is never set on normalized
+    // schema object, so if we are already extending, we should never see it.
+    if (hasOwn.call(def, "$extend")) {
+      var extend = def.$extend;
 
+      // ERROR: The `$extend` directive shouldn't be part of an existing schema.
+      if (override !== null)
+        throwRuntimeError("Directive '$extend' should never appear in normalized schema.");
+
+      // ERROR: Extend has to be an existing schema.
+      if (extend == null || typeof extend !== "object" || !hasOwn.call(extend, "$_qPrivate"))
+        throwRuntimeError("Directive '$extend' requires an existing qdata.schema.");
+
+      override = def;
+      def = extend;
+    }
+
+    // Initialize to safe defaults.
+    var type = def.$type || "object";
     var defData = def.$data;
     var nullable = false;
 
-    // If the $type ends with "?" it implies `{ $null: true }` definition.
-    if (reOptionalField.test(type)) {
-      type = type.substr(0, type.length - 1);
-      nullable = true;
+    var m = null;
+    var k, v, o;
+    var r, w, g;
 
-      // Prevent from having invalid type that contains for example "??" by mistake.
-      if (reOptionalField.test(type))
-        throwRuntimeError("Invalid type '" + def.$type + "'.");
+    if (!override) {
+      // If the $type ends with "?" it implies `{ $null: true }` definition.
+      if (reOptionalField.test(type)) {
+        type = type.substr(0, type.length - 1);
+        nullable = true;
+
+        // Prevent from having invalid type that contains for example "??" by mistake.
+        if (reOptionalField.test(type))
+          throwRuntimeError("Invalid type '" + def.$type + "'.");
+      }
+
+      // If the $type ends with "[...]" it implies `{ $type: "array", $data: ... }`.
+      // In this case all definitions specified in `def` are related to the array
+      // elements, not the array itself. However, it's possible to specify basics
+      // like array length, minimum length, and maximum length inside "[...]".
+      m = type.match(reArrayField);
+
+      // Handle "$null" + do some checks.
+      if (!m) {
+        if (type.indexOf("[") !== -1)
+          throwRuntimeError("Invalid type '" + def.$type + "'.");
+
+        if (typeof def.$null === "boolean")
+          nullable = def.$null;
+      }
+
+      // Handle "$r" and "$w".
+      r = def.$r || def.$a || null;
+      w = def.$w || def.$a || null;
+
+      // Handle "$g".
+      g = def.$g || null;
+    }
+    else {
+      // Handle the override basics here. Be pedantic as it's better to catch
+      // errors here than failing later.
+      if (hasOwn.call(override, "$type") && override.$type !== type)
+        throwRuntimeError("Can't override type '" + type + "' to '" + override.$type + "'.");
+
+      // Override "$null".
+      if (hasOwn.call(override, "$null")) {
+        v = override.$null;
+        nullable = (v == null) ? null : v;
+      }
+
+      // Override "$r" and "$w".
+      r = def.$r;
+      w = def.$w;
+
+      var has$a = hasOwn.call(override, "$a");
+      if (hasOwn.call(override, "$r") || has$a) r = override.$r || override.$a || null;
+      if (hasOwn.call(override, "$w") || has$a) w = override.$w || override.$a || null;
+
+      // Override "$g".
+      g = def.$g;
+      if (hasOwn.call(override, "$g")) g = override.$g || null;
     }
 
-    // If the $type ends with "[...]" it implies `{ $type: "array", $data: ... }`.
-    // In this case all definitions specified in `def` are related to the array
-    // elements, not the array itself. However, it's possible to specify basics
-    // like array length, minimum length, and maximum length inside "[...]".
-    var m = type.match( reArrayField);
-    if (!m) {
-      if (type.indexOf("[") !== -1)
-        throwRuntimeError("Invalid type '" + def.$type + "'.");
+    if (!g)
+      g = "default";
 
-      if (typeof def.$null === "boolean")
-        nullable = def.$null;
-    }
-
-    var r = def.$r || def.$a || null;
-    var w = def.$w || def.$a || null;
-
-    obj = {
+    // Create the field object. Until now everything stored here is handled,
+    // overrides included.
+    var obj = {
       $type     : type,
       $data     : null,
       $null     : nullable,
-      $g        : def.$g || "default",
       $r        : r,
       $w        : w,
+      $g        : g,
       $rExp     : this.rAccess.process(r, parent ? parent.$rExp : null),
       $wExp     : this.wAccess.process(w, parent ? parent.$wExp : null),
-      $_qPrivate: priv
+      $_qPrivate: null
     };
 
     if (m) {
+      // Never in override mode here.
+      if (override)
+        throwRuntimeError("Internal error.");
+
       var nested = cloneWeak(def);
       nested.$type = type.substr(0, type.length - m[0].length);
 
@@ -1665,59 +1756,160 @@ qclass({
         throwRuntimeError("Invalid type '" + def.$type + "'.");
 
       obj.$type = "array";
-      obj.$data = this.field(nested, obj, null);
+      obj.$data = this.field(nested, null, obj);
 
       if (m[2]) {
-        // [min..], [..max] or [min..max] syntax.
+        // "[min..]", "[..max]" or "[min..max]" syntax.
         if (minLen !== null) obj.$minLength = minLen;
         if (maxLen !== null) obj.$maxLength = maxLen;
       }
       else {
-        // [length] syntax.
+        // "[length]" syntax.
         if (minLen !== null) obj.$length = minLen;
       }
     }
     else {
+      var artificialProperties = this.env.artificialProperties;
+
       if (type === "object") {
         var $data = obj.$data = {};
-        var artificalProperties = this.env.artificalProperties;
 
-        for (k in def) {
-          var kDef = def[k];
+        if (!override) {
+          // Handle "object" directives.
+          for (k in def) {
+            // Properties are stored in `obj` itself, however, object fields are
+            // stored always in `obj.$data`. This is just a way to distinguish
+            // qdata properties from object's properties.
+            if (artificialProperties[k] === true || !isDirectiveName(k) || hasOwn.call(obj, k))
+              continue;
+            obj[k] = def[k];
+          }
 
-          // Properties are stored in `obj` itself, however, object fields are
-          // stored always in `obj.$data`. This is just a way to distinguish
-          // qdata properties from object's properties.
-          if (!isPropertyName(k))
-            $data[unescapeFieldName(k)] = this.field(kDef, obj, null);
-          else if (!hasOwn.call(obj, k) && artificalProperties[k] !== true)
-            obj[k] = kDef;
-        }
-
-        if (defData != null) {
-          if (typeof defData !== "object")
-            throwRuntimeError("Property '$data' has to be object, not '" + typeOf(defData) + "'.");
-
+          // Handle "object" properties.
+          defData = extractDefData(def, defData);
           for (k in defData) {
-            kDef = defData[k];
-            $data[k] = this.field(kDef, obj, null);
+            $data[k] = this.field(defData[k], null, obj);
+          }
+        }
+        else {
+          // Override "object" directives.
+          for (k in def) {
+            // We don't have to worry about properties in the field vs $data,
+            // as the schema has already been normalized. So here we expect
+            // qdata directives only, not objects' fields.
+            if (artificialProperties[k] === true || hasOwn.call(obj, k))
+              continue;
+
+            // Not overridden directive.
+            if (!hasOwn.call(override, k)) {
+              obj[k] = def[k];
+              continue;
+            }
+
+            // Delete/undefine directive.
+            v = override[k];
+            if (v === undefined)
+              continue;
+
+            // TODO: What about type of v, should we handle an object as well?
+            obj[k] = v;
+          }
+
+          for (k in override) {
+            if (artificialProperties[k] === true || hasOwn.call(obj, k) || hasOwn.call(def, k))
+              continue;
+
+            v = override[k];
+            obj[k] = v;
+          }
+
+          // Override "object" properties.
+          var overrideData = extractDefData(override, override.$data);
+          for (k in defData) {
+            v = defData[k];
+
+            // Not overridden property.
+            if (!hasOwn.call(overrideData, k)) {
+              $data[k] = this.field(v, null, obj);
+              continue;
+            }
+
+            // Delete/undefine property.
+            o = overrideData[k];
+            if (o == null)
+              continue;
+
+            // Override the object.
+            $data[k] = this.field(v, o, obj);
+          }
+
+          for (k in overrideData) {
+            if (hasOwn.call(defData, k))
+              continue;
+
+            o = overrideData[k];
+            if (o == null)
+              continue;
+
+            $data[k] = this.field(o, null, obj);
           }
         }
       }
       else {
-        for (k in def) {
-          if (!isPropertyName(k))
-            throwRuntimeError("Data field '" + k + "'can't be used by '" + type + "' type.");
-
-          if (!hasOwn.call(obj, k))
+        if (!override) {
+          // Handle "any" directives.
+          for (k in def) {
+            if (artificialProperties[k] === true || hasOwn.call(obj, k))
+              continue;
+            if (!isDirectiveName(k))
+              throwRuntimeError("Property '" + k + "'can't be used by '" + type + "' type.");
             obj[k] = def[k];
+          }
+
+          // Handle "any" properties.
+          if (defData != null) {
+            if (typeof defData !== "object")
+              throwRuntimeError("Directive '$data' has to be object, not '" + typeOf(defData) + "'.");
+
+            obj.$data = this.field(defData, null, obj);
+          }
         }
+        else {
+          // Override "any" directives.
+          for (k in def) {
+            if (artificialProperties[k] === true || hasOwn.call(obj, k))
+              continue;
 
-        if (defData != null) {
-          if (typeof defData !== "object")
-            throwRuntimeError("Property '$data' has to be object, not '" + typeOf(defData) + "'.");
+            // Not overridden directive.
+            if (!hasOwn.call(override, k)) {
+              obj[k] = def[k];
+              continue;
+            }
 
-          obj.$data = this.field(defData, obj, null);
+            // Delete/undefine directive.
+            v = override[k];
+            if (v === undefined)
+              continue;
+
+            // TODO: What about type of v, should we handle an object as well?
+            obj[k] = v;
+          }
+
+          for (k in override) {
+            if (artificialProperties[k] === true || hasOwn.call(obj, k) || hasOwn.call(def, k))
+              continue;
+
+            v = override[k];
+            obj[k] = v;
+          }
+
+          // Override "any" properties.
+          if (defData != null) {
+            if (typeof defData !== "object")
+              throwRuntimeError("Directive '$data' has to be object, not '" + typeOf(defData) + "'.");
+
+            obj.$data = this.field(defData, override.$data, obj);
+          }
         }
       }
     }
@@ -1836,16 +2028,18 @@ qdata.types = {};
 // Rules supported by `qdata`. Mapping between a rule names and rule objects.
 qdata.rules = {};
 
-// \object `qdata.artificalProperties`
+// \object `qdata.artificialProperties`
 //
-// Properties, which are artifically generated in the schema and will never be
+// Properties, which are artificially generated in the schema and will never be
 // copied from one schema to another in case of extending or inheriting. QData
-// rules can describe artifical properties that will be merged to the artifical
+// rules can describe artificial properties that will be merged to the artificial
 // properties of the environment where the rule is defined.
-qdata.artificalProperties = {
-  $a      : true, // Shortcut to setup both `$r` and `$w` access information.
-  $rExp   : true, // Calculated read access (expression).
-  $wExp   : true  // Calculated write access (expression).
+qdata.artificialProperties = {
+  $_qPrivate: true, // Private data.
+  $a        : true, // Shortcut to setup both `$r` and `$w` access information.
+  $extend   : true, // Extend directive.
+  $rExp     : true, // Expanded read access (expression).
+  $wExp     : true  // Expanded write access (expression).
 };
 
 // \function `qdata.getType(name)`
@@ -1921,8 +2115,8 @@ qdata.addRule = function(data) {
     var rule = data[i];
     rules[rule.name] = rule;
 
-    if (rule.artificalProperties)
-      mergeObject(this.artificalProperties, rule.artificalProperties);
+    if (rule.artificialProperties)
+      mergeObject(this.artificialProperties, rule.artificialProperties);
   }
 
   return this;
@@ -1974,7 +2168,7 @@ qdata.customize = function(opt) {
   // Clone members that can change.
   obj.types = cloneWeak(obj.types);
   obj.rules = cloneWeak(obj.rules);
-  obj.artificalProperties = cloneWeak(obj.artificalProperties);
+  obj.artificialProperties = cloneWeak(obj.artificialProperties);
 
   // Customize types and/or rules if provided.
   tmp = opt.types;
@@ -1994,7 +2188,7 @@ qdata.customize = function(opt) {
 qdata.freeze = function() {
   freeze(this.types);
   freeze(this.rules);
-  freeze(this.artificalProperties);
+  freeze(this.artificialProperties);
 
   return freeze(this);
 };
@@ -3601,16 +3795,16 @@ qclass({
   // Called from compiled code to generate a list containing all invalid
   // properties.
   extractionFailed: function(dst, src, path) {
-    var list = [];
+    var keys = [];
 
     for (var k in src)
       if (!hasOwn.call(dst, k))
-        list.push(k);
+        keys.push(k);
 
     return {
       code: "InvalidProperties",
       path: path,
-      list: list
+      keys: keys
     };
   }
 });
@@ -3742,7 +3936,7 @@ qdata.addRule({
     def.$idMap   = freezeOrNoObject(idMap);
   },
 
-  artificalProperties: {
+  artificialProperties: {
     $pkArray: true,
     $pkMap  : true,
 
