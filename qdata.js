@@ -569,12 +569,12 @@ qdata.isEqual = isEqual;
 // [Enum]
 // ============================================================================
 
-function Enum_sortIntFn(a, b) { return a - b; }
+function Enum$sortIntFn(a, b) { return a - b; }
 
 // \function `Enum.$hasKey(key)`
 //
 // Get whether the enum has `key`.
-function Enum_$hasKey(key) {
+function Enum$hasKey(key) {
   if (typeof key !== "string")
     return undefined;
 
@@ -584,7 +584,7 @@ function Enum_$hasKey(key) {
 // \function `Enum.$keyToValue(key)`
 //
 // Get a value based on `key`.
-function Enum_$keyToValue(key) {
+function Enum$keyToValue(key) {
   if (typeof key !== "string")
     return undefined;
 
@@ -595,7 +595,7 @@ function Enum_$keyToValue(key) {
 // \function `Enum.$hasValue(value)`
 //
 // Get whether the enum has `value`.
-function Enum_$hasValue(value) {
+function Enum$hasValue(value) {
   if (typeof value !== "number")
     return false;
 
@@ -604,7 +604,7 @@ function Enum_$hasValue(value) {
 }
 
 // \internal
-function Enum_$hasValueSequential(value) {
+function Enum$hasValueSequential(value) {
   if (typeof value !== "number")
     return false;
 
@@ -617,7 +617,7 @@ function Enum_$hasValueSequential(value) {
 // \function `Enum.$valueToKey(value)`
 //
 // Get a key based on `value`.
-function Enum_$valueToKey(value) {
+function Enum$valueToKey(value) {
   if (typeof value !== "number")
     return undefined;
 
@@ -627,7 +627,7 @@ function Enum_$valueToKey(value) {
 }
 
 // \internal
-function Enum_$valueToKeySequential(value) {
+function Enum$valueToKeySequential(value) {
   if (typeof value !== "number")
     return undefined;
 
@@ -669,10 +669,10 @@ function Enum(def) {
   var sequential   = true;
 
   // Move these functions closer to the object.
-  this.$hasKey     = Enum_$hasKey;
-  this.$keyToValue = Enum_$keyToValue;
-  this.$hasValue   = Enum_$hasValue;
-  this.$valueToKey = Enum_$valueToKey;
+  this.$hasKey     = Enum$hasKey;
+  this.$keyToValue = Enum$keyToValue;
+  this.$hasValue   = Enum$hasValue;
+  this.$valueToKey = Enum$valueToKey;
 
   this.$keyMap     = def;       // Mapping of keys to values.
   this.$keyList    = keyList;   // Array containing all keys.
@@ -713,7 +713,7 @@ function Enum(def) {
 
   // Compute $min, $max, and $sequential properties.
   if (valueList.length) {
-    valueList.sort(Enum_sortIntFn);
+    valueList.sort(Enum$sortIntFn);
 
     var a = valueList[0];
     var b = valueList[valueList.length - 1];
@@ -739,8 +739,8 @@ function Enum(def) {
           valueKeys.push(valueMap[String(valueList[i])]);
         }
 
-        this.$hasValue = Enum_$hasValueSequential;
-        this.$valueToKey = Enum_$valueToKeySequential;
+        this.$hasValue = Enum$hasValueSequential;
+        this.$valueToKey = Enum$valueToKeySequential;
       }
     }
   }
@@ -846,12 +846,6 @@ var BitArray = qclass({
     }
   }
 });
-
-// ============================================================================
-// []
-// ============================================================================
-
-// TODO:
 
 // ============================================================================
 // [CoreCompiler]
@@ -1720,8 +1714,11 @@ qclass({
         if (type.indexOf("[") !== -1)
           throwRuntimeError("Invalid type '" + def.$type + "'.");
 
-        if (typeof def.$null === "boolean")
+        if (hasOwn.call(def, "$null") && def.$null != null) {
           nullable = def.$null;
+          if (typeof nullable !== "boolean")
+            throwRuntimeError("Directive '$null' can only contain null/boolean, not '" + def.$null + "'.");
+        }
       }
 
       // Handle "$r" and "$w".
@@ -1855,6 +1852,9 @@ qclass({
               continue;
 
             v = override[k];
+            if (v === undefined)
+              continue;
+
             obj[k] = v;
           }
 
@@ -1935,6 +1935,9 @@ qclass({
               continue;
 
             v = override[k];
+            if (v === undefined)
+              continue;
+
             obj[k] = v;
           }
 

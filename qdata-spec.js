@@ -1604,6 +1604,20 @@ describe("QData", function() {
     fail({ a: true, b: 1234, c: "qdata"             }, s2);
   });
 
+  it("should extend schema - delete nonexisting field", function() {
+    var s0 = qdata.schema({
+      a: { $type: "bool" },
+      b: { $type: "int"  }
+    });
+
+    var s1 = qdata.schema({
+      $extend: s0,
+      nonExisting: undefined
+    });
+
+    pass({ a: true, b: 1234 }, s1);
+  });
+
   it("should extend schema - modify field (optional)", function() {
     var s0 = qdata.schema({
       a: { $type: "bool"   },
@@ -1614,6 +1628,7 @@ describe("QData", function() {
     var s1 = qdata.schema({
       $extend: s0,
       a: { $optional: true  },
+      b: { $optional: undefined },
       c: { $optional: false }
     });
 
@@ -1766,5 +1781,10 @@ describe("QData", function() {
 
     if (out)
       throw new Error("Should have thrown exception.");
+  });
+
+  it("should refuse schema with some semantic errors", function() {
+    assertThrow(function() { qdata.schema({ $type: "invalid"               }); });
+    assertThrow(function() { qdata.schema({ $type: "object", $null: 55     }); });
   });
 });
