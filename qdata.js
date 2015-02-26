@@ -204,7 +204,7 @@ var reArrayField = /\[(\d+)?(\.\.)?(\d+)?]$/; // Array type suffix "...[xxx]" (m
 
 // Test if the given access right is valid (forbid some characters that can
 // violate with future boolean algebra that can be applied to UAC system).
-var reInvalidAccessName = /[\x00-\x1F\s\(\)\[\]\{\}\&\|\*\^\!%@]/;
+var reInvalidAccessName = /[\x00-\x1F\s\(\)\[\]\{\}\&\|\*\^\!%]/;
 
 // ============================================================================
 // [Errors]
