@@ -8,6 +8,8 @@ var qdata = require("./qdata");
 var isEqual = qdata.isEqual;
 var cloneDeep = qdata.cloneDeep;
 
+var isArray = Array.isArray;
+
 function repeatString(s, n) {
   var result = "";
   for (var i = 0; i < n; i++)
@@ -15,16 +17,48 @@ function repeatString(s, n) {
   return result;
 }
 
-function serializeSchema(schema) {
-  var tmp = {};
-  for (var k in schema) {
-    var value = schema[k];
-    if (value == null || typeof value !== "object")
-      tmp[k] = value;
-    else
-      tmp[k] = k === "$_qPrivate" ? "<...>" : serializeSchema(value);
+function sortedArrayOfArrays(arr) {
+  arr = arr.slice();
+
+  arr.sort(function(a, b) {
+    var aVal = a.join("|");
+    var bVal = b.join("|");
+
+    return aVal < bVal ? -1 : aVal === bVal ? 0 : 1;
+  });
+
+  return arr;
+}
+
+// Recursive, serializes a given obj that is part of a schema in a way that when
+// printed it won't output qdata members in case that it contains `$_qPrivate`
+// field.
+function serializeSchema(obj) {
+  if (obj == null || typeof obj !== "object")
+    return obj;
+
+  if (isArray(obj)) {
+    var dstArr = [];
+    var srcArr = obj;
+
+    for (var i = 0; i < srcArr.length; i++)
+      dstArr.push(serializeSchema(srcArr[i]));
+    return dstArr;
   }
-  return tmp;
+  else {
+    var dstObj = {};
+    var srcObj = obj;
+
+    for (var k in srcObj) {
+      var value = srcObj[k];
+
+      if (k === "$_qPrivate")
+        dstObj[k] = value ? "<...>" : null;
+      else
+        dstObj[k] = serializeSchema(value);
+    }
+    return dstObj;
+  }
 }
 
 function serializeOptions(options) {
@@ -1425,7 +1459,7 @@ describe("QData", function() {
     fail([0, 1, 2], defMax2);
   });
 
-  it("should properly handle type shortcut {nullable} '?'", function() {
+  it("should handle shortcut '?'", function() {
     var def = qdata.schema({
       a: { $type: "int"  },
       b: { $type: "int?" }
@@ -1440,7 +1474,7 @@ describe("QData", function() {
     fail({ a: 0, b: "string"  }, def);
   });
 
-  it("should properly handle type shortcut {array of type} '[]'", function() {
+  it("should handle shortcut '[]'", function() {
     var def = qdata.schema({
       a: { $type: "int"   },
       b: { $type: "int[]" }
@@ -1455,7 +1489,7 @@ describe("QData", function() {
     fail({ a: 0, b: ["s"] }, def);
   });
 
-  it("should properly handle type shortcut {array of type} '[x..y]'", function() {
+  it("should handle shortcut '[x..y]'", function() {
     var Exact  = qdata.schema({ $type: "int[2]"    });
     var Min    = qdata.schema({ $type: "int[2..]"  });
     var Max    = qdata.schema({ $type: "int[..2]"  });
@@ -1486,7 +1520,7 @@ describe("QData", function() {
     fail([0, 1, 2, 3, 4], MinMax);
   });
 
-  it("should properly handle type shortcut {array of type?} '[]?'", function() {
+  it("should handle shortcut '[]?'", function() {
     var def = qdata.schema({
       a: { $type: "int"    },
       b: { $type: "int[]?" }
@@ -1503,7 +1537,7 @@ describe("QData", function() {
     fail({ a: 0, b: ["s"]     }, def);
   });
 
-  it("should properly handle type shortcut {array? of type?} '?[]?'", function() {
+  it("should handle shortcut '?[]?'", function() {
     var def = qdata.schema({
       a: { $type: "int"     },
       b: { $type: "int?[]?" }
@@ -1521,12 +1555,105 @@ describe("QData", function() {
     fail({ a: 0, b: ["s"]     }, def);
   });
 
-  it("should properly handle type shortcut {invalid}", function() {
+  it("should handle shortcut (invalid)", function() {
     assertThrow(function() { qdata.schema({ $type: "int??"    }); });
     assertThrow(function() { qdata.schema({ $type: "int??[]"  }); });
     assertThrow(function() { qdata.schema({ $type: "int[]??"  }); });
     assertThrow(function() { qdata.schema({ $type: "int?[]??" }); });
     assertThrow(function() { qdata.schema({ $type: "int??[]?" }); });
+  });
+
+  it("should enrich object - properties having $group", function() {
+    var def0 = qdata.schema({
+      id         : { $type: "int"  },
+      type       : { $type: "int"  },
+      flags      : { $type: "int"  },
+
+      title      : { $type: "text", $group: "" }, // Normalized to "default".
+      description: { $type: "text", $group: "" },
+      metadata   : { $type: "text", $group: undefined }
+    });
+
+    // If group is not specified everything goes to a "default" group.
+    assert.deepEqual(def0.$groupMap, {
+      default: ["id", "type", "flags", "title", "description", "metadata"]
+    });
+
+    var def1 = qdata.schema({
+      id         : { $type: "int" , $group: "info" },
+      type       : { $type: "int" , $group: "info" },
+      flags      : { $type: "int" , $group: "info" },
+
+      title      : { $type: "text", $group: "more" },
+      description: { $type: "text", $group: "more" },
+      metadata   : { $type: "text", $group: null } // Won't be added to $groupMap.
+    });
+
+    // Handle groups specified/skipped.
+    assert.deepEqual(def1.$groupMap, {
+      info: ["id", "type", "flags"],
+      more: ["title", "description"]
+    });
+  });
+
+  it("should enrich object - properties having $pk and $fk", function() {
+    var def0 = qdata.schema({
+      id         : { $type: "int", $pk: true            },
+      userId     : { $type: "int", $fk: "users.userId"  },
+      tagId      : { $type: "int", $fk: "tags.tagId"    }
+    });
+
+    assert.deepEqual(def0.$pkMap  , { id: true });
+    assert.deepEqual(def0.$pkArray, ["id"]);
+
+    assert.deepEqual(def0.$fkMap  , { userId: "users.userId", tagId: "tags.tagId" });
+    assert.deepEqual(def0.$fkArray, ["userId", "tagId"]);
+
+    assert.deepEqual(def0.$idMap  , { id: true, userId: true, tagId: true });
+    assert.deepEqual(def0.$idArray, ["id", "userId", "tagId"]);
+  });
+
+  it("should enrich object - properties having $unique", function() {
+    var def0 = qdata.schema({
+      id         : { $type: "int", $pk: true     },
+      name       : { $type: "int", $unique: true },
+      taxId      : { $type: "int", $unique: true }
+    });
+
+    assert.deepEqual(
+      sortedArrayOfArrays(def0.$uniqueArray),
+      sortedArrayOfArrays([["id"], ["name"], ["taxId"]]));
+
+    var def1 = qdata.schema({
+      id         : { $type: "int", $pk: true    },
+      name       : { $type: "int", $unique: "nameAndTax" },
+      taxId      : { $type: "int", $unique: "nameAndTax" }
+    });
+
+    assert.deepEqual(
+      sortedArrayOfArrays(def1.$uniqueArray),
+      sortedArrayOfArrays([["id"], ["name", "taxId"]]));
+
+    var def2 = qdata.schema({
+      userId     : { $type: "int"   , $pk: true, $unique: "name|id" },
+      tagId      : { $type: "int"   , $pk: true, $unique: "id"      },
+      tagName    : { $type: "string"           , $unique: "name"    }
+    });
+
+    assert.deepEqual(
+      sortedArrayOfArrays(def2.$uniqueArray),
+      sortedArrayOfArrays([["tagId", "userId"], ["tagName", "userId"]]));
+
+    var def3 = qdata.schema({
+      a: { $type: "int", $unique: "ac|ad" },
+      b: { $type: "int", $unique: true    },
+      c: { $type: "int", $unique: "ac"    },
+      d: { $type: "int", $unique: "ad"    }
+    });
+
+    assert.deepEqual(
+      sortedArrayOfArrays(def3.$uniqueArray),
+      sortedArrayOfArrays([["a", "c"], ["a", "d"], ["b"]]));
   });
 
   it("should extend schema - use as nested (directly)", function() {
@@ -1558,91 +1685,91 @@ describe("QData", function() {
   });
 
   it("should extend schema - add field", function() {
-    var s0 = qdata.schema({
+    var def0 = qdata.schema({
       a: { $type: "bool" },
       b: { $type: "int"  }
     });
 
-    var s1 = qdata.schema({
-      $extend: s0,
+    var def1 = qdata.schema({
+      $extend: def0,
       c: { $type: "string" }
     });
 
-    var s2 = qdata.schema({
-      $extend: s1,
+    var def2 = qdata.schema({
+      $extend: def1,
       d: { $type: "string[]" }
     });
 
-    pass({ a: true, b: 1234                         }, s0);
-    pass({ a: true, b: 1234, c: "qdata"             }, s1);
-    pass({ a: true, b: 1234, c: "qdata", d: ["qqq"] }, s2);
+    pass({ a: true, b: 1234                         }, def0);
+    pass({ a: true, b: 1234, c: "qdata"             }, def1);
+    pass({ a: true, b: 1234, c: "qdata", d: ["qqq"] }, def2);
   });
 
   it("should extend schema - delete field", function() {
-    var s0 = qdata.schema({
+    var def0 = qdata.schema({
       a: { $type: "bool"     },
       b: { $type: "int"      },
       c: { $type: "string"   },
       d: { $type: "string[]" }
     });
 
-    var s1 = qdata.schema({
-      $extend: s0,
+    var def1 = qdata.schema({
+      $extend: def0,
       d: undefined
     });
 
-    var s2 = qdata.schema({
-      $extend: s1,
+    var def2 = qdata.schema({
+      $extend: def1,
       c: undefined
     });
 
-    pass({ a: true, b: 1234, c: "qdata", d: ["qqq"] }, s0);
-    pass({ a: true, b: 1234, c: "qdata"             }, s1);
-    pass({ a: true, b: 1234                         }, s2);
+    pass({ a: true, b: 1234, c: "qdata", d: ["qqq"] }, def0);
+    pass({ a: true, b: 1234, c: "qdata"             }, def1);
+    pass({ a: true, b: 1234                         }, def2);
 
-    fail({ a: true, b: 1234, c: "qdata", d: ["qqq"] }, s1);
-    fail({ a: true, b: 1234, c: "qdata"             }, s2);
+    fail({ a: true, b: 1234, c: "qdata", d: ["qqq"] }, def1);
+    fail({ a: true, b: 1234, c: "qdata"             }, def2);
   });
 
   it("should extend schema - delete nonexisting field", function() {
-    var s0 = qdata.schema({
+    var def0 = qdata.schema({
       a: { $type: "bool" },
       b: { $type: "int"  }
     });
 
-    var s1 = qdata.schema({
-      $extend: s0,
+    var def1 = qdata.schema({
+      $extend: def0,
       nonExisting: undefined
     });
 
-    pass({ a: true, b: 1234 }, s1);
+    pass({ a: true, b: 1234 }, def1);
   });
 
   it("should extend schema - modify field (optional)", function() {
-    var s0 = qdata.schema({
+    var def0 = qdata.schema({
       a: { $type: "bool"   },
       b: { $type: "int"    },
       c: { $type: "string", $optional: true }
     });
 
-    var s1 = qdata.schema({
-      $extend: s0,
+    var def1 = qdata.schema({
+      $extend: def0,
       a: { $optional: true  },
       b: { $optional: undefined },
       c: { $optional: false }
     });
 
-    pass({ a: true, b: 1234             }, s0);
-    pass({ a: true, b: 1234, c: "qdata" }, s0);
+    pass({ a: true, b: 1234             }, def0);
+    pass({ a: true, b: 1234, c: "qdata" }, def0);
 
-    pass({ a: true, b: 1234, c: "qdata" }, s1);
-    pass({          b: 1234, c: "qdata" }, s1);
+    pass({ a: true, b: 1234, c: "qdata" }, def1);
+    pass({          b: 1234, c: "qdata" }, def1);
 
-    fail({ a: true, b: 1234             }, s1);
-    fail({          b: 1234             }, s1);
+    fail({ a: true, b: 1234             }, def1);
+    fail({          b: 1234             }, def1);
   });
 
-  it("should validate access rights - write one ($w)", function() {
+  it("should validate access rights - write one", function() {
     var def = qdata.schema({
       a: { $type: "bool"     , $r: "*", $w: "basic" },
       b: { $type: "int"      , $r: "*", $w: "basic" },
@@ -1687,7 +1814,7 @@ describe("QData", function() {
     fail({ a: true, b: 0, c: "s"          }, def, qdata.kDeltaMode, { extra: true });
   });
 
-  it("should validate access rights - write multi ($w)", function() {
+  it("should validate access rights - write a|b", function() {
     var def = qdata.schema({
       a: { $type: "int", $r: "*", $w: "a"   },
       b: { $type: "int", $r: "*", $w: "a|b" },
@@ -1720,6 +1847,88 @@ describe("QData", function() {
     fail({ b: 0 }, def, qdata.kDeltaMode, { c: true });
     fail({ c: 0 }, def, qdata.kDeltaMode, { b: true });
     fail({ d: 0 }, def, qdata.kDeltaMode, { a: true });
+  });
+
+ it("should validate access rights - write inherit", function() {
+    var def = qdata.schema({
+      $r: "*", $w: "user|admin",
+      nested: {
+        a           : { $type: "int", $r: "*"                      }, // Inherit.
+        b           : { $type: "int", $r: "*", $w: "inherit"       }, // Inherit.
+        onlyUser    : { $type: "int", $r: "*", $w: "user"          }, // Only user.
+        onlyAdmin   : { $type: "int", $r: "*", $w: "admin"         }, // Only admin.
+        inheritUser : { $type: "int", $r: "*", $w: "user|inherit"  }, // User/Inherit  -> User|Admin.
+        inheritAdmin: { $type: "int", $r: "*", $w: "admin|inherit" }, // Admin/Inherit -> User|Admin
+        none        : { $type: "int", $r: "*", $w: "none"          }  // None
+      }
+    });
+
+    var data0 = {
+      nested: {
+        a: 0,
+        b: 1
+      }
+    };
+
+    pass(data0, def, qdata.kDeltaMode, null);
+    pass(data0, def, qdata.kDeltaMode, { user: true });
+    pass(data0, def, qdata.kDeltaMode, { admin: true });
+    fail(data0, def, qdata.kDeltaMode, {});
+
+    var data1 = {
+      nested: {
+        a: 0,
+        b: 1,
+        onlyUser: 2,
+        inheritUser: 3
+      }
+    };
+
+    pass(data1, def, qdata.kDeltaMode, null);
+    pass(data1, def, qdata.kDeltaMode, { user: true });
+    fail(data1, def, qdata.kDeltaMode, {});
+    fail(data1, def, qdata.kDeltaMode, { admin: true });
+
+    var data2 = {
+      nested: {
+        a: 0,
+        b: 1,
+        onlyAdmin: 2,
+        inheritAdmin: 3
+      }
+    };
+
+    pass(data2, def, qdata.kDeltaMode, null);
+    pass(data2, def, qdata.kDeltaMode, { admin: true });
+    fail(data2, def, qdata.kDeltaMode, {});
+    fail(data2, def, qdata.kDeltaMode, { user: true });
+
+    var data3 = {
+      nested: {
+        a: 0,
+        b: 1,
+        onlyUser: 2,
+        onlyAdmin: 3
+      }
+    };
+
+    pass(data3, def, qdata.kDeltaMode, null);
+    pass(data3, def, qdata.kDeltaMode, { admin: true, user: true });
+    fail(data3, def, qdata.kDeltaMode, {});
+    fail(data3, def, qdata.kDeltaMode, { user: true });
+    fail(data3, def, qdata.kDeltaMode, { admin: true });
+
+    var data4 = {
+      nested: {
+        none: 5
+      }
+    };
+
+    pass(data4, def, qdata.kDeltaMode, null);
+    fail(data4, def, qdata.kDeltaMode, {});
+    fail(data4, def, qdata.kDeltaMode, { user: true });
+    fail(data4, def, qdata.kDeltaMode, { admin: true });
+    fail(data4, def, qdata.kDeltaMode, { admin: true, user: true });
   });
 
   it("should validate access rights - invalid expression ($r / $w)", function() {

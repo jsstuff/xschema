@@ -388,6 +388,64 @@ function isEmpty(obj) {
 }
 qutil.isEmpty = isEmpty;
 
+// \function `qdata.util.arrayToSet(arr)`
+//
+// Convert an array to a set (i.e. object having array values as key/true pairs).
+function arrayToSet(arr) {
+  var obj = {};
+  for (var i = 0, len = arr.length; i < len; i++)
+    obj[arr[i]] = true;
+  return obj;
+}
+qutil.arrayToSet = arrayToSet;
+
+// \function `qdata.util.setToArray(arr)`
+//
+// Convert an object into a set (i.e. return an array containing all object keys).
+function setToArray(set) {
+  return Object.keys(set).slice();
+}
+qutil.setToArray = setToArray;
+
+// \function `qdata.util.mergeSets(a, b)`
+//
+// Merge a set `a` with another set or array `b`.
+function mergeSets(a, b) {
+  if (b != null) {
+    if (isArray(b)) {
+      var srcArr = b;
+      for (var i = 0, len = srcArr.length; i < len; i++)
+        a[srcArr[i]] = true;
+    }
+    else {
+      var srcObj = b;
+      for (var k in srcObj)
+        a[k] = true;
+    }
+  }
+  return a;
+}
+qutil.mergeSets = mergeSets;
+
+// \function `qdata.util.joinSet(set, sep)`
+//
+// Join all keys in a set `set` separated by `sep`. The functionality is similar
+// to `Array.join()`, however, it's designed to join an object keys.
+function joinSet(set, sep) {
+  var s = "";
+
+  // Compatible with `Array.prototype.join()`.
+  if (sep == null)
+    sep = ",";
+
+  for (var k in set) {
+    if (s) s += sep;
+    s += k;
+  }
+  return s;
+}
+qutil.joinSet = joinSet;
+
 // \function `qdata.util.mergeObject(a, b)`
 //
 // Merge content from object `b` into `a`, and return `a`.
@@ -1373,12 +1431,16 @@ qclass({
 
   failIf: function(cond, err) {
     this.ifElseIf(cond);
+    this.fail(err);
+    this.end();
+    return this;
+  },
+
+  fail: function(err) {
     if (this.hasOption(kTestOnly))
       this.emit("return false;");
     else
       this.emitError(err);
-    this.end();
-
     return this;
   },
 
@@ -1467,6 +1529,7 @@ var SchemaAccess = qclass({
     // the same names during a single run of `process()`.
     this.tmpMap = {};
     this.tmpSig = 0;
+    this.tmpArray = [];
 
     this.inherit = this.process(initial, inherit || "any");
   },
@@ -1502,6 +1565,7 @@ var SchemaAccess = qclass({
 
     var tmpMap = this.tmpMap;
     var tmpSig = this.tmpSig++;
+    var tmpArray = this.tmpArray;
 
     var i = 0;
     while (i < names.length) {
@@ -1539,16 +1603,15 @@ var SchemaAccess = qclass({
 
     // Construct a new string that is a combination of unique normalized access
     // control names expanded by the previous loop.
-    var output = "";
+    tmpArray.length = 0;
     for (name in tmpMap) {
       if (tmpMap[name] === tmpSig) {
-        if (output) output += "|";
-
-        output += name;
+        tmpArray.push(name);
         this.add(name);
       }
     }
-    return output;
+    tmpArray.sort();
+    return tmpArray.join("|");
   },
 
   // \internal
@@ -1690,7 +1753,7 @@ qclass({
 
     var m = null;
     var k, v, o;
-    var r, w, g;
+    var r, w, group;
 
     if (!override) {
       // If the $type ends with "?" it implies `{ $null: true }` definition.
@@ -1725,8 +1788,8 @@ qclass({
       r = def.$r || def.$a || null;
       w = def.$w || def.$a || null;
 
-      // Handle "$g".
-      g = def.$g || null;
+      // Handle "$group".
+      group = def.$group;
     }
     else {
       // Handle the override basics here. Be pedantic as it's better to catch
@@ -1748,23 +1811,24 @@ qclass({
       if (hasOwn.call(override, "$r") || has$a) r = override.$r || override.$a || null;
       if (hasOwn.call(override, "$w") || has$a) w = override.$w || override.$a || null;
 
-      // Override "$g".
-      g = def.$g;
-      if (hasOwn.call(override, "$g")) g = override.$g || null;
+      // Override "$group".
+      group = def.$group;
+      if (hasOwn.call(override, "$group")) group = override.$group;
     }
 
-    if (!g)
-      g = "default";
+    // Undefined/Empty string is normalized to "default". Nulls are kept.
+    if (group === undefined || group === "")
+      group = "default";
 
     // Create the field object. Until now everything stored here is handled,
     // overrides included.
     var obj = {
       $type     : type,
+      $group    : group,
       $data     : null,
       $null     : nullable,
       $r        : r,
       $w        : w,
-      $g        : g,
       $rExp     : this.rAccess.process(r, parent ? parent.$rExp : null),
       $wExp     : this.wAccess.process(w, parent ? parent.$wExp : null),
       $_qPrivate: null
@@ -1798,7 +1862,7 @@ qclass({
       }
     }
     else {
-      var artificialProperties = this.env.artificialProperties;
+      var artificial = this.env.artificialDirectives;
 
       if (type === "object") {
         var $data = obj.$data = {};
@@ -1809,7 +1873,7 @@ qclass({
             // Properties are stored in `obj` itself, however, object fields are
             // stored always in `obj.$data`. This is just a way to distinguish
             // qdata properties from object's properties.
-            if (artificialProperties[k] === true || !isDirectiveName(k) || hasOwn.call(obj, k))
+            if (artificial[k] === true || !isDirectiveName(k) || hasOwn.call(obj, k))
               continue;
             obj[k] = def[k];
           }
@@ -1826,7 +1890,7 @@ qclass({
             // We don't have to worry about properties in the field vs $data,
             // as the schema has already been normalized. So here we expect
             // qdata directives only, not objects' fields.
-            if (artificialProperties[k] === true || hasOwn.call(obj, k))
+            if (artificial[k] === true || hasOwn.call(obj, k))
               continue;
 
             // Not overridden directive.
@@ -1845,7 +1909,7 @@ qclass({
           }
 
           for (k in override) {
-            if (artificialProperties[k] === true ||
+            if (artificial[k] === true ||
                 !isDirectiveName(k) ||
                 hasOwn.call(obj, k) ||
                 hasOwn.call(def, k))
@@ -1894,7 +1958,7 @@ qclass({
         if (!override) {
           // Handle "any" directives.
           for (k in def) {
-            if (artificialProperties[k] === true || hasOwn.call(obj, k))
+            if (artificial[k] === true || hasOwn.call(obj, k))
               continue;
             if (!isDirectiveName(k))
               throwRuntimeError("Property '" + k + "'can't be used by '" + type + "' type.");
@@ -1912,7 +1976,7 @@ qclass({
         else {
           // Override "any" directives.
           for (k in def) {
-            if (artificialProperties[k] === true || hasOwn.call(obj, k))
+            if (artificial[k] === true || hasOwn.call(obj, k))
               continue;
 
             // Not overridden directive.
@@ -1931,7 +1995,7 @@ qclass({
           }
 
           for (k in override) {
-            if (artificialProperties[k] === true || hasOwn.call(obj, k) || hasOwn.call(def, k))
+            if (artificial[k] === true || hasOwn.call(obj, k) || hasOwn.call(def, k))
               continue;
 
             v = override[k];
@@ -1976,6 +2040,11 @@ function schema(def, options) {
   return (new SchemaBuilder(this || qdata, options)).build(def);
 }
 qdata.schema = schema;
+
+function isSchema(def) {
+  return def != null && typeof def === "object" && hasOwn.call(def, "$_qPrivate");
+}
+qdata.isSchema = isSchema;
 
 // ============================================================================
 // [Schema - Interface]
@@ -2069,18 +2138,27 @@ qdata.types = {};
 // Rules supported by `qdata`. Mapping between a rule names and rule objects.
 qdata.rules = {};
 
-// \object `qdata.artificialProperties`
+// \object `qdata.artificialDirectives`
 //
-// Properties, which are artificially generated in the schema and will never be
-// copied from one schema to another in case of extending or inheriting. QData
-// rules can describe artificial properties that will be merged to the artificial
-// properties of the environment where the rule is defined.
-qdata.artificialProperties = {
-  $_qPrivate: true, // Private data.
-  $a        : true, // Shortcut to setup both `$r` and `$w` access information.
-  $extend   : true, // Extend directive.
-  $rExp     : true, // Expanded read access (expression).
-  $wExp     : true  // Expanded write access (expression).
+// Directives, which are artificially generated by the schema post-processing
+// and will never be copied from one schema to another in case of extending.
+// QData rules can specify additional artificial directives that will be added
+// to the global map of a QData environment where the rule is defined.
+qdata.artificialDirectives = {
+  $_qPrivate  : true, // Private data.
+  $a          : true, // Shortcut to setup both `$r` and `$w` access information.
+  $extend     : true, // Extend directive.
+  $rExp       : true, // Expanded read access (expression).
+  $wExp       : true, // Expanded write access (expression).
+  $groupMap   : true, // Property groups map (key is a group, value is a list of property names).
+  $uniqueMap  : true, // Array of unique properties map  , like `[{ id:true }, { a:true, b:true }]`.
+  $uniqueArray: true, // Array of unique properties array, like `[["id"]     , ["a"    ,"b"     ]]`.
+  $pkMap      : true, // Primary key map (value is always `true`).
+  $pkArray    : true, // Primary key array.
+  $fkMap      : true, // Foreign key map (value is always a string pointing to an "entity.field").
+  $fkArray    : true, // Foreign key array.
+  $idMap      : true, // Primary and foreign key map (value is always `true`).
+  $idArray    : true  // Primary and foreign key array.
 };
 
 // \function `qdata.getType(name)`
@@ -2156,8 +2234,8 @@ qdata.addRule = function(data) {
     var rule = data[i];
     rules[rule.name] = rule;
 
-    if (rule.artificialProperties)
-      mergeObject(this.artificialProperties, rule.artificialProperties);
+    if (rule.artificialDirectives)
+      mergeObject(this.artificialDirectives, rule.artificialDirectives);
   }
 
   return this;
@@ -2209,7 +2287,7 @@ qdata.customize = function(opt) {
   // Clone members that can change.
   obj.types = cloneWeak(obj.types);
   obj.rules = cloneWeak(obj.rules);
-  obj.artificialProperties = cloneWeak(obj.artificialProperties);
+  obj.artificialDirectives = cloneWeak(obj.artificialDirectives);
 
   // Customize types and/or rules if provided.
   tmp = opt.types;
@@ -2229,7 +2307,7 @@ qdata.customize = function(opt) {
 qdata.freeze = function() {
   freeze(this.types);
   freeze(this.rules);
-  freeze(this.artificialProperties);
+  freeze(this.artificialDirectives);
 
   return freeze(this);
 };
@@ -2303,11 +2381,19 @@ qdata.BaseType = qclass({
     var checkAccess = null;
 
     if (c.hasOption(kTestAccess)) {
-      if (def.$wExp !== "any") {
-        var curAccess = mergeBits(prevAccess.clone(), c._accessMap, def.$wExp);
-        if (!prevAccess.equals(curAccess)) {
-          c._accessGranted = curAccess;
-          checkAccess = compileAccessCheck(curAccess.clone().combine("andnot", prevAccess).bits, true);
+      var w = def.$wExp;
+      if (w !== "any") {
+        if (w === "none") {
+          c.fail(c.error(c.str("InvalidAccess")));
+        }
+        else {
+          var curAccess = mergeBits(prevAccess.clone(), c._accessMap, w);
+          if (!prevAccess.equals(curAccess)) {
+            // We can't grant all of the rights if more than one is allowed.
+            if (w.indexOf("|") === -1)
+              c._accessGranted = curAccess;
+            checkAccess = compileAccessCheck(curAccess.clone().combine("andnot", prevAccess).bits, true);
+          }
         }
       }
     }
@@ -3586,7 +3672,17 @@ qclass({
   $extend: BaseType,
   $construct: DateType,
 
-  name: ["date", "datetime", "datetime-ms", "datetime-us"],
+  name: [
+    "date",
+
+    "datetime",
+    "datetime-ms",
+    "datetime-us",
+
+    "time",
+    "time-ms",
+    "time-us"
+  ],
   type: "string",
 
   hook: function(def, env) {
@@ -3630,9 +3726,14 @@ qclass({
 
   formats: {
     "date"       : "YYYY-MM-DD",
+
     "datetime"   : "YYYY-MM-DD HH:mm:ss",
     "datetime-ms": "YYYY-MM-DD HH:mm:ss.SSS",
-    "datetime-us": "YYYY-MM-DD HH:mm:ss.SSSSSS"
+    "datetime-us": "YYYY-MM-DD HH:mm:ss.SSSSSS",
+
+    "time"       : "HH:mm:ss",
+    "time-ms"    : "HH:mm:ss.SSS",
+    "time-us"    : "HH:mm:ss.SSSSSS"
   }
 });
 qdata.addType(new DateType());
@@ -3640,6 +3741,25 @@ qdata.addType(new DateType());
 // ============================================================================
 // [SchemaType - Object]
 // ============================================================================
+
+function addKeyToGroup(map, group, k) {
+  if (group.indexOf("|") !== -1) {
+    var array = group.split("|");
+    for (var i = 0, len = array.length; i < len; i++) {
+      group = array[i];
+      if (!hasOwn.call(map, group))
+        map[group] = [k];
+      else
+        map[group].push(k);
+    }
+  }
+  else {
+    if (!hasOwn.call(map, group))
+      map[group] = [k];
+    else
+      map[group].push(k);
+  }
+}
 
 function ObjectType() {
   BaseType.call(this);
@@ -3654,10 +3774,87 @@ qclass({
   hook: function(def, env) {
     var rules = env.rules;
 
+    // Apply rules.
     for (var k in rules) {
       var rule = rules[k];
       rule.hook(def, env);
     }
+
+    // Expand object directives (this has to be done after hooks as any hook
+    // can add a property, for example, which should still be expanded).
+    var properties = def.$data;
+
+    var groupMap = {};
+
+    var uniqueMap = [];
+    var uniqueArray = [];
+    var uniqueGroup = {};
+
+    var pkMap = {};
+    var fkMap = {};
+    var idMap = {};
+
+    for (var k in properties) {
+      var property = properties[k];
+
+      // Handle '$pk' directive.
+      if (property.$pk) {
+        pkMap[k] = true;
+        idMap[k] = true;
+        // All primary keys combined should form a unique group.
+        addKeyToGroup(uniqueGroup, "$pk", k);
+      }
+
+      // Handle '$fk' directive.
+      if (property.$fk) {
+        fkMap[k] = property.$fk;
+        idMap[k] = true;
+      }
+
+      // Handle '$group' directive.
+      var group = property.$group;
+      if (group)
+        addKeyToGroup(groupMap, String(group), k);
+
+      // Handle '$unique' directive.
+      var unique = property.$unique;
+      if (unique) {
+        if (unique === true) {
+          var set = [k];
+          uniqueArray.push(set);
+          uniqueMap.push(arrayToSet(set));
+        }
+        else {
+          addKeyToGroup(uniqueGroup, String(unique), k);
+        }
+      }
+    }
+
+    // Post-process unique groups and eliminate all combinations that are stored
+    // multiple times.
+    var uniqueSignatures = {};
+    for (var k in uniqueGroup) {
+      var array = uniqueGroup[k];
+      array.sort();
+
+      var signature = array.join("|");
+      if (hasOwn.call(uniqueSignatures, signature))
+        continue;
+
+      uniqueArray.push(array);
+      uniqueMap.push(arrayToSet(array));
+      uniqueSignatures[signature] = true;
+    }
+
+    def.$pkMap       = freezeOrNoObject(pkMap);
+    def.$pkArray     = freezeOrNoArray(setToArray(pkMap));
+    def.$fkMap       = freezeOrNoObject(fkMap);
+    def.$fkArray     = freezeOrNoArray(setToArray(fkMap));
+    def.$idMap       = freezeOrNoObject(idMap);
+    def.$idArray     = freezeOrNoArray(setToArray(idMap));
+    def.$groupMap    = freezeOrNoObject(groupMap);
+    def.$uniqueArray = freezeOrNoArray(uniqueArray);
+    def.$uniqueMap   = freezeOrNoObject(uniqueMap);
   },
 
   compileType: function(c, vOut, v, def) {
@@ -3920,73 +4117,6 @@ qclass({
   }
 });
 qdata.addType(new ArrayType());
-
-// ============================================================================
-// [SchemaRule - Object]
-// ============================================================================
-
-// Processes `$pk` and `$fk` properties of "object" and generate the following:
-//   - `$pkArray` - Primary key array.
-//   - `$pkMap`   - Primary key map (value is always `true`).
-//   - `$fkArray` - Foreign key array.
-//   - `$fkMap`   - Foreign key map (value is always a string pointing to an "entity.field").
-//   - `$idArray` - Primary and foreign key array.
-//   - `$idMap`   - Primary and foreign key map (value is always `true`).
-qdata.addRule({
-  name: "object",
-
-  hook: function(def, env) {
-    var data = def.$data;
-
-    var pkArray = [], pkMap = {};
-    var fkArray = [], fkMap = {};
-    var idArray = [], idMap = {};
-
-    for (var k in data) {
-      var field = data[k];
-      var isId = false;
-
-      if (field.$pk) {
-        pkArray.push(k);
-        pkMap[k] = true;
-
-        isId = true;
-      }
-
-      if (field.$fk) {
-        fkArray.push(k);
-        fkMap[k] = field.$fk;
-
-        isId = true;
-      }
-
-      if (isId && !hasOwn.call(idMap, k)) {
-        idArray.push(k);
-        idMap[k] = true;
-      }
-    }
-
-    def.$pkArray = freezeOrNoArray(pkArray);
-    def.$pkMap   = freezeOrNoObject(pkMap);
-
-    def.$fkArray = freezeOrNoArray(fkArray);
-    def.$fkMap   = freezeOrNoObject(fkMap);
-
-    def.$idArray = freezeOrNoArray(idArray);
-    def.$idMap   = freezeOrNoObject(idMap);
-  },
-
-  artificialProperties: {
-    $pkArray: true,
-    $pkMap  : true,
-
-    $fkArray: true,
-    $fkMap  : true,
-
-    $idArray: true,
-    $idMap  : true
-  }
-});
 
 // ============================================================================
 // [Exports]
