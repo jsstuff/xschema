@@ -476,24 +476,44 @@ describe("QData", function() {
     });
   });
 
+  it("should validate any - anything", function() {
+    var def = qdata.schema({ $type: "any" });
+
+    var passData = [false, true, 0, 1, 42.42, "", "string", {}, [], { a: true }, [[[1, 2], 3], 4, { a: true }]];
+    var failData = [null, undefined];
+
+    passData.forEach(function(value) { pass(value, def); });
+    failData.forEach(function(value) { fail(value, def); });
+  });
+
+  it("should validate any - $allowed", function() {
+    var def = qdata.schema({ $type: "any" });
+
+    var passData = [false, true, 0, 1, 42.42, "", "string", {}, [], { a: true }, [[[1, 2], 3], 4, { a: true }]];
+    var failData = [null, undefined];
+
+    passData.forEach(function(value) { pass(value, def); });
+    failData.forEach(function(value) { fail(value, def); });
+  });
+
   it("should validate bool", function() {
-    var Schema = qdata.schema({ $type: "bool" });
+    var def = qdata.schema({ $type: "bool" });
 
     var passData = [false, true];
     var failData = [0, 1, "", "string", {}, [], Infinity, -Infinity, NaN];
 
-    passData.forEach(function(value) { pass(value, Schema); });
-    failData.forEach(function(value) { fail(value, Schema); });
+    passData.forEach(function(value) { pass(value, def); });
+    failData.forEach(function(value) { fail(value, def); });
   });
 
   it("should validate number - int", function() {
-    var Schema = qdata.schema({ $type: "int" });
+    var def = qdata.schema({ $type: "int" });
 
     var passData = [0, 1, -1];
     var failData = [false, true, "", "0", "string", {}, [], 0.1, -0.23211, Infinity, -Infinity, NaN];
 
-    passData.forEach(function(value) { pass(value, Schema); });
-    failData.forEach(function(value) { fail(value, Schema); });
+    passData.forEach(function(value) { pass(value, def); });
+    failData.forEach(function(value) { fail(value, def); });
   });
 
   it("should validate number - intxx", function() {
@@ -526,18 +546,18 @@ describe("QData", function() {
   });
 
   it("should validate number - double", function() {
-    var Schema = qdata.schema({ $type: "number" });
+    var def = qdata.schema({ $type: "number" });
 
     var valuesToPass = [0, 1, -1, 0.1, -0.23211];
     var valuesToFail = [false, true, "", "0", "string", {}, [], Infinity, -Infinity, NaN];
 
-    valuesToPass.forEach(function(value) { pass(value, Schema); });
-    valuesToFail.forEach(function(value) { fail(value, Schema); });
+    valuesToPass.forEach(function(value) { pass(value, def); });
+    valuesToFail.forEach(function(value) { fail(value, def); });
   });
 
   it("should validate number - lat/lon", function() {
-    var SchemaLat = qdata.schema({ $type: "lat" });
-    var SchemaLon = qdata.schema({ $type: "lon" });
+    var defLat = qdata.schema({ $type: "lat" });
+    var defLon = qdata.schema({ $type: "lon" });
 
     var passLat = [-90, -45.5334, 0, 34.4432, 90];
     var failLat = [-90.0001, 90.0001, "", true, null, undefined];
@@ -545,11 +565,11 @@ describe("QData", function() {
     var passLon = [-180, -144.4322, 0, 99.2332, 180];
     var failLon = [-180.0001, 180.0001, "", true, null, undefined];
 
-    passLat.forEach(function(value) { pass(value, SchemaLat); });
-    failLat.forEach(function(value) { fail(value, SchemaLat); });
+    passLat.forEach(function(value) { pass(value, defLat); });
+    failLat.forEach(function(value) { fail(value, defLat); });
 
-    passLon.forEach(function(value) { pass(value, SchemaLon); });
-    failLon.forEach(function(value) { fail(value, SchemaLon); });
+    passLon.forEach(function(value) { pass(value, defLon); });
+    failLon.forEach(function(value) { fail(value, defLon); });
   });
 
   it("should validate number - $min/$max $gt/$lt", function() {
@@ -602,21 +622,21 @@ describe("QData", function() {
   it("should validate text", function() {
     // Text goes through the same validator as "string", so test only parts
     // where "string" vs "text" differ.
-    var Schema = qdata.schema({ $type: "text" });
+    var def = qdata.schema({ $type: "text" });
 
     // Should accept some characters below 32.
-    pass("some text \x09", Schema);
-    pass("some text \x0A", Schema);
-    pass("some text \x0D", Schema);
+    pass("some text \x09", def);
+    pass("some text \x0A", def);
+    pass("some text \x0D", def);
 
     // Should refuse NULL and other characters below 32.
-    fail("some text \x00", Schema);
-    fail("some text \x1B", Schema);
-    fail("some text \x1F", Schema);
+    fail("some text \x00", def);
+    fail("some text \x1B", def);
+    fail("some text \x1F", def);
   });
 
   it("should validate bigint", function() {
-    var Schema = qdata.schema({ $type: "bigint" });
+    var def = qdata.schema({ $type: "bigint" });
 
     var passData = [
       "0",
@@ -690,66 +710,66 @@ describe("QData", function() {
     ];
 
     passData.forEach(function(data) {
-      pass(data, Schema);
+      pass(data, def);
     });
 
     failData.forEach(function(data) {
-      fail(data, Schema);
+      fail(data, def);
     });
   });
 
   it("should validate color - #XXX and #XXXXXX", function() {
-    var Schema = qdata.schema({ $type: "color" });
+    var def = qdata.schema({ $type: "color" });
 
-    pass("#000", Schema);
-    pass("#123", Schema);
-    pass("#F00", Schema);
-    pass("#0AF", Schema);
-    pass("#0af", Schema);
-    pass("#DEF", Schema);
-    pass("#fff", Schema);
+    pass("#000", def);
+    pass("#123", def);
+    pass("#F00", def);
+    pass("#0AF", def);
+    pass("#0af", def);
+    pass("#DEF", def);
+    pass("#fff", def);
 
-    pass("#000000", Schema);
-    pass("#112233", Schema);
-    pass("#FF0000", Schema);
-    pass("#00AAFF", Schema);
-    pass("#00aaff", Schema);
-    pass("#DDEEFF", Schema);
-    pass("#ffffff", Schema);
+    pass("#000000", def);
+    pass("#112233", def);
+    pass("#FF0000", def);
+    pass("#00AAFF", def);
+    pass("#00aaff", def);
+    pass("#DDEEFF", def);
+    pass("#ffffff", def);
 
-    fail(" #FFF", Schema);
-    fail("#FFF ", Schema);
+    fail(" #FFF", def);
+    fail("#FFF ", def);
 
-    fail("#FF"  , Schema);
-    fail("#FFFF", Schema);
+    fail("#FF"  , def);
+    fail("#FFFF", def);
 
-    fail("#FFg" , Schema);
-    fail("#FgF" , Schema);
-    fail("#gFF" , Schema);
+    fail("#FFg" , def);
+    fail("#FgF" , def);
+    fail("#gFF" , def);
 
-    fail("#FF " , Schema);
-    fail("#F F" , Schema);
-    fail("# FF" , Schema);
+    fail("#FF " , def);
+    fail("#F F" , def);
+    fail("# FF" , def);
   });
 
   it("should validate color - color names", function() {
-    var SchemaDefault          = qdata.schema({ $type: "color" });
-    var SchemaAllowCssNames    = qdata.schema({ $type: "color", $cssNames: true  });
-    var SchemaDisallowCssNames = qdata.schema({ $type: "color", $cssNames: false });
+    var defDefault          = qdata.schema({ $type: "color" });
+    var defAllowCssNames    = qdata.schema({ $type: "color", $cssNames: true  });
+    var defDisallowCssNames = qdata.schema({ $type: "color", $cssNames: false });
 
     for (var k in qdata.util.colorNames) {
       var K = k.toUpperCase();
 
-      pass(k, SchemaDefault);
-      pass(K, SchemaDefault);
+      pass(k, defDefault);
+      pass(K, defDefault);
 
-      pass(k, SchemaAllowCssNames);
-      pass(K, SchemaAllowCssNames);
+      pass(k, defAllowCssNames);
+      pass(K, defAllowCssNames);
 
-      fail(k      , SchemaDisallowCssNames);
-      fail(K      , SchemaDisallowCssNames);
-      fail(k + " ", SchemaDisallowCssNames);
-      fail("#" + k, SchemaDisallowCssNames);
+      fail(k      , defDisallowCssNames);
+      fail(K      , defDisallowCssNames);
+      fail(k + " ", defDisallowCssNames);
+      fail("#" + k, defDisallowCssNames);
     }
   });
 
@@ -760,23 +780,23 @@ describe("QData", function() {
       "currentcolor": true
     };
 
-    var Schema = qdata.schema({
+    var def = qdata.schema({
       $type         : "color",
       $cssNames     : true,
       $extraNames   : ExtraNames
     });
 
-    pass("#FFF"        , Schema);
-    pass("#FFFFFF"     , Schema);
-    pass("red"         , Schema);
-    pass("RED"         , Schema);
-    pass("none"        , Schema);
-    pass("NONE"        , Schema);
-    pass("transparent" , Schema);
-    pass("TRANSPARENT" , Schema);
-    pass("currentcolor", Schema);
-    pass("currentColor", Schema);
-    pass("CURRENTCOLOR", Schema);
+    pass("#FFF"        , def);
+    pass("#FFFFFF"     , def);
+    pass("red"         , def);
+    pass("RED"         , def);
+    pass("none"        , def);
+    pass("NONE"        , def);
+    pass("transparent" , def);
+    pass("TRANSPARENT" , def);
+    pass("currentcolor", def);
+    pass("currentColor", def);
+    pass("CURRENTCOLOR", def);
   });
 
   it("should validate net - mac address", function() {
@@ -1089,82 +1109,82 @@ describe("QData", function() {
   });
 
   it("should validate date - leap second handling", function() {
-    var Schema = qdata.schema({ $type: "datetime", $leapSecond: true });
+    var def = qdata.schema({ $type: "datetime", $leapSecond: true });
 
-    pass("1972-06-30 23:59:60", Schema);
-    pass("1972-12-31 23:59:60", Schema);
-    pass("2012-06-30 23:59:60", Schema);
+    pass("1972-06-30 23:59:60", def);
+    pass("1972-12-31 23:59:60", def);
+    pass("2012-06-30 23:59:60", def);
 
     // Leap seconds' dates are not defined from 1971 and below.
-    fail("1971-06-30 23:59:60", Schema);
-    fail("1971-12-31 23:59:60", Schema);
+    fail("1971-06-30 23:59:60", def);
+    fail("1971-12-31 23:59:60", def);
 
     // Leap seconds' dates that are known to not have leap second.
-    fail("1973-06-30 23:59:60", Schema);
-    fail("2013-06-30 23:59:60", Schema);
-    fail("2013-12-31 23:59:60", Schema);
-    fail("2014-06-30 23:59:60", Schema);
-    fail("2014-12-31 23:59:60", Schema);
+    fail("1973-06-30 23:59:60", def);
+    fail("2013-06-30 23:59:60", def);
+    fail("2013-12-31 23:59:60", def);
+    fail("2014-06-30 23:59:60", def);
+    fail("2014-12-31 23:59:60", def);
 
     // Leap seconds' dates in far future are not known at the moment.
-    fail("2100-06-30 23:59:60", Schema);
-    fail("2100-12-31 23:59:60", Schema);
+    fail("2100-06-30 23:59:60", def);
+    fail("2100-12-31 23:59:60", def);
   });
 
   it("should validate date - valid custom format YYYYMMDD", function() {
-    var Schema = qdata.schema({ $type: "date", $format: "YYYYMMDD" });
+    var def = qdata.schema({ $type: "date", $format: "YYYYMMDD" });
 
-    pass("19990101", Schema);
-    pass("20041213", Schema);
+    pass("19990101", def);
+    pass("20041213", def);
 
-    fail("invalid"  , Schema);
-    fail("2011312"  , Schema);
-    fail("20111312" , Schema);
-    fail("20140132" , Schema);
-    fail("20110101 ", Schema);
+    fail("invalid"  , def);
+    fail("2011312"  , def);
+    fail("20111312" , def);
+    fail("20140132" , def);
+    fail("20110101 ", def);
   });
 
   it("should validate date - valid custom format YYYYMMDD HHmmss", function() {
-    var Schema = qdata.schema({ $type: "date", $format: "YYYYMMDD HHmmss" });
+    var def = qdata.schema({ $type: "date", $format: "YYYYMMDD HHmmss" });
 
-    pass("19990101 013030" , Schema);
-    pass("20041213 013030" , Schema);
+    pass("19990101 013030" , def);
+    pass("20041213 013030" , def);
 
-    fail("invalid"         , Schema);
-    fail("19990101 253030" , Schema);
-    fail("19990101 016030" , Schema);
-    fail("19990101 013060" , Schema);
-    fail("2011312 013030"  , Schema);
-    fail("20111312 013030" , Schema);
-    fail("20140132 013030" , Schema);
-    fail("20110101 013030 ", Schema);
+    fail("invalid"         , def);
+    fail("19990101 253030" , def);
+    fail("19990101 016030" , def);
+    fail("19990101 013060" , def);
+    fail("2011312 013030"  , def);
+    fail("20111312 013030" , def);
+    fail("20140132 013030" , def);
+    fail("20110101 013030 ", def);
   });
 
   it("should validate date - valid custom format D.M.Y", function() {
-    var Schema = qdata.schema({ $type: "date", $format: "D.M.Y" });
+    var def = qdata.schema({ $type: "date", $format: "D.M.Y" });
 
-    pass("1.1.455"    , Schema);
-    pass("2.8.2004"   , Schema);
-    pass("20.12.2004" , Schema);
+    pass("1.1.455"    , def);
+    pass("2.8.2004"   , def);
+    pass("20.12.2004" , def);
 
-    fail("32.1.2004"  , Schema);
-    fail("20.13.2004" , Schema);
-    fail("20.13.10000", Schema);
+    fail("32.1.2004"  , def);
+    fail("20.13.2004" , def);
+    fail("20.13.10000", def);
   });
 
   it("should validate date - valid custom format D.M.Y H:m:s", function() {
-    var Schema = qdata.schema({ $type: "date", $format: "D.M.Y H:m:s" });
+    var def = qdata.schema({ $type: "date", $format: "D.M.Y H:m:s" });
 
-    pass("1.1.455 1:30:30"    , Schema);
-    pass("2.8.2004 1:30:30"   , Schema);
-    pass("20.12.2004 1:30:30" , Schema);
+    pass("1.1.455 1:30:30"    , def);
+    pass("2.8.2004 1:30:30"   , def);
+    pass("20.12.2004 1:30:30" , def);
 
-    fail("1.1.1999 25:30:30"  , Schema);
-    fail("1.1.1999 1:60:30"   , Schema);
-    fail("1.1.1999 1:30:60"   , Schema);
-    fail("32.1.2004 1:30:30"  , Schema);
-    fail("20.13.2004 1:30:30" , Schema);
-    fail("20.13.10000 1:30:30", Schema);
+    fail("1.1.1999 25:30:30"  , def);
+    fail("1.1.1999 1:60:30"   , def);
+    fail("1.1.1999 1:30:60"   , def);
+    fail("32.1.2004 1:30:30"  , def);
+    fail("20.13.2004 1:30:30" , def);
+    fail("20.13.10000 1:30:30", def);
   });
 
   it("should validate date - invalid custom format", function() {
@@ -1367,7 +1387,7 @@ describe("QData", function() {
   });
 
   it("should validate array - nested values", function() {
-    var defs = [
+    var specs = [
       { type: "bool"  , pass: [false, true]         , fail: [0, 1, "string", NaN, Infinity, [], {}] },
       { type: "int"   , pass: [-1, 0, 2, 3, 4]      , fail: [true, "string", NaN, Infinity, [], {}] },
       { type: "uint"  , pass: [ 0, 1, 2, 3, 4]      , fail: [true, "string", NaN, Infinity, [], {}] },
@@ -1375,14 +1395,14 @@ describe("QData", function() {
       { type: "string", pass: ["", "a", "ab", "abc"], fail: [true, -1, 0, 1, NaN, Infinity, [], {}] }
     ];
 
-    defs.forEach(function(def) {
+    specs.forEach(function(spec) {
       [false, true].forEach(function(canBeNull) {
-        var type = def.type;
+        var type = spec.type;
 
-        var passData = def.pass;
-        var failData = def.fail.concat([undefined]);
+        var passData = spec.pass;
+        var failData = spec.fail.concat([undefined]);
 
-        var Schema = qdata.schema({
+        var def = qdata.schema({
           $type: "array",
           $data: {
             $type: type,
@@ -1395,8 +1415,8 @@ describe("QData", function() {
         else
           failData = failData.concat([null]);
 
-        passData.forEach(function(value) { pass([value], Schema); });
-        failData.forEach(function(value) { fail([value], Schema); });
+        passData.forEach(function(value) { pass([value], def); });
+        failData.forEach(function(value) { fail([value], def); });
       });
     });
   });

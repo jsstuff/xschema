@@ -183,6 +183,7 @@ var UnsafeProperties = Object.getOwnPropertyNames(Object.prototype);
 // of a specific JS type and the engine will never deoptimize the function in
 // case of type misprediction.
 var MangledType = {
+  any    : "x",
   array  : "a",
   boolean: "b",
   number : "n",
@@ -2317,6 +2318,7 @@ qdata.freeze = function() {
 // ============================================================================
 
 var TypeToError = {
+  any    : "ExpectedAny",
   array  : "ExpectedArray",
   boolean: "ExpectedBoolean",
   number : "ExpectedNumber",
@@ -2370,6 +2372,9 @@ qdata.BaseType = qclass({
     var typeError = this.typeError || TypeToError[type];
     var isNull = def.$null;
 
+    if (def.$allowed && def.$allowed.indexOf(null) !== -1)
+      isNull = true;
+
     // Object and Array types require `vOut` variable to be different than `vIn`.
     if (type === "object" || type === "array") {
       if (!c.hasOption(kTestOnly))
@@ -2400,7 +2405,6 @@ qdata.BaseType = qclass({
 
     // Emit type check that considers `null` and `undefined` values if specified.
     if (type === "object") {
-      var ctor = type === "array" ? "Array" : "Object";
       var toStringFn = c.declareGlobal("toString", "Object.prototype.toString");
       var cond = "";
 
@@ -2417,9 +2421,16 @@ qdata.BaseType = qclass({
         cond = vIn + " == null || ";
       }
 
-      cond += "(" + vIn + ".constructor !== " + ctor + " && " + toStringFn + ".call(" + v + ") !== \"[object " + ctor + "]\")";
+      cond += "(" + vIn + ".constructor !== Object && " + toStringFn + ".call(" + v + ") !== \"[object Object]\")";
       c.failIf(cond, c.error(c.str(typeError)));
 
+      this.compileType(c, vOut, vIn, def);
+    }
+    else if (type === "any") {
+      if (checkAccess)
+        c.failIf(checkAccess, c.error(c.str("InvalidAccess")));
+
+      c.failIf(vIn + (!isNull ? " == null" : " === undefined"), c.error(c.str(typeError)));
       this.compileType(c, vOut, vIn, def);
     }
     else {
@@ -2444,8 +2455,8 @@ qdata.BaseType = qclass({
         c.failIf(cond, err);
       else
         c.emitError(err);
-
       c.end();
+
       this.compileType(c, vOut, vIn, def);
     }
 
@@ -2460,6 +2471,78 @@ qdata.BaseType = qclass({
     throwRuntimeError("BaseType.compileType() has to be overridden.");
   }
 });
+
+// ============================================================================
+// [SchemaType - Any]
+// ============================================================================
+
+function hasObjectType(arr) {
+  for (var i = 0, len = arr.length; i < len; i++) {
+    var value = arr[i];
+    if (value !== null && typeof value === "object")
+      return true;
+  }
+  return false;
+}
+
+function AnyType() {
+  BaseType.call(this);
+}
+qclass({
+  $extend: BaseType,
+  $construct: AnyType,
+
+  name: ["any"],
+  type: "any",
+
+  compileType: function(c, vOut, v, def) {
+    var allowed = def.$allowed;
+
+    if (allowed) {
+      var allowedData = c.declareData(null, allowed);
+
+      // Get whether the $allowed directive contains an object.
+      if (hasObjectType(allowed)) {
+        c.failIf("!" + c.declareData(null, this.isAllowed) + "(" + v + ", " + allowedData + ")");
+        if (!c.hasOption(kTestOnly)) {
+          var cloneDeepFn = c.declareData("cloneDeep", cloneDeep);
+
+          c.otherwise();
+          c.emit(vOut + " = " + cloneDeepFn + "(" + v + ");");
+          c.end("}");
+        }
+      }
+      else {
+        c.failIf(c.declareData(null, this.isAllowed) + ".indexOf(" + v + ") === -1");
+      }
+    }
+    else {
+      if (!c.hasOption(kTestOnly)) {
+        var cloneDeepFn = c.declareData("cloneDeep", cloneDeep);
+
+        c.otherwise();
+        c.emit(vOut + " = " + cloneDeepFn + "(" + v + ");");
+        c.end();
+      }
+    }
+
+    return vOut;
+  },
+
+  isAllowed: function(a, allowed) {
+    if (a === null || typeof a !== "object")
+      return allowed.indexOf(a) !== -1;
+
+    for (var i = 0, len = allowed.length; i < len; i++) {
+      var b = allowed[i];
+      if (typeof b === "object" && isEqual(a, b))
+        return true;
+    }
+
+    return false;
+  }
+});
+qdata.addType(new AnyType());
 
 // ============================================================================
 // [SchemaType - Bool]
