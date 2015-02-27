@@ -256,8 +256,13 @@ qdata.SchemaError = qclass({
   $construct: SchemaError
 });
 
-function throwRuntimeError(msg) {
-  throw new RuntimeError(msg);
+function throwRuntimeError(msg, params) {
+  var ex = new RuntimeError(msg);
+  if (params != null && typeof params === "object") {
+    for (var k in params)
+      ex[k] = params[k];
+  }
+  throw ex;
 }
 qdata.throwRuntimeError = throwRuntimeError;
 
@@ -482,6 +487,20 @@ function cloneWeak(v) {
   return dstObj;
 }
 qdata.cloneWeak = cloneWeak;
+
+// \function `qdata.util.omit(obj, props)`
+//
+// Return a new object based on `obj` with omitted properties specified by `props`.
+function omit(obj, props) {
+  var dst = {};
+  for (var k in obj) {
+    if (hasOwn.call(props, k))
+      continue;
+    dst[k] = obj[k];
+  }
+  return dst;
+}
+qutil.omit = omit;
 
 function _cloneDeep(obj) {
   if (isArray(obj)) {
@@ -1750,7 +1769,9 @@ qclass({
     // Initialize to safe defaults.
     var type = def.$type || "object";
     var defData = def.$data;
+
     var nullable = false;
+    var optional = false;
 
     var m = null;
     var k, v, o;
@@ -1778,11 +1799,17 @@ qclass({
         if (type.indexOf("[") !== -1)
           throwRuntimeError("Invalid type '" + def.$type + "'.");
 
-        if (hasOwn.call(def, "$null") && def.$null != null) {
+        if (def.$null != null) {
           nullable = def.$null;
           if (typeof nullable !== "boolean")
             throwRuntimeError("Directive '$null' can only contain null/boolean, not '" + def.$null + "'.");
         }
+      }
+
+      if (def.$optional != null) {
+        optional = def.$optional;
+        if (typeof optional !== "boolean")
+          throwRuntimeError("Directive '$optional' can only contain null/boolean, not '" + def.$optional + "'.");
       }
 
       // Handle "$r" and "$w".
@@ -1804,6 +1831,12 @@ qclass({
         nullable = (v == null) ? null : v;
       }
 
+      // Override "$optional".
+      if (hasOwn.call(override, "$optional")) {
+        v = override.$optional;
+        optional = (v == null) ? null : v;
+      }
+
       // Override "$r" and "$w".
       r = def.$r;
       w = def.$w;
@@ -1814,7 +1847,8 @@ qclass({
 
       // Override "$group".
       group = def.$group;
-      if (hasOwn.call(override, "$group")) group = override.$group;
+      if (hasOwn.call(override, "$group"))
+        group = override.$group;
     }
 
     // Undefined/Empty string is normalized to "default". Nulls are kept.
@@ -1828,6 +1862,7 @@ qclass({
       $group    : group,
       $data     : null,
       $null     : nullable,
+      $optional : optional,
       $r        : r,
       $w        : w,
       $rExp     : this.rAccess.process(r, parent ? parent.$rExp : null),
@@ -1836,11 +1871,13 @@ qclass({
     };
 
     if (m) {
+      var omitted = this.env.shortcutDirectives;
+
       // Never in override mode here.
       if (override)
         throwRuntimeError("Internal error.");
 
-      var nested = cloneWeak(def);
+      var nested = omit(def, omitted);
       nested.$type = type.substr(0, type.length - m[0].length);
 
       var minLen = m[1] ? parseInt(m[1]) : null;
@@ -1849,7 +1886,13 @@ qclass({
       if (minLen !== null && maxLen !== null && minLen > maxLen)
         throwRuntimeError("Invalid type '" + def.$type + "'.");
 
+      // Set to array and copy directives that are omitted in the nested object.
       obj.$type = "array";
+      for (k in def) {
+        if (!hasOwn.call(obj, k) && hasOwn.call(omitted, k))
+          obj[k] = def[k];
+      }
+
       obj.$data = this.field(nested, null, obj);
 
       if (m[2]) {
@@ -2047,6 +2090,38 @@ function isSchema(def) {
 }
 qdata.isSchema = isSchema;
 
+// Serialize the given schema `def` into something that can be printed as JSON.
+// It basically removes some helper variables and data structures associated
+// with schema, that only confuse the output if printed as JSON.
+function printableSchema(def) {
+  if (def == null || typeof def !== "object")
+    return def;
+
+  if (isArray(def)) {
+    var dstArr = [];
+    var srcArr = def;
+
+    for (var i = 0; i < srcArr.length; i++)
+      dstArr.push(printableSchema(srcArr[i]));
+    return dstArr;
+  }
+  else {
+    var dstObj = {};
+    var srcObj = def;
+
+    for (var k in srcObj) {
+      var value = srcObj[k];
+
+      if (k === "$_qPrivate")
+        dstObj[k] = value ? "<...>" : null;
+      else
+        dstObj[k] = printableSchema(value);
+    }
+    return dstObj;
+  }
+}
+qdata.printableSchema = printableSchema;
+
 // ============================================================================
 // [Schema - Interface]
 // ============================================================================
@@ -2073,12 +2148,25 @@ function compile(env, def, index) {
 }
 
 // \internal
-qdata._getProcessCompiled = function(def, options, access) {
+function precompile(func, def, options, hasAccess) {
   var index = (options || 0) & kFuncCacheMask;
-  if (access)
+
+  if (func === "process") {
+    // OK.
+  }
+  else if (func === "test") {
+    index |= kTestOnly;
+  }
+  else {
+    throwRuntimeError("qdata.precompile() - 'func' parameter can be either 'process' or 'test'.");
+  }
+
+  if (hasAccess)
     index |= kTestAccess;
+
   return compile(this || qdata, def, index);
-};
+}
+qdata.precompile = precompile;
 
 // \function `qdata.process(data, def, options, access)`
 //
@@ -2160,6 +2248,20 @@ qdata.artificialDirectives = {
   $fkArray    : true, // Foreign key array.
   $idMap      : true, // Primary and foreign key map (value is always `true`).
   $idArray    : true  // Primary and foreign key array.
+};
+
+// \object `qdata.shortcutDirectives`
+//
+// List of directives that won't be moved into the child object in case of using
+// array shortcut in $type directive.
+qdata.shortcutDirectives = {
+  $r          : true, // Read access.
+  $w          : true, // Write access,
+  $a          : true, // Read/write access.
+  $group      : true, // Group.
+  $unique     : true, // Unique specifier.
+  $artificial : true, // Artificial directive always apply to the root object.
+  $optional   : true  // Doesn't make sense, the array optional / not.
 };
 
 // \function `qdata.getType(name)`
@@ -3944,9 +4046,9 @@ qclass({
     c.otherwise();
 
     var vLen = "";
-    var fields = def.$data;
-    var mandatoryFields = [];
-    var optionalFields = [];
+    var properties = def.$data;
+    var mandatoryProperties = [];
+    var optionalProperties = [];
 
     var eKey, eDef, eMangledType;
     var eIn, eOut;
@@ -3962,38 +4064,38 @@ qclass({
       c.setDelta(false);
 
     // Collect information regarding mandatory and optional keys.
-    for (eKey in fields) {
-      eDef = fields[eKey];
+    for (eKey in properties) {
+      eDef = properties[eKey];
 
       if (eDef == null || typeof eDef !== "object")
-        throwRuntimeError("Invalid field definition, expected object, got " + typeOf(eDef) + ".");
+        throwRuntimeError("Invalid property, expected object, got " + typeOf(eDef) + ".");
 
       var optional = !!eDef.$optional;
 
-      // Make the field optional when using delta-mode.
+      // Make the property optional when using delta-mode.
       if (!optional && c.getDelta()) {
         optional = true;
       }
 
       if (optional)
-        optionalFields.push(eKey);
+        optionalProperties.push(eKey);
       else
-        mandatoryFields.push(eKey);
+        mandatoryProperties.push(eKey);
     }
 
     // If the extraction mode is off we have to make sure that there are no
     // properties in the source object that are not defined by the schema.
     if (!extract) {
       vLen = c.addLocal("nKeys");
-      c.emit(vLen + " = " + mandatoryFields.length + ";");
+      c.emit(vLen + " = " + mandatoryProperties.length + ";");
     }
 
-    if (mandatoryFields.length) {
+    if (mandatoryProperties.length) {
       var mandatoryVars = [];
 
-      for (i = 0; i < mandatoryFields.length; i++) {
-        eKey = mandatoryFields[i];
-        eDef = fields[eKey];
+      for (i = 0; i < mandatoryProperties.length; i++) {
+        eKey = mandatoryProperties[i];
+        eDef = properties[eKey];
         prop = getObjectProperty(eKey);
 
         var isUnsafeProperty = UnsafeProperties.indexOf(eKey) !== -1;
@@ -4020,7 +4122,9 @@ qclass({
 
           if (isDefaultProperty) {
             c.emit(eOut + " = " + JSON.stringify(eDef.$default) + ";");
-            c.emit(vLen + "--;"); // Default property doesn't count.
+            // Default property doesn't count.
+            if (!extract)
+              c.emit(vLen + "--;");
           }
           else {
             c.emitError(c.error(c.str("RequiredField")));
@@ -4036,11 +4140,11 @@ qclass({
 
       if (!c.hasOption(kTestOnly)) {
         c.emit(vOut + " = {");
-        for (i = 0; i < mandatoryFields.length; i++) {
-          eKey = mandatoryFields[i];
+        for (i = 0; i < mandatoryProperties.length; i++) {
+          eKey = mandatoryProperties[i];
           eOut = mandatoryVars[i];
 
-          c.emit(c.str(eKey) + ": " + eOut + (i + 1 < mandatoryFields.length ? "," : ""));
+          c.emit(c.str(eKey) + ": " + eOut + (i + 1 < mandatoryProperties.length ? "," : ""));
         }
         c.emit("};");
       }
@@ -4051,10 +4155,10 @@ qclass({
       }
     }
 
-    if (optionalFields.length) {
-      for (i = 0; i < optionalFields.length; i++) {
-        eKey = optionalFields[i];
-        eDef = fields[eKey];
+    if (optionalProperties.length) {
+      for (i = 0; i < optionalProperties.length; i++) {
+        eKey = optionalProperties[i];
+        eDef = properties[eKey];
         prop = getObjectProperty(eKey);
 
         c.nl();
@@ -4129,6 +4233,53 @@ qclass({
   }
 });
 qdata.addType(new ObjectType());
+
+// ============================================================================
+// [SchemaType - Map]
+// ============================================================================
+
+function MapType() {
+  BaseType.call(this);
+}
+qclass({
+  $extend: BaseType,
+  $construct: MapType,
+
+  name: ["map"],
+  type: "object",
+
+  compileType: function(c, vOut, v, def) {
+    var vKey = c.addLocal("key", "s");
+
+    var eDef = def.$data;
+    if (eDef == null || typeof eDef !== "object")
+      throwRuntimeError("Invalid ArrayType.$data definition, expected object, got " + typeOf(eDef) + ".");
+
+    var eMangledType = c.mangledType(eDef);
+    var eIn = c.addLocal("element", eMangledType);
+
+    c.otherwise();
+
+    if (!c.hasOption(kTestOnly))
+      c.emit(vOut + " = {};");
+
+    c.emit("for (" + vKey + " in " + v + ") {");
+    c.emit(eIn + " = " + v + "[" + vKey + "];");
+
+    var prevPath = c.addPath("", '"[" + ' + vKey + ' + "]"');
+    var eOut = c.compileType(eIn, eDef);
+
+    if (!c.hasOption(kTestOnly))
+      c.emit(vOut + "[" + vKey + "] = " + eOut + ";");
+
+    c.emit("}");
+    c.setPath(prevPath);
+
+    c.end();
+    return vOut;
+  }
+});
+qdata.addType(new MapType());
 
 // ============================================================================
 // [SchemaType - Array]

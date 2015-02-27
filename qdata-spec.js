@@ -30,38 +30,9 @@ function sortedArrayOfArrays(arr) {
   return arr;
 }
 
-// Recursive, serializes a given obj that is part of a schema in a way that when
-// printed it won't output qdata members in case that it contains `$_qPrivate`
-// field.
-function serializeSchema(obj) {
-  if (obj == null || typeof obj !== "object")
-    return obj;
+var printableSchema = qdata.printableSchema;
 
-  if (isArray(obj)) {
-    var dstArr = [];
-    var srcArr = obj;
-
-    for (var i = 0; i < srcArr.length; i++)
-      dstArr.push(serializeSchema(srcArr[i]));
-    return dstArr;
-  }
-  else {
-    var dstObj = {};
-    var srcObj = obj;
-
-    for (var k in srcObj) {
-      var value = srcObj[k];
-
-      if (k === "$_qPrivate")
-        dstObj[k] = value ? "<...>" : null;
-      else
-        dstObj[k] = serializeSchema(value);
-    }
-    return dstObj;
-  }
-}
-
-function serializeOptions(options) {
+function printableOptions(options) {
   var arr = [];
 
   if ((options & qdata.kExtractAll) === qdata.kExtractTop)
@@ -86,8 +57,8 @@ function serializeFailure(reason, schema, options, access, input, output, expect
   var e = "ERROR - " + reason;
   var s = e + "\n" + repeatString("-", e.length) + "\n";
 
-  if (schema   !== undefined) s += "schema"   + " = " + JSON.stringify(serializeSchema(schema), null, 2) + "\n";
-  if (options  !== undefined) s += "options"  + " = " + JSON.stringify(serializeOptions(options)) + "\n";
+  if (schema   !== undefined) s += "schema"   + " = " + JSON.stringify(printableSchema(schema), null, 2) + "\n";
+  if (options  !== undefined) s += "options"  + " = " + JSON.stringify(printableOptions(options)) + "\n";
   if (access   !== undefined) s += "access"   + " = " + JSON.stringify(access, null, 2) + "\n";
   if (input    !== undefined) s += "input"    + " = " + JSON.stringify(input, null, 2) + "\n";
   if (output   !== undefined) s += "output"   + " = " + JSON.stringify(output, null, 2) + "\n";
@@ -95,7 +66,7 @@ function serializeFailure(reason, schema, options, access, input, output, expect
   if (errors   !== undefined) s += "errors"   + " = " + JSON.stringify(errors, null, 2) + "\n";
 
   try {
-    var fn = qdata._getProcessCompiled(schema, options, access);
+    var fn = qdata.precompile("process", schema, options, access);
     s += "process = " + fn.toString();
   }
   catch (ex) {
@@ -1386,6 +1357,67 @@ describe("QData", function() {
     fail({ b: 1234, nested: { d: ["qqq"] } }, def, qdata.kDeltaMode);
   });
 
+  it("should validate map - any", function() {
+    var def0 = qdata.schema({
+      $type: "map",
+      $data: {
+        $type: "any"
+      }
+    });
+
+    pass({ a: 1, b: true, c: "qdata", d: [[[1, 2], 3], 4] }, def0);
+    fail(null, def0);
+    fail({ a: null }, def0);
+
+    var def1 = qdata.schema({
+      $type: "map",
+      $null: true,
+      $data: {
+        $type: "any"
+      }
+    });
+
+    pass({ a: 1, b: true, c: "qdata", d: [[[1, 2], 3], 4] }, def1);
+    pass(null, def1);
+    fail({ a: null }, def1);
+
+    var def2 = qdata.schema({
+      $type: "map",
+      $null: true,
+      $data: {
+        $type: "any",
+        $null: true
+      }
+    });
+
+    pass({ a: 1, b: true, c: "qdata", d: [[[1, 2], 3], 4] }, def2);
+    pass(null, def2);
+    pass({ a: null }, def2);
+  });
+
+  it("should validate map - types", function() {
+    var def0 = qdata.schema({
+      $type: "map",
+      $data: {
+        $type: "int",
+        $max: 50
+      }
+    });
+
+    pass({ a: 0, b: 49 }, def0);
+    fail({ a: 0, b: 51 }, def0);
+
+    var def1 = qdata.schema({
+      $type: "map",
+      $data: {
+        $type: "string"
+      }
+    });
+
+    pass({ a: "Hi", b: "Bye" }, def1);
+    fail({ a: "Hi", b: null  }, def1);
+  });
+
   it("should validate array - nested values", function() {
     var specs = [
       { type: "bool"  , pass: [false, true]         , fail: [0, 1, "string", NaN, Infinity, [], {}] },
@@ -1495,18 +1527,24 @@ describe("QData", function() {
   });
 
   it("should handle shortcut '[]'", function() {
-    var def = qdata.schema({
+    var def0 = qdata.schema({
       a: { $type: "int"   },
       b: { $type: "int[]" }
     });
 
-    pass({ a: 0, b: [0] }, def);
+    pass({ a: 0, b: [0]   }, def0);
+    fail({ a: 0           }, def0);
+    fail({ a: null, b: [] }, def0);
+    fail({ a: 0, b: null  }, def0);
+    fail({ a: 0, b: "s"   }, def0);
+    fail({ a: 0, b: ["s"] }, def0);
 
-    fail({ a: 0           }, def);
-    fail({ a: null, b: [] }, def);
-    fail({ a: 0, b: null  }, def);
-    fail({ a: 0, b: "s"   }, def);
-    fail({ a: 0, b: ["s"] }, def);
+    var def1 = qdata.schema({
+      a: { $type: "int[]", $optional: true }
+    });
+
+    pass({        }, def1);
+    pass({ a: [0] }, def1);
   });
 
   it("should handle shortcut '[x..y]'", function() {
