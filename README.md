@@ -12,10 +12,12 @@ The schema structure is always declarative and most of the schemas can be serial
 
 Additionally, QData has several data processing options that help to deal with common problems like implementing data insertion, updating, deletion, and querying. Processing options can also be used to filter out objects' properties that are not defined (useful when extracting information from request's body or from more objects mixed together) and to accumulate all validation errors to have a complete report.
 
+
 Disclaimer
 ----------
 
 QData library has been designed to solve common, but also very specific problems. It's very fast and the support for metadata allows to simply extend it by new features. All built-in features are used in production and you will find many of them handy when implementing web services that do CRUD operations, because a single schema can be used to validate data that is inserted, updated, queried, or deleted. The library has been designed to be very fast, but is also very complete and configurable.
+
 
 Introduction
 ------------
@@ -50,19 +52,20 @@ Confused by `string` vs `text` type? Well, `string` is _any_ string in JavaScrip
 Confused by `[]` suffix in `keywords` member? That is a QData shortcut that defines an array, which can also be defined by using `array` type like this:
 
 ```JS
-var KeywordsSchemaLong = {
+var KeywordsSchemaLong = qdata.schema({
   $type: "array",
   $data: {
     $type: "text"
   }
-};
+});
 
-var KeywordsSchemaShort = {
+var KeywordsSchemaShort = qdata.schema({
   $type: "text[]"
-};
+});
 ```
 
 Both schemas defined above are equivalent and internally normalized into the same structure.
+
 
 Data Processing Concepts
 ------------------------
@@ -71,7 +74,14 @@ QData comes with two base concepts that are used to work with data.
 
   - **`qdata.process(...)`** is a concept used to create a new data based on existing data. It's very useful in cases that more entities are mixed together in a single object and you need to separate/extract their content into independent objects. This happens for example in a request-body object. Data processing does not just validate the input data, but it can also sanity it before creating the output. If configured, you can trim/simplify input text, remove unknown properties, or insert fields having default values if they are not present.
 
-  - **`qdata.test(...)`** is a concept used to test whether the given data conforms to the schema, but without using a sanitizer.
+  - **`qdata.test(...)`** is a concept used to test whether the given data conforms to the schema, but without using sanitizers.
+
+
+Data Processing Modes
+---------------------
+
+TODO
+
 
 Built-In Data Types
 -------------------
@@ -80,6 +90,7 @@ QData has a built-in support for the following data types:
 
 Type and Aliases         | JS Type    | Description
 :----------------------- | :--------- | :---------------------------------------
+`any`                    | `any`      | Any type (variant)
 `bool`, `boolean`        | `boolean`  | Boolean
 `double`, `number`       | `number`   | Double precision floating point number
 `int8`                   | `number`   | 8-bit signed integer
@@ -105,8 +116,23 @@ Type and Aliases         | JS Type    | Description
 `datetime`               | `string`   | Date and time without milliseconds
 `datetime-ms`            | `string`   | Date and time with milliseconds (ms)
 `datetime-us`            | `string`   | Date and time with microseconds (μs)
+`map`                    | `object`   | Map type
 `object`                 | `object`   | Object type, default if `$type` is not specified
 `array`                  | `array`    | Array type
+
+
+Any
+---
+
+Any `$type` is specified as `any`.
+
+Any type directives:
+
+Directive Name           | Value      | Default | Description
+:----------------------- | :--------- | :------ | :-----------------------------
+`$null`                  | `bool`     | `false` | Specifies if the value can be `null`
+`$allowed`               | `any[]`    | `null`  | Array of values that are allowed. Any type allows to put anything into the `$allowed` array. If an array or object is put in there a deep comparison will be performed to verify if the input data conforms to it
+
 
 Boolean
 -------
@@ -119,6 +145,7 @@ Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
 `$allowed`               | `bool[]`   | `null`  | Array of boolean values that are allowed. This is useful to restrict the value to be always `true` or `false`, but it does nothing if the array is empty or both `true` and `false` values are specified.
+
 
 Number and Integer
 ------------------
@@ -151,6 +178,7 @@ Directive Name           | Value      | Default | Description
 `$lt`                    | `number`   | `null`  | Lesser than (the number has to be lesser than `$lt`)
 `$divisibleBy`           | `number`   | `null`  | The number has to be divisible by this value (without a remainder)
 
+
 Character
 ---------
 
@@ -163,6 +191,7 @@ Directive Name           | Value      | Default | Description
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
 `$empty`                 | `bool`     | `false` | Specifies if the char can be an empty string
 `$allowed`               | `char[]`   | `null`  | Array of characters that are allowed
+
 
 String and Text
 ---------------
@@ -181,6 +210,7 @@ Directive Name           | Value      | Default | Description
 `$maxLength`             | `number`   | `null`  | Maximum string length
 `$re`                    | `RegExp`   | `null`  | Regular expression
 
+
 BigInt
 ------
 
@@ -198,6 +228,7 @@ Directive Name           | Value      | Default | Description
 
 Optionally, you can use `qdata.util.isBigInt(s, min, max)` function to check whether a string value matches BigInt with optional `min` and `max` constraints. This function doesn't require a schema instance.
 
+
 Color
 -----
 
@@ -212,6 +243,7 @@ Directive Name           | Value      | Default | Description
 `$cssNames`              | `bool`     | `true`  | Specifies if CSS color names are allowed
 `$extraNames`            | `set`      | `null`  | A set (dictionary having `key: true`) that contains extra color names that are allowed
 
+
 MAC Address
 -----------
 
@@ -224,6 +256,7 @@ Directive Name           | Value      | Default | Description
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
 `$empty`                 | `bool`     | `false` | Specifies if the string can be an empty
 `$separator`             | `char`     | `:`     | Specifies separator used between MAC address components
+
 
 IP Address
 ----------
@@ -238,10 +271,11 @@ Directive Name           | Value      | Default | Description
 `$empty`                 | `bool`     | `false` | Specifies if the string can be an empty
 `$allowPort`             | `bool`     | `false` | Specifies id port is also allowed
 
-Date and DateTime
------------------
 
-Date+time `$type` is specified as `date`, `datetime`, `datetime-ms`, and `datetime-us`. It's a formatted string that contains date, time, or date+time components. QData validator extracts these components and validates whether they are correct. Leap years and leap seconds support is built-in and can be configured through directives.
+DateTime
+--------
+
+DateTime `$type` is specified as `date`, `datetime`, `datetime-ms`, and `datetime-us`. It's a formatted string that contains date, time, or date+time components. QData validator extracts these components and validates whether they are correct. Leap years and leap seconds support is built-in and can be configured through directives.
 
 Default date+time formats:
 
@@ -273,7 +307,7 @@ Format Option            |Fixed Length| Range           | Description
 `SSSSSS`                 | `true`     | `000000-999999` | Microsecond (6 digits)
 `?`                      | `true`     |                 | Any other character requires exact match of that character, for example `-`, `/`, `.`, `,`, etc...
 
-Date+time type directives:
+DateTime type directives:
 
 Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
@@ -282,6 +316,11 @@ Directive Name           | Value      | Default | Description
 `$format`                | `string`   | `null`  | Specifies date+time format, see format options above
 `$leapYear`              | `bool`     | `true`  | Specifies whether to allow leap year date
 `$leapSecond`            | `bool`     | `false` | Specifies whether to allow leap second date+time
+
+
+Map
+---
+
 
 Object
 ------
@@ -296,6 +335,7 @@ Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
 
+
 Array
 -----
 
@@ -303,10 +343,12 @@ Array `$type` is specified as `array` or by `[]` suffix (shortcut).
 
 TODO
 
+
 Custom Types
 ------------
 
 TODO
+
 
 License
 -------
