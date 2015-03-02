@@ -519,11 +519,11 @@ describe("QData", function() {
   it("should validate number - double", function() {
     var def = qdata.schema({ $type: "number" });
 
-    var valuesToPass = [0, 1, -1, 0.1, -0.23211];
-    var valuesToFail = [false, true, "", "0", "string", {}, [], Infinity, -Infinity, NaN];
+    var passData = [0, 1, -1, 0.1, -0.23211];
+    var failData = [false, true, "", "0", "string", {}, [], Infinity, -Infinity, NaN];
 
-    valuesToPass.forEach(function(value) { pass(value, def); });
-    valuesToFail.forEach(function(value) { fail(value, def); });
+    passData.forEach(function(value) { pass(value, def); });
+    failData.forEach(function(value) { fail(value, def); });
   });
 
   it("should validate number - lat/lon", function() {
@@ -543,19 +543,23 @@ describe("QData", function() {
     failLon.forEach(function(value) { fail(value, defLon); });
   });
 
-  it("should validate number - $min/$max $gt/$lt", function() {
-    ["int", "number"].forEach(function(type) {
-      pass(0, qdata.schema({ $type: type, $min: 0, $max: 5 }));
-      pass(5, qdata.schema({ $type: type, $min: 0, $max: 5 }));
+  it("should validate number - $min/$max", function() {
+    var types = [
+      "int", "int8", "int16", "int32", "double", "number", "numeric"
+    ];
 
-      pass(1, qdata.schema({ $type: type, $gt: 0, $lt: 5 }));
-      pass(4, qdata.schema({ $type: type, $gt: 0, $lt: 5 }));
+    types.forEach(function(type) {
+      pass( 0, qdata.schema({ $type: type, $min: 0, $max: 5 }));
+      pass( 5, qdata.schema({ $type: type, $min: 0, $max: 5 }));
+
+      pass( 1, qdata.schema({ $type: type, $min: 0, $minExclusive: true }));
+      pass( 4, qdata.schema({ $type: type, $max: 5, $maxExclusive: true }));
 
       fail(-1, qdata.schema({ $type: type, $min: 0, $max: 5 }));
       fail( 6, qdata.schema({ $type: type, $min: 0, $max: 5 }));
 
-      fail( 0, qdata.schema({ $type: type, $gt: 0, $lt: 5 }));
-      fail( 5, qdata.schema({ $type: type, $gt: 0, $lt: 5 }));
+      fail( 0, qdata.schema({ $type: type, $min: 0, $minExclusive: true }));
+      fail( 5, qdata.schema({ $type: type, $max: 0, $maxExclusive: true }));
     });
   });
 
@@ -571,6 +575,46 @@ describe("QData", function() {
       fail(-3, qdata.schema({ $type: type, $divisibleBy: 2 }));
       fail( 3, qdata.schema({ $type: type, $divisibleBy: 6 }));
     });
+  });
+
+  it("should validate numeric - precision and scale", function() {
+    var defWithType = qdata.schema({
+      $type: "numeric(6, 2)"
+    });
+
+    var defExplicit = qdata.schema({
+      $type: "numeric",
+      $precision: 6,
+      $scale: 2
+    });
+
+    var passData = [
+      -9999.99, -1111.11, -1.11, -1, 0, 1, 1.11, 1111.11, 9999.99
+    ];
+
+    var failData = [
+      false, true, "", "0", "string", {}, [], Infinity, -Infinity, NaN,
+      -10000, 10000
+    ];
+
+    passData.forEach(function(value) {
+      pass(value, defWithType);
+      pass(value, defExplicit);
+    });
+
+    failData.forEach(function(value) {
+      fail(value, defWithType);
+      fail(value, defExplicit);
+    });
+  });
+
+  it("should validate numeric - invalid precision / scale", function() {
+    assertThrow(function() { qdata.schema({ $type: "numeric(-2)"      }); });
+    assertThrow(function() { qdata.schema({ $type: "numeric(2,-2)"    }); });
+    assertThrow(function() { qdata.schema({ $type: "numeric(2,-2)"    }); });
+    assertThrow(function() { qdata.schema({ $type: "numeric(2, 2)"    }); });
+    assertThrow(function() { qdata.schema({ $type: "numeric(2, 4)"    }); });
+    assertThrow(function() { qdata.schema({ $type: "numeric(invalid)" }); });
   });
 
   it("should validate string", function() {

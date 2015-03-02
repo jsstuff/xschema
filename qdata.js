@@ -198,9 +198,11 @@ var NoArray = freeze([]);
 // Some useful regexps.
 var reNewLine = /\n/g;                        // Newline (test).
 var reUnescapeFieldName = /\\(.)/g;           // Unescape field name (replace).
-var reInvalidIdentifier = /[^A-Za-z0-9_\$]/;  // Invalid identifier (test).
-var reOptionalField = /\?$/;                  // Optional type suffix "...?" (match).
-var reArrayField = /\[(\d+)?(\.\.)?(\d+)?]$/; // Array type suffix "...[xxx]" (match).
+var reInvalidIdentifier = /[^\w\$]/;          // Invalid identifier (test).
+
+var reTypeArgs = /^(\w+)\(([^\(]+)\)/;        // Type arguments "(...)" (match).
+var reTypeArray = /\[(\d+)?(\.\.)?(\d+)?]$/;  // Array type suffix "...[xxx]" (match).
+var reTypeOptional = /\?$/;                   // Optional type suffix "...?" (match).
 
 // Test if the given access right is valid (forbid some characters that can
 // violate with future boolean algebra that can be applied to UAC system).
@@ -288,6 +290,23 @@ function typeOf(arg) {
   return type !== "object" ? type : arg === null ? "null" : isArray(arg) ? "array" : "object";
 }
 qdata.typeOf = typeOf;
+
+// \function `qdata.util.stringSplice(s, from, to, content)`
+//
+// Replace `s` content `from:to` by `by.`.
+function stringSplice(s, from, to, by) {
+  return s.substr(0, from) + (by ? by : "") + s.substr(to);
+}
+qutil.stringSplice = stringSplice;
+
+// \function `qdata.util.trimStringArray(arr)`
+//
+// Trim all strings in the array `arr` and return `arr`.
+function trimStringArray(arr) {
+  for (var i = 0, len = arr.length; i < len; i++)
+    arr[i] = String(arr[i]).trim();
+  return arr;
+}
 
 // \function `qdata.util.isDirectiveName(s)`
 //
@@ -926,6 +945,70 @@ var BitArray = qclass({
 });
 
 // ============================================================================
+// [ValueRange]
+// ============================================================================
+
+var ValueRange = qclass({
+  $construct: function(min, max, minExclusive, maxExclusive) {
+    this.init(min, max, minExclusive, maxExclusive);
+  },
+
+  init: function(min, max, minExclusive, maxExclusive) {
+    this.min = typeof min === "number" ? min : null;
+    this.max = typeof max === "number" ? max : null;
+
+    this.minExclusive = (this.min !== null && minExclusive) ? true : false;
+    this.maxExclusive = (this.max !== null && maxExclusive) ? true : false;
+
+    return this;
+  },
+
+  mergeMin: function(min, exc) {
+    var tMin = this.min;
+    var tExc = this.minExclusive;
+
+    if (min == null) {
+      tExc = exc ? true : false;
+    }
+    else if (tMin === null) {
+      tMin = min;
+      tExc = exc ? true : false;
+    }
+    else if (tMin <= min) {
+      tMin = min;
+      if (!tExc && exc) tExc = true;
+    }
+
+    this.min = tMin;
+    this.minExclusive = tExc;
+
+    return this;
+  },
+
+  mergeMax: function(max, exc) {
+    var tMax = this.max;
+    var tExc = this.maxExclusive;
+
+    if (max == null) {
+      tExc = exc ? true : false;
+    }
+    else if (tMax === null) {
+      tMax = max;
+      tExc = exc ? true : false;
+    }
+    else if (tMax >= max) {
+      tMax = max;
+      if (!tExc && exc) tExc = true;
+    }
+
+    this.max = tMax;
+    this.maxExclusive = tExc;
+
+    return this;
+  }
+});
+
+// ============================================================================
 // [CoreCompiler]
 // ============================================================================
 
@@ -1276,6 +1359,9 @@ function SchemaCompiler(env, options) {
   this._accessMap = null;     // Access rights map (key to index).
   this._accessCount = 0;      // Count of access rights in the map.
   this._accessGranted = null; // Granted access rights (at the time accessed).
+
+  // Cached ValueRange instance.
+  this._cachedRange = new ValueRange();
 }
 qclass({
   $extend: CoreCompiler,
@@ -1372,23 +1458,14 @@ qclass({
     this._accessGranted = BitArray.newEmpty(count);
   },
 
-  emitNumberCheck: function(def, v, minValue, maxValue, isInt, isFinite) {
-    var min = def.$gt != null ? def.$gt : null;
-    var max = def.$lt != null ? def.$lt : null;
-
-    var minEq = 0;
-    var maxEq = 0;
-
-    // Handle $gt and $min.
-    if (def.$min != null && (min === null || min <= def.$min)) { min = def.$min; minEq = 1; }
-    if (minValue != null && (min === null || min <= minValue)) { min = minValue; minEq = 1; }
-
-    // Handle $lt and $max.
-    if (def.$max != null && (max === null || max >= def.$max)) { max = def.$max; maxEq = 1; }
-    if (maxValue != null && (max === null || max >= maxValue)) { max = maxValue; maxEq = 1; }
-
-    // Emit.
+  emitNumberCheck: function(v, range, isInt, isFinite) {
     var cond = [];
+
+    var min = range.min;
+    var max = range.max;
+
+    var minExclusive = range.minExclusive;
+    var maxExclusive = range.maxExclusive;
 
     // Finite check is only important if there is no range check. By default
     // all integer checks have range (because of the int type), however, doubles
@@ -1400,25 +1477,25 @@ qclass({
     // JS integer type is a 32-bit number that can have values in range from
     // -2147483648 to 2147483647 - for this range it's safe to check for an
     // integer type by `(x|0) === x`, otherwise this trick is not possible and
-    // more portable `Math.floor(x) === x` has to be used.
+    // less efficient `Math.floor(x) === x` has to be used.
     if (isInt) {
-      var minIsSafe = (min !== null) && min >= -2147483648 - (1 - minEq);
-      var maxIsSafe = (max !== null) && max <=  2147483647 + (1 - maxEq);
+      var minIsSafe = (min !== null) && min >= -2147483648 - minExclusive;
+      var maxIsSafe = (max !== null) && max <=  2147483647 + maxExclusive;
 
       if (minIsSafe && maxIsSafe) {
         cond.push("(" + v + "|0) === " + v);
 
         // Remove min/max checks if covered by `(x|0) === x`.
-        if (min + (1 - minEq) === -2147483648) min = null;
-        if (max - (1 - maxEq) ===  2147483647) max = null;
+        if (min + minExclusive === -2147483648) min = null;
+        if (max - maxExclusive ===  2147483647) max = null;
       }
       else {
         cond.push("Math.floor(" + v + ") === " + v);
       }
     }
 
-    if (min !== null) cond.push(v + (minEq ? " >= " : " > ") + min);
-    if (max !== null) cond.push(v + (maxEq ? " <= " : " < ") + max);
+    if (min !== null) cond.push(v + (minExclusive ? " > " : " >= ") + min);
+    if (max !== null) cond.push(v + (maxExclusive ? " < " : " <= ") + max);
 
     if (cond.length > 0)
       this.failIf("!(" + cond.join(" && ") + ")",
@@ -1767,24 +1844,49 @@ qclass({
     }
 
     // Initialize to safe defaults.
-    var type = def.$type || "object";
+    var defType = def.$type;
+    var defArgs = NoArray;
     var defData = def.$data;
 
     var nullable = false;
     var optional = false;
 
+    // Reused, contains `defType` matches.
     var m = null;
-    var k, v, o;
-    var r, w, group;
+
+    // Helpers.
+    var k, v, o;     // Key/Value/OverriddenValue.
+    var r, w, group; // Read/Write/Group.
+
+    // Process `defType`:
+    //   1. Check if the type has arguments:
+    //      - Put them to the `defArgs` variable.
+    //      - Remove them from the `defType` itself.
+    //   2. Make `defType` to be object by default.
+    if (defType) {
+      m = defType.match(reTypeArgs);
+      if (m) {
+        defType = stringSplice(defType, m[1].length, m[0].length);
+
+        v = m[2].trim();
+        m = null;
+
+        if (v)
+          defArgs = trimStringArray(v.split(","));
+      }
+    }
+    else {
+      defType = "object";
+    }
 
     if (!override) {
       // If the $type ends with "?" it implies `{ $null: true }` definition.
-      if (reOptionalField.test(type)) {
-        type = type.substr(0, type.length - 1);
+      if (reTypeOptional.test(defType)) {
+        defType = defType.substr(0, defType.length - 1);
         nullable = true;
 
         // Prevent from having invalid type that contains for example "??" by mistake.
-        if (reOptionalField.test(type))
+        if (reTypeOptional.test(defType))
           throwRuntimeError("Invalid type '" + def.$type + "'.");
       }
 
@@ -1792,11 +1894,11 @@ qclass({
       // In this case all definitions specified in `def` are related to the array
       // elements, not the array itself. However, it's possible to specify basics
       // like array length, minimum length, and maximum length inside "[...]".
-      m = type.match(reArrayField);
+      m = defType.match(reTypeArray);
 
       // Handle "$null" + do some checks.
       if (!m) {
-        if (type.indexOf("[") !== -1)
+        if (defType.indexOf("[") !== -1)
           throwRuntimeError("Invalid type '" + def.$type + "'.");
 
         if (def.$null != null) {
@@ -1822,8 +1924,8 @@ qclass({
     else {
       // Handle the override basics here. Be pedantic as it's better to catch
       // errors here than failing later.
-      if (hasOwn.call(override, "$type") && override.$type !== type)
-        throwRuntimeError("Can't override type '" + type + "' to '" + override.$type + "'.");
+      if (hasOwn.call(override, "$type") && override.$type !== defType)
+        throwRuntimeError("Can't override type '" + defType + "' to '" + override.$type + "'.");
 
       // Override "$null".
       if (hasOwn.call(override, "$null")) {
@@ -1858,7 +1960,7 @@ qclass({
     // Create the field object. Until now everything stored here is handled,
     // overrides included.
     var obj = {
-      $type     : type,
+      $type     : defType,
       $group    : group,
       $data     : null,
       $null     : nullable,
@@ -1878,7 +1980,7 @@ qclass({
         throwRuntimeError("Internal error.");
 
       var nested = omit(def, omitted);
-      nested.$type = type.substr(0, type.length - m[0].length);
+      nested.$type = defType.substr(0, defType.length - m[0].length);
 
       var minLen = m[1] ? parseInt(m[1]) : null;
       var maxLen = m[3] ? parseInt(m[3]) : null;
@@ -1908,7 +2010,7 @@ qclass({
     else {
       var artificial = this.env.artificialDirectives;
 
-      if (type === "object") {
+      if (defType === "object") {
         var $data = obj.$data = {};
 
         if (!override) {
@@ -2005,7 +2107,7 @@ qclass({
             if (artificial[k] === true || hasOwn.call(obj, k))
               continue;
             if (!isDirectiveName(k))
-              throwRuntimeError("Property '" + k + "'can't be used by '" + type + "' type.");
+              throwRuntimeError("Property '" + k + "'can't be used by '" + defType + "' type.");
             obj[k] = def[k];
           }
 
@@ -2065,8 +2167,11 @@ qclass({
     if (!TypeObject)
       throwRuntimeError("Unknown type '" + obj.$type + "'.");
 
+    if (typeof TypeObject.configure === "function")
+      TypeObject.configure(obj, this.env, defArgs);
+
     if (typeof TypeObject.hook === "function")
-      TypeObject.hook(obj, this.env);
+      TypeObject.hook(obj, this.env, defArgs);
 
     if (SANITY)
       sanityNormalized(obj);
@@ -2458,8 +2563,12 @@ qdata.BaseType = qclass({
   name: null, // Field type ("array", "date", "color", ...), not strictly js type-name.
   type: null, // JavaScript type ("array", "boolean", "number", "object", "string").
 
-  // Verify the definition `def` and throw `RuntimeError` if it's not valid.
-  verify: function(def) {
+  // Configure and verify the definition `def` and throw `RuntimeError` if it's
+  // not valid.
+  //
+  // The `args` parameter is a string containing type arguments specified in
+  // parenthesis `"type(args)"`.
+  configure: function(def, env, args) {
     // Nothing by default.
   },
 
@@ -2687,6 +2796,7 @@ qdata.addType(new BooleanType());
 // ============================================================================
 
 // TODO: $allowed
+// TODO: $scale not honored.
 function NumberType() {
   BaseType.call(this);
 }
@@ -2698,6 +2808,9 @@ qclass({
     // Double types.
     "double",
     "number",
+
+    // Numeric types (the same as `number` right now).
+    "numeric",
 
     // Integer types.
     "integer",
@@ -2713,77 +2826,112 @@ qclass({
   ],
   type: "number",
 
-  compileType: function(c, vOut, v, def) {
+  isInteger: {
+    "integer"  : true,
+    "int"      : true,
+    "uint"     : true,
+    "int8"     : true,
+    "uint8"    : true,
+    "int16"    : true,
+    "uint16"   : true,
+    "short"    : true,
+    "ushort"   : true,
+    "int32"    : true,
+    "uint32"   : true
+  },
+
+  minValue: {
+    "integer"  : kSafeIntMin,
+    "int"      : kSafeIntMin,
+    "uint"     : 0,
+    "int8"     : -128,
+    "uint8"    : 0,
+    "int16"    : -32768,
+    "uint16"   : 0,
+    "short"    : -32768,
+    "ushort"   : 0,
+    "int32"    : -2147483648,
+    "uint32"   : 0,
+    "lat"      : -90,
+    "latitude" : -90,
+    "lon"      : -180,
+    "longitude": -180
+  },
+
+  maxValue: {
+    "integer"  : kSafeIntMax,
+    "int"      : kSafeIntMax,
+    "uint"     : kSafeIntMax,
+    "int8"     : 127,
+    "uint8"    : 255,
+    "int16"    : 32767,
+    "uint16"   : 65535,
+    "short"    : 32767,
+    "ushort"   : 65535,
+    "int32"    : 2147483647,
+    "uint32"   : 4294967295,
+    "lat"      : 90,
+    "latitude" : 90,
+    "lon"      : 180,
+    "longitude": 180
+  },
+
+  configure: function(def, env, args) {
     var type = def.$type;
 
-    var minValue = null;
-    var maxValue = null;
+    if (type === "numeric") {
+      var precision = null;
+      var scale = null;
 
-    var isInt = false;
-    var isFinite = true;
+      if (args.length) {
+        precision = args[0];
+        scale = args.length > 1 ? parseInt(args[1]) : 0;
 
-    switch (type) {
-      case "number":
-      case "double":
-        break;
-      case "integer":
-      case "int":
-        isInt = true;
-        minValue = kSafeIntMin;
-        maxValue = kSafeIntMax;
-        break;
-      case "uint":
-        isInt = true;
-        minValue = 0;
-        maxValue = kSafeIntMax;
-        break;
-      case "int8":
-        isInt = true;
-        minValue = -128;
-        maxValue = 127;
-        break;
-      case "uint8":
-        isInt = true;
-        minValue = 0;
-        maxValue = 255;
-        break;
-      case "int16":
-      case "short":
-        isInt = true;
-        minValue = -32768;
-        maxValue = 32767;
-        break;
-      case "uint16":
-      case "ushort":
-        isInt = true;
-        minValue = 0;
-        maxValue = 65535;
-        break;
-      case "int32":
-        isInt = true;
-        minValue = -2147483648;
-        maxValue = 2147483647;
-        break;
-      case "uint32":
-        isInt = true;
-        minValue = 0;
-        maxValue = 4294967295;
-        break;
-      case "lat":
-      case "latitude":
-        minValue = -90;
-        maxValue = 90;
-        break;
-      case "lon":
-      case "longitude":
-        minValue = -180;
-        maxValue = 180;
-        break;
-      default:
-        throwRuntimeError("Invalid type '" + type + "'.");
+        if (!isFinite(precision))
+          throwRuntimeError("Invalid precision '" + args[0] + "'");
+
+        if (!isFinite(scale))
+          throwRuntimeError("Invalid scale '" + args[1] + "'");
+
+        def.$precision = precision;
+        def.$scale = scale;
+      }
+      else {
+        precision = def.$precision;
+        scale = def.$scale;
+      }
+
+      if (precision != null && (!isFinite(precision) || precision <= 0))
+        throwRuntimeError("Invalid precision '" + precision + "'");
+
+      if (scale != null && (!isFinite(scale) || scale < 0))
+        throwRuntimeError("Invalid scale '" + scale + "'");
+
+      if (precision != null && scale != null && precision <= scale) {
+        throwRuntimeError(
+          "Precision '" + precision + "' has to be greater than scale '" + scale + ".");
+      }
+    }
+  },
+
+  compileType: function(c, vOut, v, def) {
+    var type = def.$type;
+    var range = c._cachedRange.init(this.minValue[type], this.maxValue[type]);
+
+    range.mergeMin(def.$min, def.$minExclusive);
+    range.mergeMax(def.$max, def.$maxExclusive);
+
+    if (def.$precision) {
+      var threshold = Math.pow(10, def.$precision - (def.$scale || 0));
+
+      range.mergeMin(-threshold, true);
+      range.mergeMax( threshold, true);
     }
 
-    c.emitNumberCheck(def, v, minValue, maxValue, isInt, isFinite);
+    var isInt = this.isInteger[type] === true;
+    var isFinite = true;
+
+    c.emitNumberCheck(v, range, isInt, isFinite);
 
     // DivBy check.
     if (def.$divisibleBy != null)
@@ -3870,7 +4018,7 @@ qclass({
   ],
   type: "string",
 
-  hook: function(def, env) {
+  hook: function(def, env, args) {
     var type = def.$type;
     var format = def.$format || this.formats[type];
 
@@ -3956,7 +4104,7 @@ qclass({
   name: ["object"],
   type: "object",
 
-  hook: function(def, env) {
+  hook: function(def, env, args) {
     var rules = env.rules;
 
     // Apply rules.

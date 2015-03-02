@@ -93,6 +93,7 @@ Type and Aliases         | JS Type    | Description
 `any`                    | `any`      | Any type (variant)
 `bool`, `boolean`        | `boolean`  | Boolean
 `double`, `number`       | `number`   | Double precision floating point number
+`numeric`                | `number`   | Double precision, used to distinguish from `number` when specifying a DB columns
 `int8`                   | `number`   | 8-bit signed integer
 `uint8`                  | `number`   | 8-bit unsigned integer
 `int16`, `short`         | `number`   | 16-bit signed integer
@@ -174,8 +175,8 @@ Directive Name           | Value      | Default | Description
 `$allowed`               | `number[]` | `null`  | Array of numbers that are allowed. If this directive is used it cancels all directives that specify minimum, maximum, or any other number related constraints
 `$min`                   | `number`   | `null`  | Minimum value (the number has to be greater or equal than `$min`)
 `$max`                   | `number`   | `null`  | Maximum value (the number has to be lesser or equal than `$max`)
-`$gt`                    | `number`   | `null`  | Greater than (the number has to be greater than `$gt`)
-`$lt`                    | `number`   | `null`  | Lesser than (the number has to be lesser than `$lt`)
+`$minExclusive`          | `number`   | `null`  | Minimum value is exclusive
+`$maxExclusive`          | `number`   | `null`  | Maximum value is exclusive
 `$divisibleBy`           | `number`   | `null`  | The number has to be divisible by this value (without a remainder)
 
 
