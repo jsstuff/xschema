@@ -5,8 +5,8 @@ var assert = require("assert");
 var qclass = require("qclass");
 var qdata = require("./qdata");
 
-var isEqual = qdata.isEqual;
-var cloneDeep = qdata.cloneDeep;
+var isEqual = qdata.util.isEqual;
+var cloneDeep = qdata.util.cloneDeep;
 
 var isArray = Array.isArray;
 

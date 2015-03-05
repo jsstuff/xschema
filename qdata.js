@@ -282,14 +282,14 @@ qdata.throwSchemaError = throwSchemaError;
 // QData utility functions.
 var qutil = qdata.util = {};
 
-// \function `qdata.typeOf(arg)`
+// \function `qdata.util.typeOf(arg)`
 //
 // Get extended type of the object.
 function typeOf(arg) {
   var type = typeof arg;
   return type !== "object" ? type : arg === null ? "null" : isArray(arg) ? "array" : "object";
 }
-qdata.typeOf = typeOf;
+qutil.typeOf = typeOf;
 
 // \function `qdata.util.stringSplice(s, from, to, content)`
 //
@@ -486,7 +486,7 @@ qutil.mergeObject = mergeObject;
 function freezeOrNoArray(arr) { return !isEmpty(arr) ? freeze(arr) : NoArray; }
 function freezeOrNoObject(arr) { return !isEmpty(arr) ? freeze(arr) : NoObject; }
 
-// \function `qdata.cloneWeak(v)`
+// \function `qdata.util.cloneWeak(v)`
 //
 // Perform a weak clone of variable `v`. If the variable is an array, a new
 // array is returned containing
@@ -505,7 +505,7 @@ function cloneWeak(v) {
 
   return dstObj;
 }
-qdata.cloneWeak = cloneWeak;
+qutil.cloneWeak = cloneWeak;
 
 // \function `qdata.util.omit(obj, props)`
 //
@@ -550,11 +550,11 @@ function _cloneDeep(obj) {
   }
 }
 
-// \function `qdata.cloneDeep(v)`
+// \function `qdata.util.cloneDeep(v)`
 function cloneDeep(v) {
   return (!v || typeof v !== "object") ? v : _cloneDeep(v);
 }
-qdata.cloneDeep = cloneDeep;
+qutil.cloneDeep = cloneDeep;
 
 // \internal
 function _isEqual(a, b, buffer) {
@@ -654,13 +654,13 @@ function _isEqual(a, b, buffer) {
   }
 }
 
-// \function `qdata.isEqual(a, b)`
+// \function `qdata.util.isEqual(a, b)`
 //
 // Get whether the values `a` and `b` are deep equal.
 function isEqual(a, b) {
   return (a === b) ? true : _isEqual(a, b, []);
 }
-qdata.isEqual = isEqual;
+qutil.isEqual = isEqual;
 
 // ============================================================================
 // [Enum]
@@ -3727,13 +3727,13 @@ qutil.isLeapSecondDate = isLeapSecondDate;
 // year, month, date, etc...). Please note that not all alphanumeric characters
 // are considered as date components.
 function isDateComponent(c) {
-  return (c === 0x59) | // 'Y' - Year.
-         (c === 0x4D) | // 'M' - Month.
-         (c === 0x44) | // 'D' - Day.
-         (c === 0x48) | // 'H' - Hour.
-         (c === 0x6D) | // 'm' - Minute.
-         (c === 0x73) | // 's' - Second.
-         (c === 0x53) ; // 'S' - Fractions of second.
+  return c === 0x59 || // 'Y' - Year.
+         c === 0x4D || // 'M' - Month.
+         c === 0x44 || // 'D' - Day.
+         c === 0x48 || // 'H' - Hour.
+         c === 0x6D || // 'm' - Minute.
+         c === 0x73 || // 's' - Second.
+         c === 0x53 ;  // 'S' - Fractions of second.
 }
 
 // \internal
