@@ -640,14 +640,57 @@ describe("QData", function() {
     var def = qdata.schema({ $type: "text" });
 
     // Should accept some characters below 32.
-    pass("some text \x09", def);
-    pass("some text \x0A", def);
-    pass("some text \x0D", def);
+    var passData = [
+      "",
+      "some text \x09",
+      "some text \x0A",
+      "some text \x0D",
+      "!@#$%^&*(),.+-=/<>{}[]_~|`\\:;?'"
+    ];
 
     // Should refuse NULL and other characters below 32.
-    fail("some text \x00", def);
-    fail("some text \x1B", def);
-    fail("some text \x1F", def);
+    var failData = [
+      "some text \x00",
+      "some text \x1B",
+      "some text \x1F"
+    ];
+
+    passData.forEach(function(value) {
+      pass(value, def);
+    });
+
+    failData.forEach(function(value) {
+      fail(value, def);
+    });
+  });
+
+  it("should validate text - line", function() {
+    var def = qdata.schema({ $type: "text-line" });
+
+    var passData = [
+      "",
+      "some text \x09",
+      "!@#$%^&*(),.+-=/<>{}[]_~|`\\:;?'"
+    ];
+
+    var failData = [
+      "some text \x00",
+      "some text \x1B",
+      "some text \x1F",
+      "some text \n",
+      "some text \r\n",
+      "some text \n\r",
+      "some text \u2028",
+      "some text \u2029"
+    ];
+
+    passData.forEach(function(value) {
+      pass(value, def);
+    });
+
+    failData.forEach(function(value) {
+      fail(value, def);
+    });
   });
 
   it("should validate bigint", function() {

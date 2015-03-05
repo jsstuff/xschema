@@ -2947,38 +2947,6 @@ qdata.addType(new NumberType());
 // [SchemaType - String / Text]
 // ============================================================================
 
-// Text is basically a string with some characters restricted:
-//   - [00] NUL Null
-//   - [01] SOH Start of Heading
-//   - [02] STX Start of Text
-//   - [03] ETX End of Text
-//   - [04] EOT End of Transmission
-//   - [05] ENQ Enquiry
-//   - [06] ACK Acknowledge
-//   - [07] BEL Bell
-//   - [08] BS  Back Space
-//   - [0B] VT  Vertical Tab
-//   - [0C] FF  Form Feed
-//   - [0E] SO  Shift Out
-//   - [0F] SI  Shift In
-//   - [10] DLE Data Line Escape
-//   - [11] DC1 Device Control 1
-//   - [12] DC2 Device Control 2
-//   - [13] DC3 Device Control 3
-//   - [14] DC4 Device Control 4
-//   - [15] NAK Negative Acknowledge
-//   - [16] SYN Synchronous Idle
-//   - [17] ETB End of Transmit Block
-//   - [18] CAN Cancel
-//   - [19] EM  End of Medium
-//   - [1A] SUB Substitute
-//   - [1B] ESC Escape
-//   - [1C] FS  File Separator
-//   - [1D] GS  Group Separator
-//   - [1E] RS  Record Separator
-//   - [1F] US  Unit Separator
-var isInvalidTextRE = /[\x00-\x08\x0B-\x0C\x0E-\x1F]/;
-
 // TODO: $allowed
 function StringType() {
   BaseType.call(this);
@@ -2987,10 +2955,52 @@ qclass({
   $extend: BaseType,
   $construct: StringType,
 
-  name: ["string", "text"],
+  name: ["string", "text", "text-line"],
   type: "string",
 
+  re: {
+    // Text is basically a string with some characters restricted:
+    //   - [0000] NUL Null
+    //   - [0001] SOH Start of Heading
+    //   - [0002] STX Start of Text
+    //   - [0003] ETX End of Text
+    //   - [0004] EOT End of Transmission
+    //   - [0005] ENQ Enquiry
+    //   - [0006] ACK Acknowledge
+    //   - [0007] BEL Bell
+    //   - [0008] BS  Back Space
+    //   - [000B] VT  Vertical Tab
+    //   - [000C] FF  Form Feed
+    //   - [000E] SO  Shift Out
+    //   - [000F] SI  Shift In
+    //   - [0010] DLE Data Line Escape
+    //   - [0011] DC1 Device Control 1
+    //   - [0012] DC2 Device Control 2
+    //   - [0013] DC3 Device Control 3
+    //   - [0014] DC4 Device Control 4
+    //   - [0015] NAK Negative Acknowledge
+    //   - [0016] SYN Synchronous Idle
+    //   - [0017] ETB End of Transmit Block
+    //   - [0018] CAN Cancel
+    //   - [0019] EM  End of Medium
+    //   - [001A] SUB Substitute
+    //   - [001B] ESC Escape
+    //   - [001C] FS  File Separator
+    //   - [001D] GS  Group Separator
+    //   - [001E] RS  Record Separator
+    //   - [001F] US  Unit Separator
+    "text": /[\x00-\x08\x0B-\x0C\x0E-\x1F]/,
+
+    // Text line, like "text" with additional restrictions:
+    //   - [000A] LF  Line feed
+    //   - [000D] CR  Carriage return
+    //   - [2028] LS  Line separator
+    //   - [2029] PS  Paragraph separator
+    "text-line": /[\x00-\x08\x0A-\x1F\u2028-\u2029]/
+  },
+
   compileType: function(c, vOut, v, def) {
+    var type = def.$type;
     var isEmpty = def.$empty;
 
     var len = def.$length;
@@ -3027,8 +3037,8 @@ qclass({
       c.failIf(cond.join(" || "),
         c.error(c.str("InvalidLength")));
 
-    if (def.$type === "text")
-      c.failIf(c.declareData(null, isInvalidTextRE) + ".test(" + v + ")",
+    if (hasOwn.call(this.re, type))
+      c.failIf(c.declareData(null, this.re[type]) + ".test(" + v + ")",
         c.error(c.str("InvalidText")));
 
     if (def.$re != null)
