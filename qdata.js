@@ -2724,7 +2724,8 @@ qclass({
         }
       }
       else {
-        c.failIf(c.declareData(null, this.isAllowed) + ".indexOf(" + v + ") === -1");
+        c.failIf(c.declareData(null, this.isAllowed) + ".indexOf(" + v + ") === -1",
+          c.error(str("NotAllowed")));
       }
     }
     else {
@@ -2947,7 +2948,6 @@ qdata.addType(new NumberType());
 // [SchemaType - String / Text]
 // ============================================================================
 
-// TODO: $allowed
 function StringType() {
   BaseType.call(this);
 }
@@ -3001,7 +3001,9 @@ qclass({
 
   compileType: function(c, vOut, v, def) {
     var type = def.$type;
+
     var isEmpty = def.$empty;
+    var allowed = def.$allowed;
 
     var len = def.$length;
     var min = def.$minLength;
@@ -3027,23 +3029,29 @@ qclass({
       }
     }
 
-    var cond = [];
+    if (isArray(allowed)) {
+      c.failIf(c.declareData(null, allowed) + ".indexOf(" + v + ") === -1",
+        c.error(c.str("NotAllowed")));
+    }
+    else {
+      var cond = [];
 
-    if (len != null) cond.push(v + ".length !== " + len);
-    if (min != null) cond.push(v + ".length < " + min);
-    if (max != null) cond.push(v + ".length > " + max);
+      if (len != null) cond.push(v + ".length !== " + len);
+      if (min != null) cond.push(v + ".length < " + min);
+      if (max != null) cond.push(v + ".length > " + max);
 
-    if (cond.length)
-      c.failIf(cond.join(" || "),
-        c.error(c.str("InvalidLength")));
+      if (cond.length)
+        c.failIf(cond.join(" || "),
+          c.error(c.str("InvalidLength")));
 
-    if (hasOwn.call(this.re, type))
-      c.failIf(c.declareData(null, this.re[type]) + ".test(" + v + ")",
-        c.error(c.str("InvalidText")));
+      if (hasOwn.call(this.re, type))
+        c.failIf(c.declareData(null, this.re[type]) + ".test(" + v + ")",
+          c.error(c.str("InvalidText")));
 
-    if (def.$re != null)
-      c.failIf(c.declareData(null, def.$re) + ".test(" + v + ")",
-        c.error(c.str(def.$reError || "RegExpFailure")));
+      if (def.$re != null)
+        c.failIf(c.declareData(null, def.$re) + ".test(" + v + ")",
+          c.error(c.str(def.$reError || "RegExpFailure")));
+    }
 
     return v;
   }

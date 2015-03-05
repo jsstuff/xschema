@@ -634,7 +634,23 @@ describe("QData", function() {
     fail("abc", qdata.schema({ $type: "string", $maxLength: 2 }));
   });
 
-  it("should validate text", function() {
+  it("should validate string - allowed", function() {
+    var allowed = ["yes", "no", "maybe"];
+    var def = qdata.schema({ $type: "text", $empty: true, $allowed: allowed });
+
+    var passData = allowed.concat([""]);
+    var failData = [null, "never", " yes", "no ", " maybe "];
+
+    passData.forEach(function(value) {
+      pass(value, def);
+    });
+
+    failData.forEach(function(value) {
+      fail(value, def);
+    });
+  });
+
+  it("should validate string - text", function() {
     // Text goes through the same validator as "string", so test only parts
     // where "string" vs "text" differ.
     var def = qdata.schema({ $type: "text" });
