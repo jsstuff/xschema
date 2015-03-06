@@ -156,6 +156,7 @@ Number type `$type` is specified by the following type names and properties:
 Type and Aliases         | Minimum Value     | Maximum Value    | Description
 :----------------------- | :---------------- | :--------------- | :-------------
 `double`, `number`       | None              | None             | Double precision floating point
+`numeric`                | None              | None             | Numeric value (alias to double, but can be used to distinguish between double and numeric in case of describing DB schema)
 `int8`                   | -128              | 127              | 8-bit signed integer
 `uint8`                  | 0                 | 255              | 8-bit unsigned integer
 `int16`, `short`         | -32768            | 32767            | 16-bit signed integer

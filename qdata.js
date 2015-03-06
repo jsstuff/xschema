@@ -2796,6 +2796,29 @@ qdata.addType(new BooleanType());
 // [SchemaType - Number]
 // ============================================================================
 
+var NumberInfo = {
+  "number"   : { integer: 0, min: null        , nax: null        },
+  "double"   : { integer: 0, min: null        , nax: null        },
+  "numeric"  : { integer: 0, min: null        , nax: null        },
+
+  "lat"      : { integer: 0, min: -90         , max: 90          },
+  "latitude" : { integer: 0, min: -90         , max: 90          },
+  "lon"      : { integer: 0, min: -180        , max: 180         },
+  "longitude": { integer: 0, min: -180        , max: 180         },
+
+  "integer"  : { integer: 1, min: kSafeIntMin , max: kSafeIntMax },
+  "int"      : { integer: 1, min: kSafeIntMin , max: kSafeIntMax },
+  "uint"     : { integer: 1, min: 0           , max: kSafeIntMax },
+  "int8"     : { integer: 1, min: -128        , max: 127         },
+  "uint8"    : { integer: 1, min: 0           , max: 255         },
+  "int16"    : { integer: 1, min: -32768      , max: 32767       },
+  "uint16"   : { integer: 1, min: 0           , max: 65535       },
+  "short"    : { integer: 1, min: -32768      , max: 32767       },
+  "ushort"   : { integer: 1, min: 0           , max: 65535       },
+  "int32"    : { integer: 1, min: -2147483648 , max: 2147483647  },
+  "uint32"   : { integer: 1, min: 0           , max: 4294967295  }
+};
+
 // TODO: $allowed
 // TODO: $scale not honored.
 function NumberType() {
@@ -2805,77 +2828,8 @@ qclass({
   $extend: BaseType,
   $construct: NumberType,
 
-  name: [
-    // Double types.
-    "double",
-    "number",
-
-    // Numeric types (the same as `number` right now).
-    "numeric",
-
-    // Integer types.
-    "integer",
-    "int"  , "uint"  ,
-    "int8" , "uint8" ,
-    "int16", "uint16",
-    "short", "ushort",
-    "int32", "uint32",
-
-    // Latitude/Longitude types.
-    "lat", "latitude",
-    "lon", "longitude"
-  ],
+  name: setToArray(NumberInfo),
   type: "number",
-
-  isInteger: {
-    "integer"  : true,
-    "int"      : true,
-    "uint"     : true,
-    "int8"     : true,
-    "uint8"    : true,
-    "int16"    : true,
-    "uint16"   : true,
-    "short"    : true,
-    "ushort"   : true,
-    "int32"    : true,
-    "uint32"   : true
-  },
-
-  minValue: {
-    "integer"  : kSafeIntMin,
-    "int"      : kSafeIntMin,
-    "uint"     : 0,
-    "int8"     : -128,
-    "uint8"    : 0,
-    "int16"    : -32768,
-    "uint16"   : 0,
-    "short"    : -32768,
-    "ushort"   : 0,
-    "int32"    : -2147483648,
-    "uint32"   : 0,
-    "lat"      : -90,
-    "latitude" : -90,
-    "lon"      : -180,
-    "longitude": -180
-  },
-
-  maxValue: {
-    "integer"  : kSafeIntMax,
-    "int"      : kSafeIntMax,
-    "uint"     : kSafeIntMax,
-    "int8"     : 127,
-    "uint8"    : 255,
-    "int16"    : 32767,
-    "uint16"   : 65535,
-    "short"    : 32767,
-    "ushort"   : 65535,
-    "int32"    : 2147483647,
-    "uint32"   : 4294967295,
-    "lat"      : 90,
-    "latitude" : 90,
-    "lon"      : 180,
-    "longitude": 180
-  },
 
   configure: function(def, env, args) {
     var type = def.$type;
@@ -2917,7 +2871,9 @@ qclass({
 
   compileType: function(c, vOut, v, def) {
     var type = def.$type;
-    var range = c._cachedRange.init(this.minValue[type], this.maxValue[type]);
+    var info = NumberInfo[type];
+
+    var range = c._cachedRange.init(info.min, info.max);
 
     range.mergeMin(def.$min, def.$minExclusive);
     range.mergeMax(def.$max, def.$maxExclusive);
@@ -2929,7 +2885,7 @@ qclass({
       range.mergeMax( threshold, true);
     }
 
-    var isInt = this.isInteger[type] === true;
+    var isInt = !!info.integer;
     var isFinite = true;
 
     c.emitNumberCheck(v, range, isInt, isFinite);
@@ -3683,6 +3639,21 @@ var leapSecondDates = {
 qutil.leapSecondDates = leapSecondDates;
 
 // \internal
+//
+// Built-in DateTime formats.
+var DateFormats = {
+  "date"       : "YYYY-MM-DD",
+
+  "datetime"   : "YYYY-MM-DD HH:mm:ss",
+  "datetime-ms": "YYYY-MM-DD HH:mm:ss.SSS",
+  "datetime-us": "YYYY-MM-DD HH:mm:ss.SSSSSS",
+
+  "time"       : "HH:mm:ss",
+  "time-ms"    : "HH:mm:ss.SSS",
+  "time-us"    : "HH:mm:ss.SSSSSS"
+};
+
+// \internal
 var DateComponents = {
   Y     : { len:-4, msk: 0x01 },
   YY    : { len: 2, msk: 0x01 },
@@ -3702,6 +3673,21 @@ var DateComponents = {
   SSS   : { len: 3, msk: 0x40 },
   SSSSSS: { len: 6, msk: 0x40 }
 };
+
+// \internal
+//
+// Get whether the given charcode is a date component (ie it can be parsed as
+// year, month, date, etc...). Please note that not all alphanumeric characters
+// are considered as date components.
+function isDateComponent(c) {
+  return c === 0x59 || // 'Y' - Year.
+         c === 0x4D || // 'M' - Month.
+         c === 0x44 || // 'D' - Day.
+         c === 0x48 || // 'H' - Hour.
+         c === 0x6D || // 'm' - Minute.
+         c === 0x73 || // 's' - Second.
+         c === 0x53 ;  // 'S' - Fractions of second.
+}
 
 // \function `data.util.isLeapYear(year)`
 //
@@ -3738,21 +3724,6 @@ function isLeapSecondDate(year, month, date) {
   return (array[index] & msk) !== 0;
 }
 qutil.isLeapSecondDate = isLeapSecondDate;
-
-// \internal
-//
-// Get whether the given charcode is a date component (ie it can be parsed as
-// year, month, date, etc...). Please note that not all alphanumeric characters
-// are considered as date components.
-function isDateComponent(c) {
-  return c === 0x59 || // 'Y' - Year.
-         c === 0x4D || // 'M' - Month.
-         c === 0x44 || // 'D' - Day.
-         c === 0x48 || // 'H' - Hour.
-         c === 0x6D || // 'm' - Minute.
-         c === 0x73 || // 's' - Second.
-         c === 0x53 ;  // 'S' - Fractions of second.
-}
 
 // \internal
 //
@@ -4023,22 +3994,12 @@ qclass({
   $extend: BaseType,
   $construct: DateType,
 
-  name: [
-    "date",
-
-    "datetime",
-    "datetime-ms",
-    "datetime-us",
-
-    "time",
-    "time-ms",
-    "time-us"
-  ],
+  name: setToArray(DateFormats),
   type: "string",
 
   hook: function(def, env, args) {
     var type = def.$type;
-    var format = def.$format || this.formats[type];
+    var format = def.$format || DateFormats[type];
 
     if (typeof format !== "string")
       throwRuntimeError("Invalid date format '" + format + "'.");
@@ -4073,18 +4034,6 @@ qclass({
 
     c.failIf(cond, vErr);
     return v;
-  },
-
-  formats: {
-    "date"       : "YYYY-MM-DD",
-
-    "datetime"   : "YYYY-MM-DD HH:mm:ss",
-    "datetime-ms": "YYYY-MM-DD HH:mm:ss.SSS",
-    "datetime-us": "YYYY-MM-DD HH:mm:ss.SSSSSS",
-
-    "time"       : "HH:mm:ss",
-    "time-ms"    : "HH:mm:ss.SSS",
-    "time-us"    : "HH:mm:ss.SSSSSS"
   }
 });
 qdata.addType(new DateType());
