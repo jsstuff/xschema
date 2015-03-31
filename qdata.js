@@ -3004,8 +3004,8 @@ qclass({
     //   [U000B-U000C]
     //   [U000E-U001F]
     text: {
-      lo: 0x00002600|0,
-      hi: 0xFFFFFFFF|0
+      lo: 0x00002600|0, // ((1 << 0x09) | (1 << 0x0A) | (1 << 0x0D))
+      hi: 0xFFFFFFFF|0  //~0
     },
 
     // Forbidden characters:
@@ -3013,8 +3013,8 @@ qclass({
     //   [U000A-U001F]
     //   [U2028-U2029]
     textline: {
-      lo: 0x00000200|0,
-      hi: 0xFFFFFFFC|0
+      lo: 0x00000200|0, // ((1 << 0x09))
+      hi: 0xFFFFFFFC|0  //~((1 << 0x00) | (1 << 0x01))
     }
   },
 
