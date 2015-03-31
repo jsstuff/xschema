@@ -24,7 +24,7 @@ Introduction
 
 QData uses a declarative approach to build schemas, but it comes with its own syntax instead of relying on existing solutions like JSONSchema. The main reason for such move was to simplify the way schemas are defined by introducing shortcuts and directives that start with `$` character. Shortcuts are used to simplify declaration of the most common concepts (for example an array of integers can be written as `$type: "int[]"`) and directives are used to configure the type itself. Object's members are always defined without a `$` prefix, but it's possible to define also members that start with `$` by escaping it as `\\$` (escaping and schema normalization is explained later).
 
-```JS
+```js
 var PersonSchema = qdata.schema({
   firstName  : { $type: "text", $maxLength: 64 },
   lastName   : { $type: "text", $maxLength: 64 },
@@ -51,7 +51,7 @@ Confused by `string` vs `text` type? Well, `string` is _any_ string in JavaScrip
 
 Confused by `[]` suffix in `keywords` member? That is a QData shortcut that defines an array, which can also be defined by using `array` type like this:
 
-```JS
+```js
 var KeywordsSchemaLong = qdata.schema({
   $type: "array",
   $data: {

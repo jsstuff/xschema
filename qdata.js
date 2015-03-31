@@ -2904,6 +2904,83 @@ qdata.addType(new NumberType());
 // [SchemaType - String / Text]
 // ============================================================================
 
+// Special LO characters:
+//   x [0000] NUL Null.
+//   x [0001] SOH Start of Heading.
+//   x [0002] STX Start of Text.
+//   x [0003] ETX End of Text.
+//   x [0004] EOT End of Transmission.
+//   x [0005] ENQ Enquiry.
+//   x [0006] ACK Acknowledge.
+//   x [0007] BEL Bell.
+//   x [0008] BS  Back Space.
+//   o [0009] TAB Tab.
+//   o [000A] LF  Line feed.
+//   x [000B] VT  Vertical Tab.
+//   x [000C] FF  Form Feed.
+//   o [000D] CR  Carriage return.
+//   x [000E] SO  Shift Out.
+//   x [000F] SI  Shift In.
+//   x [0010] DLE Data Line Escape.
+//   x [0011] DC1 Device Control 1.
+//   x [0012] DC2 Device Control 2.
+//   x [0013] DC3 Device Control 3.
+//   x [0014] DC4 Device Control 4.
+//   x [0015] NAK Negative Acknowledge.
+//   x [0016] SYN Synchronous Idle.
+//   x [0017] ETB End of Transmit Block.
+//   x [0018] CAN Cancel.
+//   x [0019] EM  End of Medium.
+//   x [001A] SUB Substitute.
+//   x [001B] ESC Escape.
+//   x [001C] FS  File Separator.
+//   x [001D] GS  Group Separator.
+//   x [001E] RS  Record Separator.
+//   x [001F] US  Unit Separator.
+function isText(s, loMask, hiMask) {
+  var i = 0;
+  var length = s.length;
+
+  if (length === 0)
+    return true;
+
+  var c0 = 0;
+  var c1 = 0;
+
+  do {
+    c0 = s.charCodeAt(i);
+
+    // Lo-Mask check.
+    if (c0 < 32) {
+      if (((1 << c0) & loMask) === 0)
+        return false;
+      continue;
+    }
+
+    if (c0 < 0x2028)
+      continue;
+
+    // Hi-Mask check.
+    if (c0 < 0x2028 + 32) {
+      if (((1 << (c0 - 0x2028)) & hiMask) === 0)
+        return false;
+    }
+
+    if (c0 < 0xD800 || c0 > 0xDFFF)
+      continue;
+
+    // Validate the surrogate pair.
+    if (c0 > 0xDBFF || ++i === length)
+      return false;
+
+    c1 = s.charCodeAt(i);
+    if (c1 < 0xDC00 || c1 > 0xDFFF)
+      return false;
+  } while (++i < length);
+
+  return true;
+}
+
 function StringType() {
   BaseType.call(this);
 }
@@ -2911,48 +2988,33 @@ qclass({
   $extend: BaseType,
   $construct: StringType,
 
-  name: ["string", "text", "text-line"],
+  name: ["string", "text", "textline", "text-line"],
   type: "string",
 
-  re: {
-    // Text is basically a string with some characters restricted:
-    //   - [0000] NUL Null
-    //   - [0001] SOH Start of Heading
-    //   - [0002] STX Start of Text
-    //   - [0003] ETX End of Text
-    //   - [0004] EOT End of Transmission
-    //   - [0005] ENQ Enquiry
-    //   - [0006] ACK Acknowledge
-    //   - [0007] BEL Bell
-    //   - [0008] BS  Back Space
-    //   - [000B] VT  Vertical Tab
-    //   - [000C] FF  Form Feed
-    //   - [000E] SO  Shift Out
-    //   - [000F] SI  Shift In
-    //   - [0010] DLE Data Line Escape
-    //   - [0011] DC1 Device Control 1
-    //   - [0012] DC2 Device Control 2
-    //   - [0013] DC3 Device Control 3
-    //   - [0014] DC4 Device Control 4
-    //   - [0015] NAK Negative Acknowledge
-    //   - [0016] SYN Synchronous Idle
-    //   - [0017] ETB End of Transmit Block
-    //   - [0018] CAN Cancel
-    //   - [0019] EM  End of Medium
-    //   - [001A] SUB Substitute
-    //   - [001B] ESC Escape
-    //   - [001C] FS  File Separator
-    //   - [001D] GS  Group Separator
-    //   - [001E] RS  Record Separator
-    //   - [001F] US  Unit Separator
-    "text": /[\x00-\x08\x0B-\x0C\x0E-\x1F]/,
+  masks: {
+    // Forbidden characters:
+    //   [U0000-U0008]
+    //   [U000B-U000C]
+    //   [U000E-U001F]
+    text: {
+      lo: 0x00002600|0,
+      hi: 0xFFFFFFFF|0
+    },
 
-    // Text line, like "text" with additional restrictions:
-    //   - [000A] LF  Line feed
-    //   - [000D] CR  Carriage return
-    //   - [2028] LS  Line separator
-    //   - [2029] PS  Paragraph separator
-    "text-line": /[\x00-\x08\x0A-\x1F\u2028-\u2029]/
+    // Forbidden characters:
+    //   [U0000-U0008]
+    //   [U000A-U001F]
+    //   [U2028-U2029]
+    textline: {
+      lo: 0x00000200|0,
+      hi: 0xFFFFFFFC|0
+    },
+
+    // TODO: Deprecated.
+    "text-line": {
+      lo: 0x00000200|0,
+      hi: 0xFFFFFFFC|0
+    }
   },
 
   compileType: function(c, vOut, v, def) {
@@ -3000,9 +3062,15 @@ qclass({
         c.failIf(cond.join(" || "),
           c.error(c.str("InvalidLength")));
 
-      if (hasOwn.call(this.re, type))
-        c.failIf(c.declareData(null, this.re[type]) + ".test(" + v + ")",
+      if (hasOwn.call(this.masks, type)) {
+        var masks = this.masks[type];
+        c.failIf("!" + c.declareData(null, isText) +
+          "(" + v +
+            ", " + masks.lo + "|0" +
+            ", " + masks.hi + "|0" +
+          ")",
           c.error(c.str("InvalidText")));
+      }
 
       if (def.$re != null)
         c.failIf(c.declareData(null, def.$re) + ".test(" + v + ")",

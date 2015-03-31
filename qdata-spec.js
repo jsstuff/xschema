@@ -650,7 +650,7 @@ describe("QData", function() {
     });
   });
 
-  it("should validate string - text", function() {
+  it("should validate string - text (lo)", function() {
     // Text goes through the same validator as "string", so test only parts
     // where "string" vs "text" differ.
     var def = qdata.schema({ $type: "text" });
@@ -680,8 +680,8 @@ describe("QData", function() {
     });
   });
 
-  it("should validate text - line", function() {
-    var def = qdata.schema({ $type: "text-line" });
+  it("should validate string - text (lo+hi)", function() {
+    var def = qdata.schema({ $type: "textline" });
 
     var passData = [
       "",
@@ -698,6 +698,44 @@ describe("QData", function() {
       "some text \n\r",
       "some text \u2028",
       "some text \u2029"
+    ];
+
+    passData.forEach(function(value) {
+      pass(value, def);
+    });
+
+    failData.forEach(function(value) {
+      fail(value, def);
+    });
+  });
+
+  it("should validate string - text (surrogate pairs)", function() {
+    var def = qdata.schema({ $type: "text" });
+
+    var passData = [
+      "\uD834\uDF06",
+
+      "______\uD834\uDF06",
+      "\uD834\uDF06______"
+    ];
+
+    var failData = [
+      "\uDF06",
+      "\uD834",
+
+      "\uDF06\uDF06",
+      "\uD834\uD834",
+
+      "\uDF06\uD834",
+
+      "______\uDF06",
+      "\uDF06______",
+
+      "______\uD834",
+      "\uD834______",
+
+      "\uD834\uDF06\uD834",
+      "\uD834\uDF06\uDF06"
     ];
 
     passData.forEach(function(value) {
