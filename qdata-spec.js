@@ -543,6 +543,21 @@ describe("QData", function() {
     failLon.forEach(function(value) { fail(value, defLon); });
   });
 
+  it("should validate number - $allowed", function() {
+    var types = [
+      "int", "int8", "int16", "int32", "double", "number", "numeric"
+    ];
+
+    types.forEach(function(type) {
+      pass( 0, qdata.schema({ $type: type, $allowed: [0, 1, 2] }));
+      pass( 0, qdata.schema({ $type: type, $allowed: [0, 1, 5] }));
+      pass( 5, qdata.schema({ $type: type, $allowed: [1, 5, 0] }));
+
+      fail(-1, qdata.schema({ $type: type, $allowed: [0, 1, 2] }));
+      fail( 6, qdata.schema({ $type: type, $allowed: [0, 1, 5] }));
+    });
+  });
+
   it("should validate number - $min/$max", function() {
     var types = [
       "int", "int8", "int16", "int32", "double", "number", "numeric"
@@ -615,6 +630,24 @@ describe("QData", function() {
     assertThrow(function() { qdata.schema({ $type: "numeric(2, 2)"    }); });
     assertThrow(function() { qdata.schema({ $type: "numeric(2, 4)"    }); });
     assertThrow(function() { qdata.schema({ $type: "numeric(invalid)" }); });
+  });
+
+  it("should validate char", function() {
+    pass(""  , qdata.schema({ $type: "char", $empty: true }));
+    pass("a" , qdata.schema({ $type: "char" }));
+    pass("b" , qdata.schema({ $type: "char" }));
+
+    pass("a" , qdata.schema({ $type: "char", $allowed: "abc" }));
+    pass("c" , qdata.schema({ $type: "char", $allowed: "abc" }));
+
+    fail(""  , qdata.schema({ $type: "char" }));
+    fail(""  , qdata.schema({ $type: "char", $empty: false }));
+
+    fail("A" , qdata.schema({ $type: "char", $allowed: "abc" }));
+    fail("z" , qdata.schema({ $type: "char", $allowed: "abc" }));
+
+    fail("ab", qdata.schema({ $type: "char" }));
+    fail("bc", qdata.schema({ $type: "char" }));
   });
 
   it("should validate string", function() {
@@ -828,6 +861,16 @@ describe("QData", function() {
     failData.forEach(function(data) {
       fail(data, def);
     });
+  });
+
+  it("should validate bigint - $allowed", function() {
+    pass(""    , qdata.schema({ $type: "bigint", $allowed: ["1234", "2345"], $empty: true }));
+    pass("1234", qdata.schema({ $type: "bigint", $allowed: ["1234", "2345"] }));
+    pass("1234", qdata.schema({ $type: "bigint", $allowed: ["2345", "1234"] }));
+
+    fail(""    , qdata.schema({ $type: "bigint", $allowed: ["2345", "3456"] }));
+    fail("1234", qdata.schema({ $type: "bigint", $allowed: ["2345", "3456"] }));
+    fail("1234", qdata.schema({ $type: "bigint", $allowed: [] }));
   });
 
   it("should validate color - #XXX and #XXXXXX", function() {

@@ -2583,7 +2583,8 @@ qdata.BaseType = qclass({
     var typeError = this.typeError || TypeToError[type];
     var isNull = def.$null;
 
-    if (def.$allowed && def.$allowed.indexOf(null) !== -1)
+    var allowed = def.$allowed;
+    if (isArray(allowed) && allowed.indexOf(null) !== -1)
       isNull = true;
 
     // Object and Array types require `vOut` variable to be different than `vIn`.
@@ -2725,7 +2726,7 @@ qclass({
       }
       else {
         c.failIf(c.declareData(null, this.isAllowed) + ".indexOf(" + v + ") === -1",
-          c.error(str("NotAllowed")));
+          c.error(c.str("NotAllowed")));
       }
     }
     else {
@@ -2797,29 +2798,28 @@ qdata.addType(new BooleanType());
 // ============================================================================
 
 var NumberInfo = {
-  "number"   : { integer: 0, min: null        , nax: null        },
-  "double"   : { integer: 0, min: null        , nax: null        },
-  "numeric"  : { integer: 0, min: null        , nax: null        },
+  number   : { integer: 0, min: null        , nax: null        },
+  double   : { integer: 0, min: null        , nax: null        },
+  numeric  : { integer: 0, min: null        , nax: null        },
 
-  "lat"      : { integer: 0, min: -90         , max: 90          },
-  "latitude" : { integer: 0, min: -90         , max: 90          },
-  "lon"      : { integer: 0, min: -180        , max: 180         },
-  "longitude": { integer: 0, min: -180        , max: 180         },
+  lat      : { integer: 0, min: -90         , max: 90          },
+  latitude : { integer: 0, min: -90         , max: 90          },
+  lon      : { integer: 0, min: -180        , max: 180         },
+  longitude: { integer: 0, min: -180        , max: 180         },
 
-  "integer"  : { integer: 1, min: kSafeIntMin , max: kSafeIntMax },
-  "int"      : { integer: 1, min: kSafeIntMin , max: kSafeIntMax },
-  "uint"     : { integer: 1, min: 0           , max: kSafeIntMax },
-  "int8"     : { integer: 1, min: -128        , max: 127         },
-  "uint8"    : { integer: 1, min: 0           , max: 255         },
-  "int16"    : { integer: 1, min: -32768      , max: 32767       },
-  "uint16"   : { integer: 1, min: 0           , max: 65535       },
-  "short"    : { integer: 1, min: -32768      , max: 32767       },
-  "ushort"   : { integer: 1, min: 0           , max: 65535       },
-  "int32"    : { integer: 1, min: -2147483648 , max: 2147483647  },
-  "uint32"   : { integer: 1, min: 0           , max: 4294967295  }
+  integer  : { integer: 1, min: kSafeIntMin , max: kSafeIntMax },
+  int      : { integer: 1, min: kSafeIntMin , max: kSafeIntMax },
+  uint     : { integer: 1, min: 0           , max: kSafeIntMax },
+  int8     : { integer: 1, min: -128        , max: 127         },
+  uint8    : { integer: 1, min: 0           , max: 255         },
+  int16    : { integer: 1, min: -32768      , max: 32767       },
+  uint16   : { integer: 1, min: 0           , max: 65535       },
+  short    : { integer: 1, min: -32768      , max: 32767       },
+  ushort   : { integer: 1, min: 0           , max: 65535       },
+  int32    : { integer: 1, min: -2147483648 , max: 2147483647  },
+  uint32   : { integer: 1, min: 0           , max: 4294967295  }
 };
 
-// TODO: $allowed
 // TODO: $scale not honored.
 function NumberType() {
   BaseType.call(this);
@@ -2873,27 +2873,34 @@ qclass({
     var type = def.$type;
     var info = NumberInfo[type];
 
-    var range = c._cachedRange.init(info.min, info.max);
-
-    range.mergeMin(def.$min, def.$minExclusive);
-    range.mergeMax(def.$max, def.$maxExclusive);
-
-    if (def.$precision) {
-      var threshold = Math.pow(10, def.$precision - (def.$scale || 0));
-
-      range.mergeMin(-threshold, true);
-      range.mergeMax( threshold, true);
+    var allowed = def.$allowed;
+    if (allowed) {
+      c.failIf(c.declareData(null, allowed) + ".indexOf(" + v + ") === -1",
+        c.error(c.str("NotAllowed")));
     }
+    else {
+      var range = c._cachedRange.init(info.min, info.max);
 
-    var isInt = !!info.integer;
-    var isFinite = true;
+      range.mergeMin(def.$min, def.$minExclusive);
+      range.mergeMax(def.$max, def.$maxExclusive);
 
-    c.emitNumberCheck(v, range, isInt, isFinite);
+      if (def.$precision) {
+        var threshold = Math.pow(10, def.$precision - (def.$scale || 0));
 
-    // DivBy check.
-    if (def.$divisibleBy != null)
-      c.failIf(v + " % " + def.$divisibleBy + " !== 0",
-        c.error(c.str("DivisibleByError")));
+        range.mergeMin(-threshold, true);
+        range.mergeMax( threshold, true);
+      }
+
+      var isInt = !!info.integer;
+      var isFinite = true;
+
+      c.emitNumberCheck(v, range, isInt, isFinite);
+
+      // DivBy check.
+      if (def.$divisibleBy != null)
+        c.failIf(v + " % " + def.$divisibleBy + " !== 0",
+          c.error(c.str("DivisibleByError")));
+    }
 
     return v;
   }
@@ -3008,12 +3015,6 @@ qclass({
     textline: {
       lo: 0x00000200|0,
       hi: 0xFFFFFFFC|0
-    },
-
-    // TODO: Deprecated.
-    "text-line": {
-      lo: 0x00000200|0,
-      hi: 0xFFFFFFFC|0
     }
   },
 
@@ -3086,7 +3087,6 @@ qdata.addType(new StringType());
 // [SchemaType - Char]
 // ============================================================================
 
-// TODO: $allowed
 function CharType() {
   BaseType.call(this);
 }
@@ -3097,15 +3097,22 @@ qclass({
   name: ["char"],
   type: "string",
 
-  compileType: function(c, vOut, v, def) {
-    var cond;
+  configure: function(def, env, args) {
+    var allowed = def.$allowed;
+    if (allowed && isArray(allowed))
+      def.$allowed = allowed.join("");
+  },
 
-    if (def.$empty === true)
-      cond = v + ".length > 1";
-    else
-      cond = v + ".length !== 1";
+  compileType: function(c, vOut, v, def) {
+    var cond = v + ((def.$empty === true) ? ".length > 1" : ".length !== 1");
+    var allowed = def.$allowed;
 
     c.failIf(cond, c.error(c.str("InvalidChar")));
+
+    if (allowed)
+      c.failIf(c.declareData(null, allowed) + ".indexOf(" + v + ") === -1",
+        c.error(c.str("NotAllowed")));
+
     return v;
   }
 });
@@ -3171,7 +3178,6 @@ function isBigInt(s, min, max) {
 }
 qutil.isBigInt = isBigInt;
 
-// TODO: $allowed
 function BigIntType() {
   BaseType.call(this);
 }
@@ -3182,11 +3188,47 @@ qclass({
   name: ["bigint"],
   type: "string",
 
+  configure: function(def, env, args) {
+    var allowed = def.$allowed;
+
+    if (allowed && isArray(allowed)) {
+      var i, length = allowed.length;
+      var safe = true;
+
+      for (i = 0; i < length; i++) {
+        if (typeof allowed[i] !== "string") {
+          safe = false;
+          break;
+        }
+      }
+
+      if (!safe) {
+        allowed = allowed.slice();
+        do {
+          allowed[i] = String(allowed[i]);
+        } while (++i < length);
+
+        def.$allowed = allowed;
+      }
+    }
+  },
+
   compileType: function(c, vOut, v, def) {
-    var cond = "!" + c.declareData(null, isBigInt) + "(" + v + ")";
-    if (def.$empty === true)
-      cond = v + " && " + cond;
-    c.failIf(cond, c.error(c.str("InvalidBigInt")));
+    var allowed = def.$allowed;
+
+    if (allowed) {
+      cond = c.declareData(null, allowed) + ".indexOf(" + v + ") === -1";
+      if (def.$empty === true)
+        cond = v + " && " + cond;
+      c.failIf(cond, c.error(c.str("NotAllowed")));
+    }
+    else {
+      var cond = "!" + c.declareData(null, isBigInt) + "(" + v + ")";
+      if (def.$empty === true)
+        cond = v + " && " + cond;
+      c.failIf(cond, c.error(c.str("InvalidBigInt")));
+    }
+
     return v;
   }
 });

@@ -106,8 +106,9 @@ Type and Aliases         | JS Type    | Description
 `lon`, `longitude`       | `number`   | Longitude value (-180...180)
 `char`                   | `string`   | String containing exactly 1 character
 `string`                 | `string`   | Any string
-`text`                   | `string`   | Restricted string
-`bigint`                 | `string`   | String containing a 64-bit integer as text
+`text`                   | `string`   | A restricted multi-line string
+`textline`               | `string`   | A restricted single-line string
+`bigint`                 | `string`   | A string that contains a 64-bit integer
 `color`                  | `string`   | A color values specified by hash `"#RRGGBB"` or a CSS name
 `mac`                    | `string`   | MAC address
 `ip`                     | `string`   | IPV4 or IPV6 address
