@@ -954,6 +954,152 @@ describe("QData", function() {
     pass("CURRENTCOLOR", def);
   });
 
+  it("should validate creditcard", function() {
+    var def = qdata.schema({ $type: "creditcard" });
+
+    // Randomly generated from:
+    // http://www.freeformatter.com/credit-card-number-generator-validator.html
+    var passData = [
+      // VISA:
+      "4556592777286861",
+      "4561630180863141",
+      "4716203245370983",
+      // MasterCard:
+      "5226346701343042",
+      "5168623982904811",
+      "5321526479575164",
+      // American Express (AMEX):
+      "349357074744917",
+      "373167420246221",
+      "371014557145135",
+      // Discover:
+      "6011329741927500",
+      "6011794079493138",
+      "6011337361376130",
+      // JCB:
+      "3337934039462492",
+      "3096901216932242",
+      "3096030621506811",
+      // Diners Club - North America:
+      "5522577702482337",
+      "5538547440807915",
+      "5460940284600300",
+      // Diners Club - Carte Blanche:
+      "30306477491901",
+      "30151193010944",
+      "30323308640796",
+      // Diners Club - International:
+      "36594325317980",
+      "36808073646329",
+      "36248730115600",
+      // Maestro:
+      "6304228546783421",
+      "6761861577869127",
+      "6763867742875517",
+      // Laser:
+      "6304680224325729",
+      "6709677437638485",
+      "6304700957790301",
+      // Visa Electron:
+      "4508335323606623",
+      "4026595541751419",
+      "4913477252284342",
+      // InstaPayment:
+      "6371883925980952",
+      "6370627906955181",
+      "6372830657093578"
+    ];
+
+    var failData = [
+      // VISA:
+      "4556592777286865",
+      "4561630180861141",
+      "4716203245370982",
+      // MasterCard:
+      "5226346701343045",
+      "5168623982904821",
+      "5321526479575169",
+      // American Express (AMEX):
+      "349357074744919",
+      "373167420246231",
+      "371014557145136",
+      // Discover:
+      "6011329741927508",
+      "6011794079493148",
+      "6011337361376135",
+      // JCB:
+      "3337934039462495",
+      "3096901216932232",
+      "3096030621506812",
+      // Diners Club - North America:
+      "5522577702482334",
+      "5538546440807915",
+      "5460940284600301",
+      // Diners Club - Carte Blanche:
+      "30306477491907",
+      "30151193010244",
+      "30323308640798",
+      // Diners Club - International:
+      "36594325317982",
+      "36808073646629",
+      "36248730115602",
+      // Maestro:
+      "6304228546783427",
+      "6761861777869127",
+      "6763867741875517",
+      // Laser:
+      "6304680224325724",
+      "6709677437638785",
+      "6304700957790304",
+      // Visa Electron:
+      "4508335323606628",
+      "4026595541751429",
+      "4913477252284346",
+      // InstaPayment:
+      "6371883925980954",
+      "6370627906955191",
+      "6372830657093579"
+    ];
+
+    passData.forEach(function(data) {
+      pass(data, def);
+    });
+
+    failData.forEach(function(data) {
+      fail(data, def);
+    });
+  });
+
+  it("should validate isbn", function() {
+    var def = qdata.schema({ $type: "isbn" });
+
+    var passData = [
+      "1617290858",
+      "3423214120",
+      "340101319X",
+
+      "9783836221191",
+      "9784873113685"
+    ];
+
+    var failData = [
+      "1617290859",
+      "3423215120",
+      "344101319X",
+
+      "9783836221190",
+      "9783873113685"
+    ];
+
+    passData.forEach(function(data) {
+      pass(data, def);
+    });
+
+    failData.forEach(function(data) {
+      fail(data, def);
+    });
+  });
+
   it("should validate net - mac address", function() {
     var MAC  = qdata.schema({ $type: "mac" });
     var MACd = qdata.schema({ $type: "mac", $separator: "-" });
@@ -1183,7 +1329,7 @@ describe("QData", function() {
     fail(":::1:2:3:4:5:6"                           , IPV6);
   });
 
-  it("should validate date - basics", function() {
+  it("should validate date - date", function() {
     var YYYY_MM    = qdata.schema({ $type: "date", $format: "YYYY-MM" });
     var YYYY_MM_DD = qdata.schema({ $type: "date" });
 
@@ -1208,6 +1354,22 @@ describe("QData", function() {
     fail("1999-01-0a" , YYYY_MM_DD);
     fail("1999-01-001", YYYY_MM_DD);
     fail("1999-01-01 ", YYYY_MM_DD);
+  });
+
+  it("should validate date - time", function() {
+    var HH_mm       = qdata.schema({ $type: "time", $format: "HH:mm" });
+    var HH_mm_ss    = qdata.schema({ $type: "time" });
+
+    pass("14:53"   , HH_mm);
+    pass("14:53:59", HH_mm_ss);
+
+    fail("00:61"   , HH_mm);
+    fail("24:59"   , HH_mm);
+    fail("14:53:60", HH_mm);
+    fail("14:53:61", HH_mm);
+
+    fail("invalid" , HH_mm);
+    fail("invalid" , HH_mm_ss);
   });
 
   it("should validate date - datetime", function() {
@@ -1264,26 +1426,62 @@ describe("QData", function() {
   });
 
   it("should validate date - leap second handling", function() {
-    var def = qdata.schema({ $type: "datetime", $leapSecond: true });
+    var YYYY_MM_DD_HH_mm_ss = qdata.schema({
+      $type: "datetime",
+      $leapSecond: true
+    });
 
-    pass("1972-06-30 23:59:60", def);
-    pass("1972-12-31 23:59:60", def);
-    pass("2012-06-30 23:59:60", def);
+    var MM_DD_HH_mm_ss = qdata.schema({
+      $type: "datetime",
+      $format: "MM-DD HH:mm:ss",
+      $leapSecond: true
+    });
+
+    var HH_mm_ss = qdata.schema({
+      $type: "time",
+      $leapSecond: true
+    });
+
+    // DateTime with leap second.
+    pass("1972-06-30 23:59:60", YYYY_MM_DD_HH_mm_ss);
+    pass("1972-12-31 23:59:60", YYYY_MM_DD_HH_mm_ss);
+    pass("2012-06-30 23:59:60", YYYY_MM_DD_HH_mm_ss);
+
+    // Leap second without a year is allowed if `$leapSecond` is true.
+    pass("06-30 23:59:60", MM_DD_HH_mm_ss);
+    pass("12-31 23:59:60", MM_DD_HH_mm_ss);
+
+    // Leap second without a date (YMD) is allowed if `$leapSecond` is true.
+    pass("23:59:60", HH_mm_ss);
+    pass("23:59:60", HH_mm_ss);
 
     // Leap seconds' dates are not defined from 1971 and below.
-    fail("1971-06-30 23:59:60", def);
-    fail("1971-12-31 23:59:60", def);
+    fail("1971-06-30 23:59:60", YYYY_MM_DD_HH_mm_ss);
+    fail("1971-12-31 23:59:60", YYYY_MM_DD_HH_mm_ss);
 
     // Leap seconds' dates that are known to not have leap second.
-    fail("1973-06-30 23:59:60", def);
-    fail("2013-06-30 23:59:60", def);
-    fail("2013-12-31 23:59:60", def);
-    fail("2014-06-30 23:59:60", def);
-    fail("2014-12-31 23:59:60", def);
+    fail("1973-06-30 23:59:60", YYYY_MM_DD_HH_mm_ss);
+    fail("2013-06-30 23:59:60", YYYY_MM_DD_HH_mm_ss);
+    fail("2013-12-31 23:59:60", YYYY_MM_DD_HH_mm_ss);
+    fail("2014-06-30 23:59:60", YYYY_MM_DD_HH_mm_ss);
+    fail("2014-12-31 23:59:60", YYYY_MM_DD_HH_mm_ss);
 
     // Leap seconds' dates in far future are not known at the moment.
-    fail("2100-06-30 23:59:60", def);
-    fail("2100-12-31 23:59:60", def);
+    fail("2100-06-30 23:59:60", YYYY_MM_DD_HH_mm_ss);
+    fail("2100-12-31 23:59:60", YYYY_MM_DD_HH_mm_ss);
+
+    // Leap seconds not allowed for these dates (regardless of year).
+    fail("01-31 23:59:60", MM_DD_HH_mm_ss);
+    fail("02-28 23:59:60", MM_DD_HH_mm_ss);
+    fail("02-29 23:59:60", MM_DD_HH_mm_ss);
+    fail("03-31 23:59:60", MM_DD_HH_mm_ss);
+    fail("04-30 23:59:60", MM_DD_HH_mm_ss);
+    fail("05-31 23:59:60", MM_DD_HH_mm_ss);
+    fail("07-31 23:59:60", MM_DD_HH_mm_ss);
+    fail("08-31 23:59:60", MM_DD_HH_mm_ss);
+    fail("09-30 23:59:60", MM_DD_HH_mm_ss);
+    fail("10-31 23:59:60", MM_DD_HH_mm_ss);
+    fail("11-30 23:59:60", MM_DD_HH_mm_ss);
   });
 
   it("should validate date - valid custom format YYYYMMDD", function() {
@@ -1347,8 +1545,6 @@ describe("QData", function() {
     assertThrow(function() { qdata.schema({ $type: "date", $format: "YM"            }); });
     assertThrow(function() { qdata.schema({ $type: "date", $format: "YMD"           }); });
     assertThrow(function() { qdata.schema({ $type: "date", $format: "DMY"           }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "M-D"           }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "MM-DD"         }); });
     assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-DD"       }); });
     assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-MM-DD mm" }); });
     assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-MM-DD ss" }); });

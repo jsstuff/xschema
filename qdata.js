@@ -3400,6 +3400,139 @@ qclass({
 qdata.addType(new ColorType());
 
 // ============================================================================
+// [SchemaType - CreditCard]
+// ============================================================================
+
+function isCreditCard(s) {
+  var i = 0;
+  var len = s.length;
+
+  // Credit card number contains 13-19 digits.
+  if (len < 13 || len > 19)
+    return false;
+
+  // LUHN algorithm.
+  var odd = 1 - (len & 1);
+  var sum = 0;
+
+  for (;;) {
+    var c = s.charCodeAt(i) - 48;
+    if (c < 0 || c > 9)
+      return false;
+
+    if (++i === len)
+      break;
+
+    // Multiply by 2 all digits in odd positions counting from the end and
+    // subtract 9 to all those result after the multiplication is over 9.
+    if ((i & 1) === odd && (c *= 2) > 9) c -= 9;
+
+    // Sum all digits except the last one.
+    sum += c;
+  }
+
+  if (((sum + c) % 10) !== 0)
+    return false;
+
+  return true;
+}
+qutil.isCreditCard = isCreditCard;
+
+function CreditCardType() {
+  BaseType.call(this);
+}
+qclass({
+  $extend: BaseType,
+  $construct: CreditCardType,
+
+  name: ["creditcard"],
+  type: "string",
+
+  compileType: function(c, vOut, v, def) {
+    var cond = "!" + c.declareData("isCreditCard", isCreditCard) + "(" + v + ")";
+    if (def.$empty === true)
+      cond = v + " && " + cond;
+
+    c.failIf(cond, c.error(c.str("InvalidCreditCard")));
+    return v;
+  }
+});
+qdata.addType(new CreditCardType());
+
+// ============================================================================
+// [SchemaType - ISBN]
+// ============================================================================
+
+function isISBN(s) {
+  var i = 0;
+  var c;
+
+  var len = s.length;
+  var sum = 0;
+
+  if (len === 10) {
+    for (;;) {
+      c = s.charCodeAt(i) - 48;
+      if (++i === len)
+        break;
+
+      if (c < 0 || c > 9)
+        return 0;
+      sum += (11 - i) * c;
+    }
+
+    if (c === 40)
+      c = 10;
+    else if (c < 0 || c > 9)
+      return 0;
+
+    if (((sum + (11 - i) * c) % 11) === 0)
+      return 10;
+  }
+  else if (len === 13) {
+    for (;;) {
+      c = s.charCodeAt(i) - 48;
+      if (c < 0 || c > 9)
+        return 0;
+
+      if (i & 1)
+        c *= 3;
+      sum += c;
+
+      if (++i === len)
+        break;
+    }
+
+    if ((sum % 10) === 0)
+      return 13;
+  }
+
+  return 0;
+}
+qutil.isISBN = isISBN;
+
+function ISBNType() {
+  BaseType.call(this);
+}
+qclass({
+  $extend: BaseType,
+  $construct: ISBNType,
+
+  name: ["isbn"],
+  type: "string",
+
+  compileType: function(c, vOut, v, def) {
+    var cond = c.declareData("isISBN", isISBN) + "(" + v + ") === 0";
+    if (def.$empty === true)
+      cond = v + " && " + cond;
+
+    c.failIf(cond, c.error(c.str("InvalidISBN")));
+    return v;
+  }
+});
+qdata.addType(new ISBNType());
+
+// ============================================================================
 // [SchemaType - MAC Address]
 // ============================================================================
 
@@ -3949,7 +4082,14 @@ var DateFactory = {
       index += part.length;
     }
 
-    if (((msk + 1) & msk) !== 0)
+    // [Y=0x01] [M=0x02] [D=0x04]
+    // [H=0x08] [m=0x10] [s=0x20] [S=0x40]
+    if ((msk & (0x40 | 0x20)) === (0x40) || // Cannot have 'S' without 's'.
+        (msk & (0x20 | 0x10)) === (0x20) || // Cannot have 's' without 'm'.
+        (msk & (0x10 | 0x08)) === (0x10) || // Cannot have 'm' without 'H'.
+        (msk & (0x04 | 0x02)) === (0x04) || // Cannot have 'D' without 'M'.
+        (msk & (0x01 | 0x02)) === (0x01) || // Cannot have 'Y' without 'M'.
+        (msk & (0x05 | 0x02)) === (0x02) )  // Cannot have 'M' without either 'D' or 'Y'.
       throwRuntimeError("Invalid date format '" + format + "'.");
 
     insepected.parts = parts;
@@ -4065,14 +4205,22 @@ var DateFactory = {
 
     if (Y) {
       c.emit("if (Y < " + kYearMin + ") break;");
-      if (M) {
-        c.emit("if (M < 1 || M > 12) break;");
-        if (D) {
-          c.declareData("daysInMonth", DaysInMonth);
-          c.emit("if (D < 1 || D > daysInMonth[M - 1] +\n" +
-                 "    ((M === 2 && D === 29 && hasLeapYear && ((Y % 4 === 0 && Y % 100 !== 0) || (Y % 400 === 0))) ? 1 : 0))\n" +
-                 "  break;");
-        }
+    }
+
+    if (M) {
+      c.emit("if (M < 1 || M > 12) break;");
+      if (D) {
+        c.declareData("DaysInMonth", DaysInMonth);
+
+        // If `hasLeapYear` is true, but year is not part of the format we
+        // allow any 29th February.
+        var leapYearCheck = "hasLeapYear";
+        if (Y)
+          leapYearCheck += " && ((Y % 4 === 0 && Y % 100 !== 0) || (Y % 400 === 0))";
+
+        c.emit("if (D < 1 || D > DaysInMonth[M - 1] +\n" +
+               "    ((M === 2 && D === 29 && " + leapYearCheck + ") ? 1 : 0))\n" +
+               "  break;");
       }
     }
 
@@ -4081,8 +4229,19 @@ var DateFactory = {
       if (m) {
         c.emit("if (m > 59) break;");
         if (s) {
-          c.declareData("isLeapSecondDate", isLeapSecondDate);
-          c.emit("if (s > 59 && !(s === 60 && hasLeapSecond && isLeapSecondDate(Y, M, D))) break;");
+          var leapSecondCheck = "hasLeapSecond";
+          if (M && D) {
+            if (Y) {
+              c.declareData("isLeapSecondDate", isLeapSecondDate);
+              leapSecondCheck += " && isLeapSecondDate(Y, M, D)";
+            }
+            else {
+              // If `hasLeapSecond` is `true`, but year is not part of
+              // the format we allow any 30th/June and 31st/December.
+              leapSecondCheck += " && ((M === 6 && D == 30) || (M === 12 && D === 31))";
+            }
+          }
+          c.emit("if (s > 59 && !(s === 60 && " + leapSecondCheck + ")) break;");
         }
       }
     }
