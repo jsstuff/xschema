@@ -2560,8 +2560,18 @@ function BaseType() {}
 qdata.BaseType = qclass({
   $construct: BaseType,
 
-  name: null, // Field type ("array", "date", "color", ...), not strictly js type-name.
-  type: null, // JavaScript type ("array", "boolean", "number", "object", "string").
+  // Field type name and aliases ("array", "date", "color", ...), not strictly
+  // a javascript type name.
+  name: null,
+
+  // JavaScript type name:
+  //   - "any"
+  //   - "array"
+  //   - "boolean"
+  //   - "number"
+  //   - "object"
+  //   - "string"
+  type: null,
 
   // Configure and verify the definition `def` and throw `RuntimeError` if it's
   // not valid.
@@ -2685,6 +2695,50 @@ qdata.BaseType = qclass({
 });
 
 // ============================================================================
+// [SchemaType - Custom]
+// ============================================================================
+
+var CustomType = qclass({
+  $extend: BaseType,
+
+  // The most used type of all custom validators is "string". It can be omitted
+  type: "string",
+
+  compileType: function(c, vOut, v, def) {
+    var cond = this.fail
+      .replace("func", c.declareData(null, this.func))
+      .replace("@", v)
+      .replace(/\$[\w]+/g, function(key) {
+        var value = def[key];
+        if (value !== null && typeof value === "object")
+          value = c.declareData(null, value);
+        else
+          value = JSON.stringify(value !== undefined ? value : null);
+        return value;
+      });
+
+    if (def.$empty === true)
+      cond = v + " && " + cond;
+
+    c.failIf(cond, c.error(c.str(this.error)));
+    return v;
+  },
+
+  // Function to be used as validator.
+  func: null,
+
+  // Code to be used to check for a successful validation.
+  //   - "func" is replaced by the function call.
+  //   - "@" is replaced by the actual value.
+  //   - "$directive" is replaced by the directive.
+  fail: "!func(@)",
+
+  // Error code to be returned.
+  error: "InvalidCustomType"
+});
+qdata.CustomType = CustomType;
+
+// ============================================================================
 // [SchemaType - Any]
 // ============================================================================
 
@@ -2697,12 +2751,8 @@ function hasObjectType(arr) {
   return false;
 }
 
-function AnyType() {
-  BaseType.call(this);
-}
-qclass({
+var AnyType = qclass({
   $extend: BaseType,
-  $construct: AnyType,
 
   name: ["any"],
   type: "any",
@@ -2761,12 +2811,8 @@ qdata.addType(new AnyType());
 // [SchemaType - Bool]
 // ============================================================================
 
-function BooleanType() {
-  BaseType.call(this);
-}
-qclass({
+var BooleanType = qclass({
   $extend: BaseType,
-  $construct: BooleanType,
 
   name: ["boolean", "bool"],
   type: "boolean",
@@ -2821,12 +2867,8 @@ var NumberInfo = {
 };
 
 // TODO: $scale not honored.
-function NumberType() {
-  BaseType.call(this);
-}
-qclass({
+var NumberType = qclass({
   $extend: BaseType,
-  $construct: NumberType,
 
   name: setToArray(NumberInfo),
   type: "number",
@@ -2988,12 +3030,8 @@ function isText(s, loMask, hiMask) {
   return true;
 }
 
-function StringType() {
-  BaseType.call(this);
-}
-qclass({
+var StringType = qclass({
   $extend: BaseType,
-  $construct: StringType,
 
   name: ["string", "text", "textline", "text-line"],
   type: "string",
@@ -3087,12 +3125,8 @@ qdata.addType(new StringType());
 // [SchemaType - Char]
 // ============================================================================
 
-function CharType() {
-  BaseType.call(this);
-}
-qclass({
+var CharType = qclass({
   $extend: BaseType,
-  $construct: CharType,
 
   name: ["char"],
   type: "string",
@@ -3178,12 +3212,8 @@ function isBigInt(s, min, max) {
 }
 qutil.isBigInt = isBigInt;
 
-function BigIntType() {
-  BaseType.call(this);
-}
-qclass({
+var BigIntType = qclass({
   $extend: BaseType,
-  $construct: BigIntType,
 
   name: ["bigint"],
   type: "string",
@@ -3357,39 +3387,34 @@ function isColor(s, cssNames, extraNames) {
 }
 qutil.isColor = isColor;
 
-function ColorType() {
-  BaseType.call(this);
-}
-qclass({
+var ColorType = qclass({
   $extend: BaseType,
-  $construct: ColorType,
 
   name: ["color"],
   type: "string",
 
+  configure: function(def, env, args) {
+    var css = def.$cssNames;
+    var extra = def.$extraNames;
+
+    if (css != null) {
+      css = def.$cssNames;
+      if (typeof css !== "boolean")
+        throwRuntimeError("ColorType - Invalid '$cssNames' directive '" + css + "'.");
+    }
+
+    if (extra != null) {
+      extra = def.$extraNames;
+      if (typeof extra !== "object" || isArray(extra))
+        throwRuntimeError("ColorType - Invalid '$extraNames' directive '" + extra + "'.");
+    }
+  },
+
   compileType: function(c, vOut, v, def) {
-    var cssNames = true;
-    var extraNames = null;
+    var css = def.$cssNames != null ? def.$cssNames : true;
+    var extra = def.$extraNames != null ? c.declareData(null, def.$extraNames) : null;
 
-    if (def.$cssNames === false) {
-      cssNames = def.$cssNames;
-      if (typeof cssNames !== "boolean")
-        throwRuntimeError("Invalid $cssNames property '" + cssNames + "'.");
-    }
-
-    if (def.$extraNames != null) {
-      extraNames = def.$extraNames;
-      if (typeof extraNames !== "object" || isArray(extraNames))
-        throwRuntimeError("Invalid $extraNames property '" + extraNames + "'.");
-    }
-
-    var fn = c.declareData(null, isColor);
-    var extra = null;
-
-    if (extraNames)
-      extra = c.declareData(null, extraNames);
-
-    var cond = "!" + fn + "(" + v + ", " + cssNames + ", " + extra + ")";
+    var cond = "!" + c.declareData("isColor", isColor) + "(" + v + ", " + css + ", " + extra + ")";
     if (def.$empty === true)
       cond = v + " && " + cond;
 
@@ -3409,7 +3434,7 @@ function isCreditCard(s) {
 
   // Credit card number contains 13-19 digits.
   if (len < 13 || len > 19)
-    return false;
+    return "";
 
   // LUHN algorithm.
   var odd = 1 - (len & 1);
@@ -3432,30 +3457,20 @@ function isCreditCard(s) {
   }
 
   if (((sum + c) % 10) !== 0)
-    return false;
+    return "";
 
-  return true;
+  return "OK";
 }
 qutil.isCreditCard = isCreditCard;
 
-function CreditCardType() {
-  BaseType.call(this);
-}
-qclass({
-  $extend: BaseType,
-  $construct: CreditCardType,
-
+var CreditCardType = qclass({
+  $extend: CustomType,
   name: ["creditcard"],
-  type: "string",
 
-  compileType: function(c, vOut, v, def) {
-    var cond = "!" + c.declareData("isCreditCard", isCreditCard) + "(" + v + ")";
-    if (def.$empty === true)
-      cond = v + " && " + cond;
+  func: isCreditCard,
+  fail: "func(@) === \"\"",
 
-    c.failIf(cond, c.error(c.str("InvalidCreditCard")));
-    return v;
-  }
+  error: "InvalidCreditCard"
 });
 qdata.addType(new CreditCardType());
 
@@ -3511,18 +3526,28 @@ function isISBN(s) {
 }
 qutil.isISBN = isISBN;
 
-function ISBNType() {
-  BaseType.call(this);
-}
-qclass({
+var ISBNType = qclass({
   $extend: BaseType,
-  $construct: ISBNType,
 
   name: ["isbn"],
   type: "string",
 
+  configure: function(def, env, args) {
+    var fmt = def.$format;
+
+    if (fmt != null && (fmt !== "" && fmt !== "10" && fmt !== "13"))
+      throwRuntimeError("ISBNType - Invalid '$format' directive '" + fmt + "'.");
+  },
+
   compileType: function(c, vOut, v, def) {
-    var cond = c.declareData("isISBN", isISBN) + "(" + v + ") === 0";
+    var fmt = def.$format;
+    var cond = c.declareData("isISBN", isISBN) + "(" + v + ")";
+
+    if (fmt)
+      cond += " !== " + fmt;
+    else
+      cond += " === 0";
+
     if (def.$empty === true)
       cond = v + " && " + cond;
 
@@ -3563,28 +3588,27 @@ function isMAC(s, sep) {
 }
 qutil.isMAC = isMAC;
 
-function MACType() {
-  BaseType.call(this);
-}
-qclass({
+var MACType = qclass({
   $extend: BaseType,
-  $construct: MACType,
 
   name: ["mac"],
   type: "string",
 
+  configure: function(def, env, args) {
+    var sep = def.$separator;
+
+    if (sep != null && (typeof sep !== "string" || sep.length !== 1))
+      throwRuntimeError("MAC address separator has to be a single character.");
+  },
+
   compileType: function(c, vOut, v, def) {
-    var err = "InvalidMAC";
     var sep = def.$separator || ":";
-
-    if (sep.length !== 1)
-      throwRuntimeError("Invalid MAC address separator '" + sep + "'.");
-
     var cond = "!" + c.declareData(null, isMAC) + "(" + v + ", " + sep.charCodeAt(0) + ")";
+
     if (def.$empty === true)
       cond = v + " && " + cond;
 
-    c.failIf(cond, c.error(c.str(err)));
+    c.failIf(cond, c.error(c.str("InvalidMAC")));
     return v;
   }
 });
@@ -3798,7 +3822,7 @@ function isIPV6(s, allowPort) {
       return false;
   }
   else {
-    // Non-collapsed for requires exactly 8 components.
+    // Non-collapsed form requires exactly 8 components.
     if (numValues !== 8)
       return false;
   }
@@ -3807,12 +3831,8 @@ function isIPV6(s, allowPort) {
 }
 qutil.isIPV6 = isIPV6;
 
-function IPType() {
-  BaseType.call(this);
-}
-qclass({
+var IPType = qclass({
   $extend: BaseType,
-  $construct: IPType,
 
   name: ["ip", "ipv4", "ipv6"],
   type: "string",
@@ -3852,6 +3872,127 @@ qclass({
 qdata.addType(new IPType());
 
 // ============================================================================
+// [SchemaType - UUID]
+// ============================================================================
+
+// The `brackets` argument can be one of:
+//   `0`  - No brackets allowed    - will accept only "UUID".
+//   `1`  - Brackets are optional  - will accept either "UUID" or "{UUID}".
+//   `2`  - Brackets are mandatory - will accept only "{UUID}".
+//
+// The function will return
+//   `-1` - The string is a well formed UUID string, but the version check
+//          failed.
+//   `0`  - Invalid UUID string.
+//   `1-5`- UUID version 1 to 5 recognized.
+function isUUID(s, brackets) {
+  var i = 0;
+  var len = s.length;
+
+  // xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx
+  if (len !== 36) {
+    // Invalid UUID or "{UUID}" form not allowed.
+    if (len !== 38 || !brackets || s.charCodeAt(0) !== 123 || s.charCodeAt(--len) !== 125)
+      return 0;
+    i = 1;
+  }
+  else if (brackets > 1) {
+    // Invalid UUID or "UUID" form not allowed.
+    return 0;
+  }
+
+  // The first part is 8 characters (4 bytes) long.
+  var stop = i + 8;
+  var c, v;
+
+  for (;;) {
+    do {
+      c = s.charCodeAt(i);
+      // Number "0-9".
+      if (c < 48) return 0;
+      // Hex (Lowercased).
+      if (c > 57 && ((c |= 0x20) < 97 || c > 102)) return 0;
+    } while (++i !== stop);
+
+    if (i === len)
+      break;
+
+    c = s.charCodeAt(i);
+    if (c !== 45)
+      return 0;
+
+    // 1. The middle parts are 4 characters (2 bytes) long.
+    // 2. The last part is 12 characters (6 bytes) long.
+    stop = ++i + 12;
+    if (stop !== len)
+      stop -= 8;
+  }
+
+  v = s.charCodeAt(len - 22) - 48;
+  switch (v) {
+    case 1:
+    case 2:
+      return v;
+
+    case 3:
+    case 4:
+    case 5:
+      c = s.charCodeAt(len - 17);
+      if (c === 56 || c === 57) return v; // '8' or '9'.
+      c |= 0x20; // Lowercase.
+      if (c === 97 || c === 98) return v; // 'A' or 'B'.
+      break;
+  }
+
+  // Well formed UUID string, but has incorrect version.
+  return -1;
+}
+qutil.isUUID = isUUID;
+
+var UUIDType = qclass({
+  $extend: BaseType,
+
+  name: ["uuid"],
+  type: "string",
+
+  configure: function(def, env, args) {
+    var fmt = def.$format;
+    var ver = def.$version;
+
+    if (fmt != null && (fmt !== "any" && fmt !== "rfc" && fmt !== "windows"))
+      throwRuntimeError("UUIDType - Invalid '$format' directive '" + fmt + "'.");
+
+    if (ver != null && (typeof ver !== "string" || (ver && !/^[1-5]\+?$/.test(ver))))
+      throwRuntimeError("UUIDType - Invalid '$version' directive '" + ver + "'.");
+  },
+
+  compileType: function(c, vOut, v, def) {
+    var fmt = def.$format;
+    var ver = def.$version;
+
+    var brackets = 0;
+
+    if (fmt === "any") brackets = 1;
+    if (fmt === "windows") brackets = 2;
+
+    var cond = c.declareData("isUUID", isUUID) + "(" + v + ", " + brackets + ")";
+    var m;
+
+    if (ver && (m = ver.match(/^([1-5])(\+?)$/)))
+      cond += (m[2] ? " < " : " !== ") + m[1];
+    else
+      cond += " === 0";
+
+    if (def.$empty === true)
+      cond = v + " && " + cond;
+
+    c.failIf(cond, c.error(c.str("InvalidUUID")));
+    return v;
+  }
+});
+qdata.addType(new UUIDType());
+
+// ============================================================================
 // [SchemaType - DateTime]
 // ============================================================================
 
@@ -3863,7 +4004,7 @@ var DaysInMonth = [ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 //
 // Every year has it's own data that is stored in a single number in a form 0xXY,
 // where X represents a leap second in June-30 and Y represents Dec-31.
-var leapSecondDates = {
+var LeapSecondDates = {
   start: 1972,
   array: [
     /* 1972: */ 0x11, /* 1973: */ 0x01, /* 1974: */ 0x01, /* 1975: */ 0x01,
@@ -3879,7 +4020,7 @@ var leapSecondDates = {
     /* 2012: */ 0x10, /* 2013: */ 0x00, /* 2014: */ 0x00, /* 2015: */ 0x10
   ]
 };
-qutil.leapSecondDates = leapSecondDates;
+qutil.LeapSecondDates = LeapSecondDates;
 
 // \internal
 //
@@ -3956,7 +4097,7 @@ function isLeapSecondDate(year, month, date) {
   else
     return false;
 
-  var data = leapSecondDates;
+  var data = LeapSecondDates;
   var start = data.start;
   var array = data.array;
   var index = year - start;
@@ -4256,12 +4397,8 @@ var DateFactory = {
   }
 };
 
-function DateType() {
-  BaseType.call(this);
-}
-qclass({
+var DateTimeType = qclass({
   $extend: BaseType,
-  $construct: DateType,
 
   name: setToArray(DateFormats),
   type: "string",
@@ -4305,7 +4442,7 @@ qclass({
     return v;
   }
 });
-qdata.addType(new DateType());
+qdata.addType(new DateTimeType());
 
 // ============================================================================
 // [SchemaType - Object]
@@ -4330,12 +4467,8 @@ function addKeyToGroup(map, group, k) {
   }
 }
 
-function ObjectType() {
-  BaseType.call(this);
-}
-qclass({
+var ObjectType = qclass({
   $extend: BaseType,
-  $construct: ObjectType,
 
   name: ["object"],
   type: "object",
@@ -4622,12 +4755,8 @@ qdata.addType(new ObjectType());
 // [SchemaType - Map]
 // ============================================================================
 
-function MapType() {
-  BaseType.call(this);
-}
-qclass({
+var MapType = qclass({
   $extend: BaseType,
-  $construct: MapType,
 
   name: ["map"],
   type: "object",
@@ -4669,12 +4798,8 @@ qdata.addType(new MapType());
 // [SchemaType - Array]
 // ============================================================================
 
-function ArrayType() {
-  BaseType.call(this);
-}
-qclass({
+var ArrayType = qclass({
   $extend: BaseType,
-  $construct: ArrayType,
 
   name: ["array"],
   type: "array",

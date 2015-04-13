@@ -5,10 +5,14 @@ var assert = require("assert");
 var qclass = require("qclass");
 var qdata = require("./qdata");
 
-var isEqual = qdata.util.isEqual;
-var cloneDeep = qdata.util.cloneDeep;
+// ============================================================================
+// [Helpers]
+// ============================================================================
 
 var isArray = Array.isArray;
+
+var isEqual = qdata.util.isEqual;
+var cloneDeep = qdata.util.cloneDeep;
 
 function repeatString(s, n) {
   var result = "";
@@ -140,7 +144,15 @@ function assertThrow(fn) {
   throw new Error("Should have thrown exception.");
 }
 
+// ============================================================================
+// [Tests]
+// ============================================================================
+
 describe("QData", function() {
+  // --------------------------------------------------------------------------
+  // [Utilities]
+  // --------------------------------------------------------------------------
+
   it("should test utilities - isEqual", function() {
     // Basics.
     assert(isEqual(null     , null     ));
@@ -273,7 +285,11 @@ describe("QData", function() {
     assert(qdata.util.toCamelCase("THIS_IsSTRING")  === "thisIsString");
   });
 
-  it("should test enumeration", function() {
+  // --------------------------------------------------------------------------
+  // [Enum]
+  // --------------------------------------------------------------------------
+
+  it("should test enum", function() {
     // Enum - safe, unique, and sequential.
     var AnimalDef = {
       Horse: 0,
@@ -440,12 +456,20 @@ describe("QData", function() {
     assertThrow(function() { qdata.enum({ $reservedKey   : 1        }); });
   });
 
+  // --------------------------------------------------------------------------
+  // [Core]
+  // --------------------------------------------------------------------------
+
   it("should validate null and fail if undefined", function() {
     ["bool", "int", "number", "string", "text", "date", "datetime", "object"].forEach(function(type) {
       pass(null     , qdata.schema({ $type: type, $null: true      }));
       fail(undefined, qdata.schema({ $type: type, $null: true      }));
     });
   });
+
+  // --------------------------------------------------------------------------
+  // [SchemaType - Any]
+  // --------------------------------------------------------------------------
 
   it("should validate any - anything", function() {
     var def = qdata.schema({ $type: "any" });
@@ -467,6 +491,10 @@ describe("QData", function() {
     failData.forEach(function(value) { fail(value, def); });
   });
 
+  // --------------------------------------------------------------------------
+  // [SchemaType - Bool]
+  // --------------------------------------------------------------------------
+
   it("should validate bool", function() {
     var def = qdata.schema({ $type: "bool" });
 
@@ -476,6 +504,10 @@ describe("QData", function() {
     passData.forEach(function(value) { pass(value, def); });
     failData.forEach(function(value) { fail(value, def); });
   });
+
+  // --------------------------------------------------------------------------
+  // [SchemaType - Number]
+  // --------------------------------------------------------------------------
 
   it("should validate number - int", function() {
     var def = qdata.schema({ $type: "int" });
@@ -632,6 +664,10 @@ describe("QData", function() {
     assertThrow(function() { qdata.schema({ $type: "numeric(invalid)" }); });
   });
 
+  // --------------------------------------------------------------------------
+  // [SchemaType - Char]
+  // --------------------------------------------------------------------------
+
   it("should validate char", function() {
     pass(""  , qdata.schema({ $type: "char", $empty: true }));
     pass("a" , qdata.schema({ $type: "char" }));
@@ -649,6 +685,10 @@ describe("QData", function() {
     fail("ab", qdata.schema({ $type: "char" }));
     fail("bc", qdata.schema({ $type: "char" }));
   });
+
+  // --------------------------------------------------------------------------
+  // [SchemaType - String]
+  // --------------------------------------------------------------------------
 
   it("should validate string", function() {
     pass("\x00"  , qdata.schema({ $type: "string" }));
@@ -780,6 +820,10 @@ describe("QData", function() {
     });
   });
 
+  // --------------------------------------------------------------------------
+  // [SchemaType - BigInt]
+  // --------------------------------------------------------------------------
+
   it("should validate bigint", function() {
     var def = qdata.schema({ $type: "bigint" });
 
@@ -873,6 +917,10 @@ describe("QData", function() {
     fail("1234", qdata.schema({ $type: "bigint", $allowed: [] }));
   });
 
+  // --------------------------------------------------------------------------
+  // [SchemaType - Color]
+  // --------------------------------------------------------------------------
+
   it("should validate color - #XXX and #XXXXXX", function() {
     var def = qdata.schema({ $type: "color" });
 
@@ -953,6 +1001,10 @@ describe("QData", function() {
     pass("currentColor", def);
     pass("CURRENTCOLOR", def);
   });
+
+  // --------------------------------------------------------------------------
+  // [SchemaType - CreditCard]
+  // --------------------------------------------------------------------------
 
   it("should validate creditcard", function() {
     var def = qdata.schema({ $type: "creditcard" });
@@ -1070,9 +1122,11 @@ describe("QData", function() {
     });
   });
 
-  it("should validate isbn", function() {
-    var def = qdata.schema({ $type: "isbn" });
+  // --------------------------------------------------------------------------
+  // [SchemaType - ISBN]
+  // --------------------------------------------------------------------------
 
+  it("should validate isbn", function() {
     var passData = [
       "1617290858",
       "3423214120",
@@ -1083,24 +1137,45 @@ describe("QData", function() {
     ];
 
     var failData = [
+      "invalid",
+
+      " 1617290858",
+      "1617290858 ",
+
       "1617290859",
       "3423215120",
       "344101319X",
+
+      " 9783836221191",
+      "9783836221191 ",
 
       "9783836221190",
       "9783873113685"
     ];
 
     passData.forEach(function(data) {
-      pass(data, def);
+      var correctFormat = String(data.length);
+      var invalidFormat = correctFormat === "10" ? "13" : "10";
+
+      pass(data, qdata.schema({ $type: "isbn" }));
+      pass(data, qdata.schema({ $type: "isbn" }));
+
+      pass(data, qdata.schema({ $type: "isbn", $format: correctFormat }));
+      fail(data, qdata.schema({ $type: "isbn", $format: invalidFormat }));
     });
 
     failData.forEach(function(data) {
-      fail(data, def);
+      fail(data, qdata.schema({ $type: "isbn" }));
+      fail(data, qdata.schema({ $type: "isbn", $format: "10" }));
+      fail(data, qdata.schema({ $type: "isbn", $format: "13" }));
     });
   });
 
-  it("should validate net - mac address", function() {
+  // --------------------------------------------------------------------------
+  // [SchemaType - MAC]
+  // --------------------------------------------------------------------------
+
+  it("should validate mac", function() {
     var MAC  = qdata.schema({ $type: "mac" });
     var MACd = qdata.schema({ $type: "mac", $separator: "-" });
 
@@ -1150,7 +1225,11 @@ describe("QData", function() {
     fail("12-34:56:78:90:AB" , MAC);
   });
 
-  it("should validate net - ipv4 address", function() {
+  // --------------------------------------------------------------------------
+  // [SchemaType - IP]
+  // --------------------------------------------------------------------------
+
+  it("should validate ip - ipv4", function() {
     var IPV4 = qdata.schema({
       $type: "ipv4"
     });
@@ -1222,7 +1301,7 @@ describe("QData", function() {
     fail("1000.1.1.1"     , IPV4);
   });
 
-  it("should validate net - ipv6 address", function() {
+  it("should validate ip - ipv6", function() {
     var IPV6 = qdata.schema({
       $type: "ipv6"
     });
@@ -1329,7 +1408,89 @@ describe("QData", function() {
     fail(":::1:2:3:4:5:6"                           , IPV6);
   });
 
-  it("should validate date - date", function() {
+  // --------------------------------------------------------------------------
+  // [SchemaType - UUID]
+  // --------------------------------------------------------------------------
+
+  it("should validate uuid", function() {
+    var passData = [
+      "123FABCD-12AF-398F-812F-F2AFFF9CF4F3",
+      "12F4ABCD-12FB-39FB-91F3-9FAF3F9C1FF3",
+      "1F34ABCD-1FAB-3F8B-AF23-92FF3FFC14F3",
+      "F234ABCD-F2AB-398F-B12F-92AF3F9F14FF",
+
+      "123FABCD-12AF-498F-812F-F2AFFF9CF4F3",
+      "12F4ABCD-12FB-49FB-91F3-9FAF3F9C1FF3",
+      "1F34ABCD-1FAB-4F8B-AF23-92FF3FFC14F3",
+      "F234ABCD-F2AB-498F-B12F-92AF3F9F14FF",
+
+      "123FABCD-12AF-598F-812F-F2AFFF9CF4F3",
+      "12F4ABCD-12FB-59FB-91F3-9FAF3F9C1FF3",
+      "1F34ABCD-1FAB-5F8B-AF23-92FF3FFC14F3",
+      "F234ABCD-F2AB-598F-B12F-92AF3F9F14FF"
+    ];
+
+    var failData = [
+      "invalid",
+
+      "X23FABCD-12AF-498F-812F-F2AFFF9CF4F3",
+      "123FABCD-X2AF-498F-812F-F2AFFF9CF4F3",
+      "123FABCD-12AF-X98F-812F-F2AFFF9CF4F3",
+      "123FABCD-12AF-498F-X12F-F2AFFF9CF4F3",
+      "123FABCD-12AF-498F-812F-X2AFFF9CF4F3",
+
+      "123FABCD12AF-398F-812F-F2AFFF9CF4F3",
+      "12F4ABCD-12FB39FB-91F3-9FAF3F9C1FF3",
+      "1F34ABCD-1FAB-3F8BAF23-92FF3FFC14F3",
+      "F234ABCD-F2AB-398F-B12F92AF3F9F14FF",
+
+      "123FABCD--12AF-398F-812F-F2AFFF9CF4F3",
+      "12F4ABCD-12FB--39FB-91F3-9FAF3F9C1FF3",
+      "1F34ABCD-1FAB-3F8B--AF23-92FF3FFC14F3",
+      "F234ABCD-F2AB-398F-B12F--92AF3F9F14FF",
+
+      "-123FABCD-12AF-398F-812F-F2AFFF9CF4F3",
+      "12F4-ABCD-12FB-39FB-91F3-9FAF3F9C1FF3",
+      "1F34ABCD-1FAB-3F8B-AF23-92F-F3FFC14F3",
+      "F234ABCD-F2AB-398F-B12F-92AF3F9F14-FF",
+
+      " 123FABCD-12AF-598F-812F-F2AFFF9CF4F3",
+      "123FABCD-12AF-598F-812F-F2AFFF9CF4F3 ",
+
+      "{123FABCD-12AF-598F-812F-F2AFFF9CF4F3",
+      "123FABCD-12AF-598F-812F-F2AFFF9CF4F3}",
+
+      "(123FABCD-12AF-598F-812F-F2AFFF9CF4F3)",
+      "[123FABCD-12AF-598F-812F-F2AFFF9CF4F3]"
+    ];
+
+    passData.forEach(function(value) {
+      var version = value.charAt(14);
+
+      pass(value, qdata.schema({ $type: "uuid" }));
+      pass(value, qdata.schema({ $type: "uuid", $version: version       }));
+      pass(value, qdata.schema({ $type: "uuid", $version: version + "+" }));
+
+      pass("{" + value + "}", qdata.schema({ $type: "uuid", $format: "any"      }));
+      pass("{" + value + "}", qdata.schema({ $type: "uuid", $format: "windows"  }));
+
+      fail("{" + value + "}", qdata.schema({ $type: "uuid", $format: null       }));
+      fail("{" + value + "}", qdata.schema({ $type: "uuid", $format: "rfc"      }));
+    });
+
+    failData.forEach(function(value) {
+      fail(value, qdata.schema({ $type: "uuid" }));
+      fail(value, qdata.schema({ $type: "uuid", $format: "any"     }));
+      fail(value, qdata.schema({ $type: "uuid", $format: "rfc"     }));
+      fail(value, qdata.schema({ $type: "uuid", $format: "windows" }));
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // [SchemaType - DateTime]
+  // --------------------------------------------------------------------------
+
+  it("should validate datetime - date", function() {
     var YYYY_MM    = qdata.schema({ $type: "date", $format: "YYYY-MM" });
     var YYYY_MM_DD = qdata.schema({ $type: "date" });
 
@@ -1356,7 +1517,7 @@ describe("QData", function() {
     fail("1999-01-01 ", YYYY_MM_DD);
   });
 
-  it("should validate date - time", function() {
+  it("should validate datetime - time", function() {
     var HH_mm       = qdata.schema({ $type: "time", $format: "HH:mm" });
     var HH_mm_ss    = qdata.schema({ $type: "time" });
 
@@ -1372,7 +1533,7 @@ describe("QData", function() {
     fail("invalid" , HH_mm_ss);
   });
 
-  it("should validate date - datetime", function() {
+  it("should validate datetime - datetime", function() {
     var YYYY_MM_DD_HH_mm_ss = qdata.schema({ $type: "datetime"    });
     var YYYY_MM_DD_HH_mm_ms = qdata.schema({ $type: "datetime-ms" });
     var YYYY_MM_DD_HH_mm_us = qdata.schema({ $type: "datetime-us" });
@@ -1394,7 +1555,7 @@ describe("QData", function() {
     fail("1968-08-20 23:59:60.000000", YYYY_MM_DD_HH_mm_us);
   });
 
-  it("should validate date - leap year handling", function() {
+  it("should validate datetime - leap year handling", function() {
     var YYYY_MM_DD = qdata.schema({
       $type: "date"
     });
@@ -1425,7 +1586,7 @@ describe("QData", function() {
     fail("2100-02-29", YYYY_MM_DD);
   });
 
-  it("should validate date - leap second handling", function() {
+  it("should validate datetime - leap second handling", function() {
     var YYYY_MM_DD_HH_mm_ss = qdata.schema({
       $type: "datetime",
       $leapSecond: true
@@ -1484,7 +1645,7 @@ describe("QData", function() {
     fail("11-30 23:59:60", MM_DD_HH_mm_ss);
   });
 
-  it("should validate date - valid custom format YYYYMMDD", function() {
+  it("should validate datetime - valid custom format YYYYMMDD", function() {
     var def = qdata.schema({ $type: "date", $format: "YYYYMMDD" });
 
     pass("19990101", def);
@@ -1497,7 +1658,7 @@ describe("QData", function() {
     fail("20110101 ", def);
   });
 
-  it("should validate date - valid custom format YYYYMMDD HHmmss", function() {
+  it("should validate datetime - valid custom format YYYYMMDD HHmmss", function() {
     var def = qdata.schema({ $type: "date", $format: "YYYYMMDD HHmmss" });
 
     pass("19990101 013030" , def);
@@ -1513,7 +1674,7 @@ describe("QData", function() {
     fail("20110101 013030 ", def);
   });
 
-  it("should validate date - valid custom format D.M.Y", function() {
+  it("should validate datetime - valid custom format D.M.Y", function() {
     var def = qdata.schema({ $type: "date", $format: "D.M.Y" });
 
     pass("1.1.455"    , def);
@@ -1525,7 +1686,7 @@ describe("QData", function() {
     fail("20.13.10000", def);
   });
 
-  it("should validate date - valid custom format D.M.Y H:m:s", function() {
+  it("should validate datetime - valid custom format D.M.Y H:m:s", function() {
     var def = qdata.schema({ $type: "date", $format: "D.M.Y H:m:s" });
 
     pass("1.1.455 1:30:30"    , def);
@@ -1540,7 +1701,7 @@ describe("QData", function() {
     fail("20.13.10000 1:30:30", def);
   });
 
-  it("should validate date - invalid custom format", function() {
+  it("should validate datetime - invalid custom format", function() {
     assertThrow(function() { qdata.schema({ $type: "date", $format: "YD"            }); });
     assertThrow(function() { qdata.schema({ $type: "date", $format: "YM"            }); });
     assertThrow(function() { qdata.schema({ $type: "date", $format: "YMD"           }); });
@@ -1549,6 +1710,10 @@ describe("QData", function() {
     assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-MM-DD mm" }); });
     assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-MM-DD ss" }); });
   });
+
+  // --------------------------------------------------------------------------
+  // [SchemaType - Object]
+  // --------------------------------------------------------------------------
 
   it("should validate object - empty object", function() {
     var def = qdata.schema({});
@@ -1737,6 +1902,10 @@ describe("QData", function() {
     fail({ b: 1234, nested: { d: ["qqq"] } }, def, qdata.kDeltaMode);
   });
 
+  // --------------------------------------------------------------------------
+  // [SchemaType - Map]
+  // --------------------------------------------------------------------------
+
   it("should validate map - any", function() {
     var def0 = qdata.schema({
       $type: "map",
@@ -1797,6 +1966,10 @@ describe("QData", function() {
     pass({ a: "Hi", b: "Bye" }, def1);
     fail({ a: "Hi", b: null  }, def1);
   });
+
+  // --------------------------------------------------------------------------
+  // [SchemaType - Array]
+  // --------------------------------------------------------------------------
 
   it("should validate array - nested values", function() {
     var specs = [
@@ -1890,6 +2063,10 @@ describe("QData", function() {
     fail([1234567], defMin2);
     fail([0, 1, 2], defMax2);
   });
+
+  // --------------------------------------------------------------------------
+  // [SchemaType - Shortcuts]
+  // --------------------------------------------------------------------------
 
   it("should handle shortcut '?'", function() {
     var def = qdata.schema({
@@ -2001,6 +2178,10 @@ describe("QData", function() {
     assertThrow(function() { qdata.schema({ $type: "int??[]?" }); });
   });
 
+  // --------------------------------------------------------------------------
+  // [Directive - $group]
+  // --------------------------------------------------------------------------
+
   it("should enrich object - properties having $group", function() {
     var def0 = qdata.schema({
       id         : { $type: "int"  },
@@ -2033,6 +2214,10 @@ describe("QData", function() {
       more: ["title", "description"]
     });
   });
+
+  // --------------------------------------------------------------------------
+  // [Directive - $pk / $fk]
+  // --------------------------------------------------------------------------
 
   it("should enrich object - properties having $pk and $fk", function() {
     var def0 = qdata.schema({
@@ -2093,6 +2278,10 @@ describe("QData", function() {
       sortedArrayOfArrays(def3.$uniqueArray),
       sortedArrayOfArrays([["a", "c"], ["a", "d"], ["b"]]));
   });
+
+  // --------------------------------------------------------------------------
+  // [Extend]
+  // --------------------------------------------------------------------------
 
   it("should extend schema - use as nested (directly)", function() {
     var nestedDef = qdata.schema({
@@ -2206,6 +2395,10 @@ describe("QData", function() {
     fail({ a: true, b: 1234             }, def1);
     fail({          b: 1234             }, def1);
   });
+
+  // --------------------------------------------------------------------------
+  // [Access]
+  // --------------------------------------------------------------------------
 
   it("should validate access rights - write one", function() {
     var def = qdata.schema({
@@ -2384,6 +2577,10 @@ describe("QData", function() {
       assertThrow(function() { qdata.schema({ field: { $type: "int", $w: access } }); });
     });
   });
+
+  // --------------------------------------------------------------------------
+  // [...]
+  // --------------------------------------------------------------------------
 
   it("should accumulate errors", function() {
     var def = qdata.schema({
