@@ -1856,7 +1856,7 @@ qclass({
 
     // Helpers.
     var k, v, o;     // Key/Value/OverriddenValue.
-    var r, w, group; // Read/Write/Group.
+    var r, w, g; // Read/Write/Group.
 
     // Process `defType`:
     //   1. Check if the type has arguments:
@@ -1918,8 +1918,8 @@ qclass({
       r = def.$r || def.$a || null;
       w = def.$w || def.$a || null;
 
-      // Handle "$group".
-      group = def.$group;
+      // Handle "$g".
+      g = def.$g;
     }
     else {
       // Handle the override basics here. Be pedantic as it's better to catch
@@ -1947,24 +1947,24 @@ qclass({
       if (hasOwn.call(override, "$r") || has$a) r = override.$r || override.$a || null;
       if (hasOwn.call(override, "$w") || has$a) w = override.$w || override.$a || null;
 
-      // Override "$group".
-      group = def.$group;
-      if (hasOwn.call(override, "$group"))
-        group = override.$group;
+      // Override "$g".
+      g = def.$g;
+      if (hasOwn.call(override, "$g"))
+        g = override.$g;
     }
 
-    // Undefined/Empty string is normalized to "default". Nulls are kept.
-    if (group === undefined || group === "")
-      group = "default";
+    // Undefined/Empty string is normalized to "@default". Nulls are kept.
+    if (g === undefined || g === "")
+      g = "@default";
 
     // Create the field object. Until now everything stored here is handled,
     // overrides included.
     var obj = {
       $type     : defType,
-      $group    : group,
       $data     : null,
       $null     : nullable,
       $optional : optional,
+      $g        : g,
       $r        : r,
       $w        : w,
       $rExp     : this.rAccess.process(r, parent ? parent.$rExp : null),
@@ -2363,7 +2363,7 @@ qdata.shortcutDirectives = {
   $r          : true, // Read access.
   $w          : true, // Write access,
   $a          : true, // Read/write access.
-  $group      : true, // Group.
+  $g          : true, // Group.
   $unique     : true, // Unique specifier.
   $artificial : true, // Artificial directive always apply to the root object.
   $optional   : true  // Doesn't make sense, the array optional / not.
@@ -4486,12 +4486,11 @@ var ObjectType = qclass({
     // can add a property, for example, which should still be expanded).
     var properties = def.$data;
 
-    var groupMap = {};
-
     var uniqueMap = [];
     var uniqueArray = [];
     var uniqueGroup = {};
 
+    var groupMap = {};
     var pkMap = {};
     var fkMap = {};
     var idMap = {};
@@ -4513,10 +4512,10 @@ var ObjectType = qclass({
         idMap[k] = true;
       }
 
-      // Handle '$group' directive.
-      var group = property.$group;
-      if (group)
-        addKeyToGroup(groupMap, String(group), k);
+      // Handle '$g' directive.
+      var g = property.$g;
+      if (g)
+        addKeyToGroup(groupMap, String(g), k);
 
       // Handle '$unique' directive.
       var unique = property.$unique;

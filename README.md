@@ -45,21 +45,21 @@ var PersonSchema = qdata.schema({
 });
 ```
 
-The example above defines a schema called `PersonSchema`, which is an `object` holding 8 properties of various types specified by `$type` directive. Careful readers have noticed that the root object and nested `address` object have omitted the `$type` directive. QData automatically uses `object` if no `$type` is provided, which allows to remove some verbosity in the schema declaration. Other directives like `$min`, `$max`, `$leapYear`, ..., are used to configure the type itself.
+The example above defines a schema called `PersonSchema`, which is an `object` holding properties of various types specified by `$type` directive. Careful readers have noticed that the root object and nested `address` object have omitted the `$type` directive. QData automatically uses `object` if no `$type` is provided, which allows to remove some verbosity in the schema declaration. Other directives like `$min`, `$max`, `$leapYear`, ..., are used to configure the type itself.
 
-Confused by `string` vs `text` type? Well, `string` is _any_ string in JavaScript in contrast to `text`, which is a string that doesn't contain `\u0000-\u0008`, `\u000B-\u000C`, and `\u000E-\u001F` characters. These characters have special meaning and in many cases their presence in user data is unwanted and may be dangerous.
+Confused by `string` vs `text` type? Well, `string` is _any_ string in JavaScript in contrast to `text`, which is a string that doesn't contain `\u0000-\u0008`, `\u000B-\u000C`, and `\u000E-\u001F` characters. These characters have special meaning and in many cases their presence in your application's data is unwanted and may be dangerous.
 
 Confused by `[]` suffix in `keywords` member? That is a QData shortcut that defines an array, which can also be defined by using `array` type like this:
 
 ```js
-var KeywordsSchemaLong = qdata.schema({
+var KeywordsSchema = qdata.schema({
   $type: "array",
   $data: {
     $type: "text"
   }
 });
 
-var KeywordsSchemaShort = qdata.schema({
+var KeywordsSchema = qdata.schema({
   $type: "text[]"
 });
 ```
@@ -77,8 +77,24 @@ QData comes with two base concepts that are used to work with data.
   - **`qdata.test(...)`** is a concept used to test whether the given data conforms to the schema, but without using sanitizers.
 
 
-Data Processing Modes
----------------------
+Data Processing Options
+-----------------------
+
+QData has several data processing options that allow to use a single schema for multiple purposes. The default `qdata.kNoOptions` specifies no options and the schema is processed in a default way (i.e. strict mode).
+
+The additional options are used to control:
+
+  - **Extraction Mode** - Options `qdata.kExtractTop`, `qdata.kExtractNested`, and `qdata.kExtractTop` are used to control data extraction. Data extraction means extracting only specified properties from objects that can contain more properties that are not defined in the schema. It's useful when extracting parameters from a request body or to extract data that is known by schema, but without failing in cases that there is something that is not not known.
+
+  - **Delta Mode** - Option `qdata.kDeltaMode` can be used to force nearly all properties to be optional. This is used in cases that you allow delta updates, but you still require some properties that specify DB keys to be present.
+
+  - **Error Accumulation** - Option `qdata.kAccumulateErrors` is used in case that you want to get all errors that happened during data processing, but just the first one.
+
+Data extraction options:
+
+  - **`qdata.kExtractTop`** - Extract from top-level object only.
+  - **`qdata.kExtractNested`** - Extract from nested object(s) only.
+  - **`qdata.kExtractAll`** - Combination of `qdata.kExtractTop` and `qdata.kExtractNested`, which results in extraction from any `"object"`.
 
 TODO
 
@@ -199,9 +215,9 @@ Directive Name           | Value      | Default | Description
 String and Text
 ---------------
 
-String `$type` is specified as `string` or `text`. If type `string` is specified any JavaScript string passes, however, if `text` type is specified the validator only passes if the string doesn't contain `\u0000-\u0008`, `\u000B-\u000C`, and `\u000E-\u001F` characters. Use `text` to disallow these characters that have special meaning and are in most cases unwanted (especially the `\u0000` character).
+String `$type` is specified as `string`, `text`, or `textline`. If type `string` is specified any JavaScript string passes, however, if `text` type is specified the validator only passes if the string doesn't contain `\u0000-\u0008`, `\u000B-\u000C`, and `\u000E-\u001F` characters. Use `text` to disallow these characters that have special meaning and are in most cases unwanted (especially the `\u0000` character). The `textline` type restricts text from using line and paragraph delimiter characters.
 
-String type directives:
+String/Text type directives:
 
 Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
@@ -247,6 +263,33 @@ Directive Name           | Value      | Default | Description
 `$extraNames`            | `set`      | `null`  | A set (dictionary having `key: true`) that contains extra color names that are allowed
 
 
+Credit Card
+-----------
+
+Credit card `$type` is specified as `creditcard`. It checks whether the string is a valid credit card number by using a LUHN algorithm. The validator doesn't accept dashes or any other characters used as separators.
+
+Credit card type directives:
+
+Directive Name           | Value      | Default | Description
+:----------------------- | :--------- | :------ | :-----------------------------
+`$null`                  | `bool`     | `false` | Specifies if the value can be `null`
+`$empty`                 | `bool`     | `false` | Specifies if the string can be an empty
+
+
+ISBN
+----
+
+ISBN `$type` is specified as `isbn`. It checks whether the string is a valid ISBN number.
+
+ISBN type directives:
+
+Directive Name           | Value      | Default | Description
+:----------------------- | :--------- | :------ | :-----------------------------
+`$null`                  | `bool`     | `false` | Specifies if the value can be `null`
+`$empty`                 | `bool`     | `false` | Specifies if the string can be an empty
+`$format`                | `string`   | `""`    | Specifies the ISBN format to accept. The default value `null` (or alternatively `""`) is used to accept any valid ISBN number. To restrict to a particular format use `"10"` or `"13"`.
+
+
 MAC Address
 -----------
 
@@ -275,12 +318,27 @@ Directive Name           | Value      | Default | Description
 `$allowPort`             | `bool`     | `false` | Specifies id port is also allowed
 
 
+UUID
+----
+
+UUID `$type` is specified as `uuid`. UUID validator is used to check whether the string contains a valid UUID number, that can be optionally surrounded by curly braces.
+
+UUID type directives:
+
+Directive Name           | Value      | Default | Description
+:----------------------- | :--------- | :------ | :-----------------------------
+`$null`                  | `bool`     | `false` | Specifies if the value can be `null`
+`$empty`                 | `bool`     | `false` | Specifies if the string can be an empty
+`$format`                | `string`   | `"rfc"` | Specifies the UUID format. It can be `"rfc"` to accept UUIDs in a `"XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"` format, `"windows"` to accept UUIDs surrounded by curly brackets, or `"any"` to accept either RFC or WINDOWS format. If not specified or `null` `"rfc"` format is used.
+`$version`               | `string`   | `null`  | Specifies the version of UUID to accept. Version is a string from `"1"` to `"5"`. It can contain an optional `"+"` sign (like `"3+"`) to accept UUIDs of a particular version and all newer.
+
+
 DateTime
 --------
 
 DateTime `$type` is specified as `date`, `datetime`, `datetime-ms`, and `datetime-us`. It's a formatted string that contains date, time, or date+time components. QData validator extracts these components and validates whether they are correct. Leap years and leap seconds support is built-in and can be configured through directives.
 
-Default date+time formats:
+DateTime defaults:
 
 Date Type                | Format                       | Description
 :----------------------- | :--------------------------- | :---------------------
@@ -289,7 +347,7 @@ Date Type                | Format                       | Description
 `datetime-ms`            | `YYYY-MM-DD HH:mm:ss.SSS`    | Date+time+ms
 `datetime-us`            | `YYYY-MM-DD HH:mm:ss.SSSSSS` | Date+time+μs
 
-Date+time format options:
+DateTime format options:
 
 Format Option            |Fixed Length| Range           | Description
 :----------------------- | :----------| :-------------- | :---------------------
@@ -325,10 +383,48 @@ Map
 ---
 
 
+Map `$type` is specified as `map`. It's an object where all keys are strings and all values have the same type specified by `$data` directive.
+
+Map type directives:
+
+Directive Name           | Value      | Default | Description
+:----------------------- | :--------- | :------ | :-----------------------------
+`$null`                  | `bool`     | `false` | Specifies if the map can be `null`
+`$data`                  | `object`   | `null`  | Specifies the schema of all map values.
+
 Object
 ------
 
-Object `$type` is specified as `object` or can be omitted completely.
+Object `$type` is specified as `object` or can be omitted completely. Object is a special type that allows to specify its members by using unprefixed keys (keys that don't start with `"$"`). For example the following specifies an object that has mandatory members (keys) `"a"` and `"b"`:
+
+```js
+var Schema = qdata({
+  a: { $type: "int" },
+  b: { $type: "int", $optional: true }
+});
+
+// These will pass.
+qdata.test({ a: 1       }, Schema);
+qdata.test({ a: 1, b: 2 }, Schema);
+```
+
+Object's directives and members can be mixed in the same definition, for example the following schema defines an object that has a nested object, which is optional:
+
+```js
+var Schema = qdata({
+  nested: {
+    $optional: true,
+
+    a: { $type: "int" },
+    b: { $type: "int", $optional: true }
+  }
+});
+
+// These will pass.
+qdata.test({                        }, Schema);
+qdata.test({ nested: { a: 1       } }, Schema);
+qdata.test({ nested: { a: 1, b: 2 } }, Schema);
+```
 
 TODO
 
@@ -344,7 +440,15 @@ Array
 
 Array `$type` is specified as `array` or by `[]` suffix (shortcut).
 
-TODO
+Array type directives:
+
+Directive Name           | Value      | Default | Description
+:----------------------- | :--------- | :------ | :-----------------------------
+`$null`                  | `bool`     | `false` | Specifies if the array can be `null`
+`$length`                | `int`      | `null`  | Specifies an exact length of the array.
+`$minLength`             | `int`      | `null`  | Specifies the minimum length of the array.
+`$maxLength`             | `int`      | `null`  | Specifies the maximum length of the array.
+`$data`                  | `object`   | `null`  | Specifies the schema of all array items.
 
 
 Custom Types

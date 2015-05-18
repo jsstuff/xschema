@@ -2179,39 +2179,39 @@ describe("QData", function() {
   });
 
   // --------------------------------------------------------------------------
-  // [Directive - $group]
+  // [Directive - $g]
   // --------------------------------------------------------------------------
 
-  it("should enrich object - properties having $group", function() {
+  it("should enrich object - properties having $g", function() {
     var def0 = qdata.schema({
-      id         : { $type: "int"  },
-      type       : { $type: "int"  },
-      flags      : { $type: "int"  },
+      id         : { $type: "int" },
+      type       : { $type: "int" },
+      flags      : { $type: "int" },
 
-      title      : { $type: "text", $group: "" }, // Normalized to "default".
-      description: { $type: "text", $group: "" },
-      metadata   : { $type: "text", $group: undefined }
+      title      : { $type: "text", $g: "" }, // Normalized to "@default".
+      description: { $type: "text", $g: "" },
+      metadata   : { $type: "text", $g: undefined }
     });
 
-    // If group is not specified everything goes to a "default" group.
+    // If group is not specified everything goes to a "@default" group.
     assert.deepEqual(def0.$groupMap, {
-      default: ["id", "type", "flags", "title", "description", "metadata"]
+      "@default": ["id", "type", "flags", "title", "description", "metadata"]
     });
 
     var def1 = qdata.schema({
-      id         : { $type: "int" , $group: "info" },
-      type       : { $type: "int" , $group: "info" },
-      flags      : { $type: "int" , $group: "info" },
+      id         : { $type: "int" , $g: "@info" },
+      type       : { $type: "int" , $g: "@info" },
+      flags      : { $type: "int" , $g: "@info" },
 
-      title      : { $type: "text", $group: "more" },
-      description: { $type: "text", $group: "more" },
-      metadata   : { $type: "text", $group: null } // Won't be added to $groupMap.
+      title      : { $type: "text", $g: "@more" },
+      description: { $type: "text", $g: "@more" },
+      metadata   : { $type: "text", $g: null } // Won't be added to $groupMap.
     });
 
     // Handle groups specified/skipped.
     assert.deepEqual(def1.$groupMap, {
-      info: ["id", "type", "flags"],
-      more: ["title", "description"]
+      "@info": ["id", "type", "flags"],
+      "@more": ["title", "description"]
     });
   });
 
