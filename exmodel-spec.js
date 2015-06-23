@@ -1,18 +1,18 @@
-// QData <https://github.com/jshq/qdata>
+// exmodel.js <https://github.com/exceptionaljs/exmodel>
 "use strict";
 
 var assert = require("assert");
-var qclass = require("qclass");
-var qdata = require("./qdata");
+var exclass = require("exclass");
+var exmodel = require("./exmodel");
 
 // ============================================================================
 // [Helpers]
 // ============================================================================
 
 var isArray = Array.isArray;
-
-var isEqual = qdata.util.isEqual;
-var cloneDeep = qdata.util.cloneDeep;
+var isEqual = exmodel.util.isEqual;
+var cloneDeep = exmodel.util.cloneDeep;
+var printableSchema = exmodel.printableSchema;
 
 function repeatString(s, n) {
   var result = "";
@@ -34,24 +34,22 @@ function sortedArrayOfArrays(arr) {
   return arr;
 }
 
-var printableSchema = qdata.printableSchema;
-
 function printableOptions(options) {
   var arr = [];
 
-  if ((options & qdata.kExtractAll) === qdata.kExtractTop)
+  if ((options & exmodel.kExtractAll) === exmodel.kExtractTop)
     arr.push("kExtractTop");
 
-  if ((options & qdata.kExtractAll) === qdata.kExtractNested)
+  if ((options & exmodel.kExtractAll) === exmodel.kExtractNested)
     arr.push("kExtractNested");
 
-  if ((options & qdata.kExtractAll) === qdata.kExtractAll)
+  if ((options & exmodel.kExtractAll) === exmodel.kExtractAll)
     arr.push("kExtractAll");
 
-  if ((options & qdata.kDeltaMode) !== 0)
+  if ((options & exmodel.kDeltaMode) !== 0)
     arr.push("kDeltaMode");
 
-  if ((options & qdata.kAccumulateErrors) !== 0)
+  if ((options & exmodel.kAccumulateErrors) !== 0)
     arr.push("kAccumulateErrors");
 
   return arr;
@@ -70,7 +68,7 @@ function serializeFailure(reason, schema, options, access, input, output, expect
   if (errors   !== undefined) s += "errors"   + " = " + JSON.stringify(errors, null, 2) + "\n";
 
   try {
-    var fn = qdata.precompile("process", schema, options, access);
+    var fn = exmodel.precompile("process", schema, options, access);
     s += "process = " + fn.toString();
   }
   catch (ex) {
@@ -86,7 +84,7 @@ function TestError(message) {
   this.name = "TestError";
   this.stack = "Test" + Error(message).stack;
 }
-qclass({
+exclass({
   $extend: Error,
   $construct: TestError
 });
@@ -96,14 +94,14 @@ function pass(input, schema, options, access, expected) {
   var err = null;
 
   try {
-    output = qdata.process(input, schema, options, access);
+    output = exmodel.process(input, schema, options, access);
   }
   catch (ex) {
     err = ex;
   }
 
   if (err) {
-    var errors = err instanceof qdata.SchemaError ? err.errors : undefined;
+    var errors = err instanceof exmodel.SchemaError ? err.errors : undefined;
     console.log(serializeFailure(
       "Should have passed", schema, options, access, input, undefined, expected, errors));
     throw err;
@@ -123,10 +121,10 @@ function fail(input, schema, options, access) {
   var message = "Should have failed";
 
   try {
-    output = qdata.process(input, schema, options, access);
+    output = exmodel.process(input, schema, options, access);
   }
   catch (ex) {
-    if (ex instanceof qdata.SchemaError)
+    if (ex instanceof exmodel.SchemaError)
       return;
     message = "Should have thrown SchemaError (but thrown " + ex.name + ")";
   }
@@ -148,7 +146,7 @@ function assertThrow(fn) {
 // [Tests]
 // ============================================================================
 
-describe("QData", function() {
+describe("exmodel", function() {
   // --------------------------------------------------------------------------
   // [Utilities]
   // --------------------------------------------------------------------------
@@ -258,31 +256,31 @@ describe("QData", function() {
   });
 
   it("should test utilities - string operations", function() {
-    assert(qdata.util.isDirectiveName("$")          === true);
-    assert(qdata.util.isDirectiveName("$directive") === true);
-    assert(qdata.util.isDirectiveName("")           === false);
-    assert(qdata.util.isDirectiveName("fieldName")  === false);
+    assert(exmodel.util.isDirectiveName("$")          === true);
+    assert(exmodel.util.isDirectiveName("$directive") === true);
+    assert(exmodel.util.isDirectiveName("")           === false);
+    assert(exmodel.util.isDirectiveName("fieldName")  === false);
 
-    assert(qdata.util.isVariableName("someVar")     === true);
-    assert(qdata.util.isVariableName("SomeVar")     === true);
-    assert(qdata.util.isVariableName("$someVar")    === true);
-    assert(qdata.util.isVariableName("_someVar")    === true);
-    assert(qdata.util.isVariableName("$1")          === true);
-    assert(qdata.util.isVariableName("$$")          === true);
-    assert(qdata.util.isVariableName("1")           === false);
-    assert(qdata.util.isVariableName("1$NotAVar")   === false);
-    assert(qdata.util.isVariableName("1_NotAVar")   === false);
+    assert(exmodel.util.isVariableName("someVar")     === true);
+    assert(exmodel.util.isVariableName("SomeVar")     === true);
+    assert(exmodel.util.isVariableName("$someVar")    === true);
+    assert(exmodel.util.isVariableName("_someVar")    === true);
+    assert(exmodel.util.isVariableName("$1")          === true);
+    assert(exmodel.util.isVariableName("$$")          === true);
+    assert(exmodel.util.isVariableName("1")           === false);
+    assert(exmodel.util.isVariableName("1$NotAVar")   === false);
+    assert(exmodel.util.isVariableName("1_NotAVar")   === false);
 
-    assert(qdata.util.escapeRegExp("[]{}")          === "\\[\\]\\{\\}");
+    assert(exmodel.util.escapeRegExp("[]{}")          === "\\[\\]\\{\\}");
 
-    assert(qdata.util.unescapeFieldName("field")    === "field");
-    assert(qdata.util.unescapeFieldName("\\$field") === "$field");
+    assert(exmodel.util.unescapeFieldName("field")    === "field");
+    assert(exmodel.util.unescapeFieldName("\\$field") === "$field");
 
-    assert(qdata.util.toCamelCase("ThisIsString")   === "thisIsString");
-    assert(qdata.util.toCamelCase("this-is-string") === "thisIsString");
-    assert(qdata.util.toCamelCase("THIS_IS_STRING") === "thisIsString");
-    assert(qdata.util.toCamelCase("this-isString")  === "thisIsString");
-    assert(qdata.util.toCamelCase("THIS_IsSTRING")  === "thisIsString");
+    assert(exmodel.util.toCamelCase("ThisIsString")   === "thisIsString");
+    assert(exmodel.util.toCamelCase("this-is-string") === "thisIsString");
+    assert(exmodel.util.toCamelCase("THIS_IS_STRING") === "thisIsString");
+    assert(exmodel.util.toCamelCase("this-isString")  === "thisIsString");
+    assert(exmodel.util.toCamelCase("THIS_IsSTRING")  === "thisIsString");
   });
 
   // --------------------------------------------------------------------------
@@ -298,7 +296,9 @@ describe("QData", function() {
       Mouse: 4,
       Hamster: 3
     };
-    var AnimalEnum = qdata.enum(AnimalDef);
+    var AnimalEnum = exmodel.enum(AnimalDef);
+
+    assert(Object.keys(AnimalEnum).length === 5);
 
     assert(AnimalEnum.Horse   === 0);
     assert(AnimalEnum.Dog     === 1);
@@ -306,30 +306,30 @@ describe("QData", function() {
     assert(AnimalEnum.Hamster === 3);
     assert(AnimalEnum.Mouse   === 4);
 
-    assert(AnimalEnum.$hasKey("Horse"          ) === true);
-    assert(AnimalEnum.$hasKey("Mouse"          ) === true);
-    assert(AnimalEnum.$hasKey("constructor"    ) === false);
-    assert(AnimalEnum.$hasKey("hasOwnProperty" ) === false);
+    assert(AnimalEnum.hasKey("Horse"          ) === true);
+    assert(AnimalEnum.hasKey("Mouse"          ) === true);
+    assert(AnimalEnum.hasKey("constructor"    ) === false);
+    assert(AnimalEnum.hasKey("hasOwnProperty" ) === false);
 
-    assert(AnimalEnum.$keyToValue("Horse"      ) === AnimalEnum.Horse  );
-    assert(AnimalEnum.$keyToValue("Dog"        ) === AnimalEnum.Dog    );
-    assert(AnimalEnum.$keyToValue("Cat"        ) === AnimalEnum.Cat    );
-    assert(AnimalEnum.$keyToValue("Hamster"    ) === AnimalEnum.Hamster);
-    assert(AnimalEnum.$keyToValue("Mouse"      ) === AnimalEnum.Mouse  );
-    assert(AnimalEnum.$keyToValue("constructor") === undefined);
+    assert(AnimalEnum.keyToValue("Horse"      ) === AnimalEnum.Horse  );
+    assert(AnimalEnum.keyToValue("Dog"        ) === AnimalEnum.Dog    );
+    assert(AnimalEnum.keyToValue("Cat"        ) === AnimalEnum.Cat    );
+    assert(AnimalEnum.keyToValue("Hamster"    ) === AnimalEnum.Hamster);
+    assert(AnimalEnum.keyToValue("Mouse"      ) === AnimalEnum.Mouse  );
+    assert(AnimalEnum.keyToValue("constructor") === undefined);
 
-    assert(AnimalEnum.$valueToKey(AnimalEnum.Horse  ) === "Horse"  );
-    assert(AnimalEnum.$valueToKey(AnimalEnum.Dog    ) === "Dog"    );
-    assert(AnimalEnum.$valueToKey(AnimalEnum.Cat    ) === "Cat"    );
-    assert(AnimalEnum.$valueToKey(AnimalEnum.Hamster) === "Hamster");
-    assert(AnimalEnum.$valueToKey(AnimalEnum.Mouse  ) === "Mouse"  );
+    assert(AnimalEnum.valueToKey(AnimalEnum.Horse  ) === "Horse"  );
+    assert(AnimalEnum.valueToKey(AnimalEnum.Dog    ) === "Dog"    );
+    assert(AnimalEnum.valueToKey(AnimalEnum.Cat    ) === "Cat"    );
+    assert(AnimalEnum.valueToKey(AnimalEnum.Hamster) === "Hamster");
+    assert(AnimalEnum.valueToKey(AnimalEnum.Mouse  ) === "Mouse"  );
 
-    assert(AnimalEnum.$valueToKey(5)   === undefined);
-    assert(AnimalEnum.$valueToKey(-1)  === undefined);
-    assert(AnimalEnum.$valueToKey("0") === undefined);
+    assert(AnimalEnum.valueToKey(5)   === undefined);
+    assert(AnimalEnum.valueToKey(-1)  === undefined);
+    assert(AnimalEnum.valueToKey("0") === undefined);
 
-    assert(isEqual(AnimalEnum.$keyMap, AnimalDef));
-    assert(isEqual(AnimalEnum.$keyList, [
+    assert(isEqual(AnimalEnum.$.keyMap, AnimalDef));
+    assert(isEqual(AnimalEnum.$.keyArray, [
       "Horse",
       "Dog",
       "Cat",
@@ -337,22 +337,22 @@ describe("QData", function() {
       "Hamster"
     ]));
 
-    assert(isEqual(AnimalEnum.$valueMap, {
+    assert(isEqual(AnimalEnum.$.valueMap, {
       "0": "Horse",
       "1": "Dog",
       "2": "Cat",
       "3": "Hamster",
       "4": "Mouse"
     }));
-    assert(isEqual(AnimalEnum.$valueList, [
+    assert(isEqual(AnimalEnum.$.valueArray, [
       0, 1, 2, 3, 4
     ]));
 
-    assert(AnimalEnum.$min === 0);
-    assert(AnimalEnum.$max === 4);
-    assert(AnimalEnum.$safe === true);
-    assert(AnimalEnum.$unique === true);
-    assert(AnimalEnum.$sequential === true);
+    assert(AnimalEnum.$.min === 0);
+    assert(AnimalEnum.$.max === 4);
+    assert(AnimalEnum.$.safe === true);
+    assert(AnimalEnum.$.unique === true);
+    assert(AnimalEnum.$.sequential === true);
 
     // Enum - safe, unique, and non-sequential.
     var TypeIdUniqueDef = {
@@ -361,23 +361,23 @@ describe("QData", function() {
       Object: 6563,
       Array : 1234
     };
-    var TypeIdUniqueEnum = qdata.enum(TypeIdUniqueDef);
+    var TypeIdUniqueEnum = exmodel.enum(TypeIdUniqueDef);
 
-    assert(TypeIdUniqueEnum.$keyToValue("String") === TypeIdUniqueEnum.String);
-    assert(TypeIdUniqueEnum.$keyToValue("Number") === TypeIdUniqueEnum.Number);
-    assert(TypeIdUniqueEnum.$keyToValue("Object") === TypeIdUniqueEnum.Object);
-    assert(TypeIdUniqueEnum.$keyToValue("Array" ) === TypeIdUniqueEnum.Array );
+    assert(TypeIdUniqueEnum.keyToValue("String") === TypeIdUniqueEnum.String);
+    assert(TypeIdUniqueEnum.keyToValue("Number") === TypeIdUniqueEnum.Number);
+    assert(TypeIdUniqueEnum.keyToValue("Object") === TypeIdUniqueEnum.Object);
+    assert(TypeIdUniqueEnum.keyToValue("Array" ) === TypeIdUniqueEnum.Array );
 
-    assert(TypeIdUniqueEnum.$valueToKey(TypeIdUniqueEnum.String) === "String");
-    assert(TypeIdUniqueEnum.$valueToKey(TypeIdUniqueEnum.Number) === "Number");
-    assert(TypeIdUniqueEnum.$valueToKey(TypeIdUniqueEnum.Object) === "Object");
-    assert(TypeIdUniqueEnum.$valueToKey(TypeIdUniqueEnum.Array ) === "Array" );
+    assert(TypeIdUniqueEnum.valueToKey(TypeIdUniqueEnum.String) === "String");
+    assert(TypeIdUniqueEnum.valueToKey(TypeIdUniqueEnum.Number) === "Number");
+    assert(TypeIdUniqueEnum.valueToKey(TypeIdUniqueEnum.Object) === "Object");
+    assert(TypeIdUniqueEnum.valueToKey(TypeIdUniqueEnum.Array ) === "Array" );
 
-    assert(TypeIdUniqueEnum.$min === 1234);
-    assert(TypeIdUniqueEnum.$max === 6563);
-    assert(TypeIdUniqueEnum.$safe === true);
-    assert(TypeIdUniqueEnum.$unique === true);
-    assert(TypeIdUniqueEnum.$sequential === false);
+    assert(TypeIdUniqueEnum.$.min === 1234);
+    assert(TypeIdUniqueEnum.$.max === 6563);
+    assert(TypeIdUniqueEnum.$.safe === true);
+    assert(TypeIdUniqueEnum.$.unique === true);
+    assert(TypeIdUniqueEnum.$.sequential === false);
 
     // Enum - safe, non-unique, and non-sequential.
     var TypeIdNonUniqueDef = {
@@ -386,40 +386,40 @@ describe("QData", function() {
       Object: 6563, // Same as Array
       Array : 6563  // Same as Object, but value should be mapped to "Object".
     };
-    var TypeIdNonUniqueEnum = qdata.enum(TypeIdNonUniqueDef);
+    var TypeIdNonUniqueEnum = exmodel.enum(TypeIdNonUniqueDef);
 
-    assert(TypeIdNonUniqueEnum.$keyToValue("String") === TypeIdNonUniqueEnum.String);
-    assert(TypeIdNonUniqueEnum.$keyToValue("Number") === TypeIdNonUniqueEnum.Number);
-    assert(TypeIdNonUniqueEnum.$keyToValue("Object") === TypeIdNonUniqueEnum.Object);
-    assert(TypeIdNonUniqueEnum.$keyToValue("Array" ) === TypeIdNonUniqueEnum.Array );
+    assert(TypeIdNonUniqueEnum.keyToValue("String") === TypeIdNonUniqueEnum.String);
+    assert(TypeIdNonUniqueEnum.keyToValue("Number") === TypeIdNonUniqueEnum.Number);
+    assert(TypeIdNonUniqueEnum.keyToValue("Object") === TypeIdNonUniqueEnum.Object);
+    assert(TypeIdNonUniqueEnum.keyToValue("Array" ) === TypeIdNonUniqueEnum.Array );
 
-    assert(TypeIdNonUniqueEnum.$valueToKey(TypeIdNonUniqueEnum.String) === "String");
-    assert(TypeIdNonUniqueEnum.$valueToKey(TypeIdNonUniqueEnum.Number) === "Number");
-    assert(TypeIdNonUniqueEnum.$valueToKey(TypeIdNonUniqueEnum.Object) === "Object");
+    assert(TypeIdNonUniqueEnum.valueToKey(TypeIdNonUniqueEnum.String) === "String");
+    assert(TypeIdNonUniqueEnum.valueToKey(TypeIdNonUniqueEnum.Number) === "Number");
+    assert(TypeIdNonUniqueEnum.valueToKey(TypeIdNonUniqueEnum.Object) === "Object");
 
     // Array share the same value as Object, but Object has been defined first,
     // so Array value has to map to "Object" string.
-    assert(TypeIdNonUniqueEnum.$valueToKey(TypeIdNonUniqueEnum.Array ) === "Object");
+    assert(TypeIdNonUniqueEnum.valueToKey(TypeIdNonUniqueEnum.Array) === "Object");
 
-    assert(isEqual(TypeIdNonUniqueEnum.$valueMap, {
+    assert(isEqual(TypeIdNonUniqueEnum.$.valueMap, {
       "1299": "String",
       "3345": "Number",
       "6563": "Object"
     }));
-    assert(isEqual(TypeIdNonUniqueEnum.$valueList, [1299, 3345, 6563]));
+    assert(isEqual(TypeIdNonUniqueEnum.$.valueArray, [1299, 3345, 6563]));
 
-    assert(TypeIdNonUniqueEnum.$min === 1299);
-    assert(TypeIdNonUniqueEnum.$max === 6563);
-    assert(TypeIdNonUniqueEnum.$safe === true);
-    assert(TypeIdNonUniqueEnum.$unique === false);
-    assert(TypeIdNonUniqueEnum.$sequential === false);
+    assert(TypeIdNonUniqueEnum.$.min === 1299);
+    assert(TypeIdNonUniqueEnum.$.max === 6563);
+    assert(TypeIdNonUniqueEnum.$.safe === true);
+    assert(TypeIdNonUniqueEnum.$.unique === false);
+    assert(TypeIdNonUniqueEnum.$.sequential === false);
 
     // Enum - unsafe.
-    assert(qdata.enum({ A:-1.1                   }).$safe === false);
-    assert(qdata.enum({ A: 1.1                   }).$safe === false);
-    assert(qdata.enum({ A: 1234.1234             }).$safe === false);
-    assert(qdata.enum({ A: qdata.kSafeIntMin - 2 }).$safe === false);
-    assert(qdata.enum({ A: qdata.kSafeIntMax + 2 }).$safe === false);
+    assert(exmodel.enum({ A:-1.1                   }).$.safe === false);
+    assert(exmodel.enum({ A: 1.1                   }).$.safe === false);
+    assert(exmodel.enum({ A: 1234.1234             }).$.safe === false);
+    assert(exmodel.enum({ A: exmodel.kSafeIntMin - 2 }).$.safe === false);
+    assert(exmodel.enum({ A: exmodel.kSafeIntMax + 2 }).$.safe === false);
 
     // Enum - using reserved property names (Object.prototype properties).
     var ReservedDef = {
@@ -430,30 +430,39 @@ describe("QData", function() {
       toString: 4,
       valueOf: 5
     };
-    var ReservedEnum = qdata.enum(ReservedDef);
+    var ReservedEnum = exmodel.enum(ReservedDef);
 
-    assert(isEqual(ReservedEnum.$keyMap, ReservedDef));
+    assert(isEqual(ReservedEnum.$.keyMap, ReservedDef));
 
-    assert(ReservedEnum.$hasKey("constructor"         ) === true );
-    assert(ReservedEnum.$hasKey("__defineGetter__"    ) === true );
-    assert(ReservedEnum.$hasKey("valueOf"             ) === true );
-    assert(ReservedEnum.$hasKey("propertyIsEnumerable") === false);
+    assert(ReservedEnum.hasKey("constructor"         ) === true );
+    assert(ReservedEnum.hasKey("__defineGetter__"    ) === true );
+    assert(ReservedEnum.hasKey("valueOf"             ) === true );
+    assert(ReservedEnum.hasKey("propertyIsEnumerable") === false);
 
-    assert(ReservedEnum.$keyToValue("constructor"         ) === 0);
-    assert(ReservedEnum.$keyToValue("__defineGetter__"    ) === 2);
-    assert(ReservedEnum.$keyToValue("valueOf"             ) === 5);
-    assert(ReservedEnum.$keyToValue("propertyIsEnumerable") === undefined);
+    assert(ReservedEnum.keyToValue("constructor"         ) === 0);
+    assert(ReservedEnum.keyToValue("__defineGetter__"    ) === 2);
+    assert(ReservedEnum.keyToValue("valueOf"             ) === 5);
+    assert(ReservedEnum.keyToValue("propertyIsEnumerable") === undefined);
 
-    // Enum - non-numeric values are not allowed.
-    assertThrow(function() { qdata.enum({ infinityValue  : Infinity }); });
-    assertThrow(function() { qdata.enum({ infinityValue  :-Infinity }); });
-    assertThrow(function() { qdata.enum({ nanValue       : NaN      }); });
-    assertThrow(function() { qdata.enum({ booleanValue   : false    }); });
-    assertThrow(function() { qdata.enum({ booleanValue   : true     }); });
-    assertThrow(function() { qdata.enum({ stringValue    : "1"      }); });
-    assertThrow(function() { qdata.enum({ objectValue    : {}       }); });
-    assertThrow(function() { qdata.enum({ arrayValue     : []       }); });
-    assertThrow(function() { qdata.enum({ $reservedKey   : 1        }); });
+    // Ban keys that collide with members exmodel.enum() provides.
+    assertThrow(function() { exmodel.enum({ $         : 0 }); });
+    assertThrow(function() { exmodel.enum({ hasKey    : 0 }); });
+    assertThrow(function() { exmodel.enum({ hasValue  : 0 }); });
+    assertThrow(function() { exmodel.enum({ keyToValue: 0 }); });
+    assertThrow(function() { exmodel.enum({ valueToKey: 0 }); });
+
+    // Ban JS keys that are essential to the JS engine.
+    assertThrow(function() { exmodel.enum({ prototype : 0 }); });
+
+    // Non-numeric values are not allowed.
+    assertThrow(function() { exmodel.enum({ infinityValue  : Infinity }); });
+    assertThrow(function() { exmodel.enum({ infinityValue  :-Infinity }); });
+    assertThrow(function() { exmodel.enum({ nanValue       : NaN      }); });
+    assertThrow(function() { exmodel.enum({ booleanValue   : false    }); });
+    assertThrow(function() { exmodel.enum({ booleanValue   : true     }); });
+    assertThrow(function() { exmodel.enum({ stringValue    : "1"      }); });
+    assertThrow(function() { exmodel.enum({ objectValue    : {}       }); });
+    assertThrow(function() { exmodel.enum({ arrayValue     : []       }); });
   });
 
   // --------------------------------------------------------------------------
@@ -462,8 +471,8 @@ describe("QData", function() {
 
   it("should validate null and fail if undefined", function() {
     ["bool", "int", "number", "string", "text", "date", "datetime", "object"].forEach(function(type) {
-      pass(null     , qdata.schema({ $type: type, $null: true      }));
-      fail(undefined, qdata.schema({ $type: type, $null: true      }));
+      pass(null     , exmodel.schema({ $type: type, $null: true      }));
+      fail(undefined, exmodel.schema({ $type: type, $null: true      }));
     });
   });
 
@@ -472,7 +481,7 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate any - anything", function() {
-    var def = qdata.schema({ $type: "any" });
+    var def = exmodel.schema({ $type: "any" });
 
     var passData = [false, true, 0, 1, 42.42, "", "string", {}, [], { a: true }, [[[1, 2], 3], 4, { a: true }]];
     var failData = [null, undefined];
@@ -482,7 +491,7 @@ describe("QData", function() {
   });
 
   it("should validate any - $allowed", function() {
-    var def = qdata.schema({ $type: "any" });
+    var def = exmodel.schema({ $type: "any" });
 
     var passData = [false, true, 0, 1, 42.42, "", "string", {}, [], { a: true }, [[[1, 2], 3], 4, { a: true }]];
     var failData = [null, undefined];
@@ -496,7 +505,7 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate bool", function() {
-    var def = qdata.schema({ $type: "bool" });
+    var def = exmodel.schema({ $type: "bool" });
 
     var passData = [false, true];
     var failData = [0, 1, "", "string", {}, [], Infinity, -Infinity, NaN];
@@ -510,7 +519,7 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate number - int", function() {
-    var def = qdata.schema({ $type: "int" });
+    var def = exmodel.schema({ $type: "int" });
 
     var passData = [0, 1, -1];
     var failData = [false, true, "", "0", "string", {}, [], 0.1, -0.23211, Infinity, -Infinity, NaN];
@@ -520,36 +529,36 @@ describe("QData", function() {
   });
 
   it("should validate number - intxx", function() {
-    pass(-128       , qdata.schema({ $type: "int8"  }));
-    pass( 127       , qdata.schema({ $type: "int8"  }));
-    pass( 255       , qdata.schema({ $type: "uint8" }));
+    pass(-128       , exmodel.schema({ $type: "int8"  }));
+    pass( 127       , exmodel.schema({ $type: "int8"  }));
+    pass( 255       , exmodel.schema({ $type: "uint8" }));
 
-    pass(-32768     , qdata.schema({ $type: "int16"  }));
-    pass( 32767     , qdata.schema({ $type: "int16"  }));
-    pass( 65535     , qdata.schema({ $type: "uint16" }));
+    pass(-32768     , exmodel.schema({ $type: "int16"  }));
+    pass( 32767     , exmodel.schema({ $type: "int16"  }));
+    pass( 65535     , exmodel.schema({ $type: "uint16" }));
 
-    pass(-2147483648, qdata.schema({ $type: "int32"  }));
-    pass( 2147483647, qdata.schema({ $type: "int32"  }));
-    pass( 4294967295, qdata.schema({ $type: "uint32" }));
+    pass(-2147483648, exmodel.schema({ $type: "int32"  }));
+    pass( 2147483647, exmodel.schema({ $type: "int32"  }));
+    pass( 4294967295, exmodel.schema({ $type: "uint32" }));
 
-    fail(-129       , qdata.schema({ $type: "int8"  }));
-    fail( 128       , qdata.schema({ $type: "int8"  }));
-    fail(-1         , qdata.schema({ $type: "uint8" }));
-    fail( 256       , qdata.schema({ $type: "uint8" }));
+    fail(-129       , exmodel.schema({ $type: "int8"  }));
+    fail( 128       , exmodel.schema({ $type: "int8"  }));
+    fail(-1         , exmodel.schema({ $type: "uint8" }));
+    fail( 256       , exmodel.schema({ $type: "uint8" }));
 
-    fail(-32769     , qdata.schema({ $type: "int16"  }));
-    fail( 32768     , qdata.schema({ $type: "int16"  }));
-    fail(-1         , qdata.schema({ $type: "uint16" }));
-    fail( 65536     , qdata.schema({ $type: "uint16" }));
+    fail(-32769     , exmodel.schema({ $type: "int16"  }));
+    fail( 32768     , exmodel.schema({ $type: "int16"  }));
+    fail(-1         , exmodel.schema({ $type: "uint16" }));
+    fail( 65536     , exmodel.schema({ $type: "uint16" }));
 
-    fail(-2147483649, qdata.schema({ $type: "int32"  }));
-    fail( 2147483648, qdata.schema({ $type: "int32"  }));
-    fail(-1         , qdata.schema({ $type: "uint32" }));
-    fail( 4294967296, qdata.schema({ $type: "uint32" }));
+    fail(-2147483649, exmodel.schema({ $type: "int32"  }));
+    fail( 2147483648, exmodel.schema({ $type: "int32"  }));
+    fail(-1         , exmodel.schema({ $type: "uint32" }));
+    fail( 4294967296, exmodel.schema({ $type: "uint32" }));
   });
 
   it("should validate number - double", function() {
-    var def = qdata.schema({ $type: "number" });
+    var def = exmodel.schema({ $type: "number" });
 
     var passData = [0, 1, -1, 0.1, -0.23211];
     var failData = [false, true, "", "0", "string", {}, [], Infinity, -Infinity, NaN];
@@ -559,8 +568,8 @@ describe("QData", function() {
   });
 
   it("should validate number - lat/lon", function() {
-    var defLat = qdata.schema({ $type: "lat" });
-    var defLon = qdata.schema({ $type: "lon" });
+    var defLat = exmodel.schema({ $type: "lat" });
+    var defLon = exmodel.schema({ $type: "lon" });
 
     var passLat = [-90, -45.5334, 0, 34.4432, 90];
     var failLat = [-90.0001, 90.0001, "", true, null, undefined];
@@ -581,12 +590,12 @@ describe("QData", function() {
     ];
 
     types.forEach(function(type) {
-      pass( 0, qdata.schema({ $type: type, $allowed: [0, 1, 2] }));
-      pass( 0, qdata.schema({ $type: type, $allowed: [0, 1, 5] }));
-      pass( 5, qdata.schema({ $type: type, $allowed: [1, 5, 0] }));
+      pass( 0, exmodel.schema({ $type: type, $allowed: [0, 1, 2] }));
+      pass( 0, exmodel.schema({ $type: type, $allowed: [0, 1, 5] }));
+      pass( 5, exmodel.schema({ $type: type, $allowed: [1, 5, 0] }));
 
-      fail(-1, qdata.schema({ $type: type, $allowed: [0, 1, 2] }));
-      fail( 6, qdata.schema({ $type: type, $allowed: [0, 1, 5] }));
+      fail(-1, exmodel.schema({ $type: type, $allowed: [0, 1, 2] }));
+      fail( 6, exmodel.schema({ $type: type, $allowed: [0, 1, 5] }));
     });
   });
 
@@ -596,40 +605,40 @@ describe("QData", function() {
     ];
 
     types.forEach(function(type) {
-      pass( 0, qdata.schema({ $type: type, $min: 0, $max: 5 }));
-      pass( 5, qdata.schema({ $type: type, $min: 0, $max: 5 }));
+      pass( 0, exmodel.schema({ $type: type, $min: 0, $max: 5 }));
+      pass( 5, exmodel.schema({ $type: type, $min: 0, $max: 5 }));
 
-      pass( 1, qdata.schema({ $type: type, $min: 0, $minExclusive: true }));
-      pass( 4, qdata.schema({ $type: type, $max: 5, $maxExclusive: true }));
+      pass( 1, exmodel.schema({ $type: type, $min: 0, $minExclusive: true }));
+      pass( 4, exmodel.schema({ $type: type, $max: 5, $maxExclusive: true }));
 
-      fail(-1, qdata.schema({ $type: type, $min: 0, $max: 5 }));
-      fail( 6, qdata.schema({ $type: type, $min: 0, $max: 5 }));
+      fail(-1, exmodel.schema({ $type: type, $min: 0, $max: 5 }));
+      fail( 6, exmodel.schema({ $type: type, $min: 0, $max: 5 }));
 
-      fail( 0, qdata.schema({ $type: type, $min: 0, $minExclusive: true }));
-      fail( 5, qdata.schema({ $type: type, $max: 0, $maxExclusive: true }));
+      fail( 0, exmodel.schema({ $type: type, $min: 0, $minExclusive: true }));
+      fail( 5, exmodel.schema({ $type: type, $max: 0, $maxExclusive: true }));
     });
   });
 
   it("should validate number - $divisibleBy", function() {
     ["int", "number"].forEach(function(type) {
-      pass(-9, qdata.schema({ $type: type, $divisibleBy: 9 }));
-      pass( 0, qdata.schema({ $type: type, $divisibleBy: 1 }));
-      pass( 1, qdata.schema({ $type: type, $divisibleBy: 1 }));
-      pass( 2, qdata.schema({ $type: type, $divisibleBy: 1 }));
-      pass( 4, qdata.schema({ $type: type, $divisibleBy: 2 }));
-      pass(10, qdata.schema({ $type: type, $divisibleBy: 5 }));
+      pass(-9, exmodel.schema({ $type: type, $divisibleBy: 9 }));
+      pass( 0, exmodel.schema({ $type: type, $divisibleBy: 1 }));
+      pass( 1, exmodel.schema({ $type: type, $divisibleBy: 1 }));
+      pass( 2, exmodel.schema({ $type: type, $divisibleBy: 1 }));
+      pass( 4, exmodel.schema({ $type: type, $divisibleBy: 2 }));
+      pass(10, exmodel.schema({ $type: type, $divisibleBy: 5 }));
 
-      fail(-3, qdata.schema({ $type: type, $divisibleBy: 2 }));
-      fail( 3, qdata.schema({ $type: type, $divisibleBy: 6 }));
+      fail(-3, exmodel.schema({ $type: type, $divisibleBy: 2 }));
+      fail( 3, exmodel.schema({ $type: type, $divisibleBy: 6 }));
     });
   });
 
   it("should validate numeric - precision and scale", function() {
-    var defWithType = qdata.schema({
+    var defWithType = exmodel.schema({
       $type: "numeric(6, 2)"
     });
 
-    var defExplicit = qdata.schema({
+    var defExplicit = exmodel.schema({
       $type: "numeric",
       $precision: 6,
       $scale: 2
@@ -656,12 +665,12 @@ describe("QData", function() {
   });
 
   it("should validate numeric - invalid precision / scale", function() {
-    assertThrow(function() { qdata.schema({ $type: "numeric(-2)"      }); });
-    assertThrow(function() { qdata.schema({ $type: "numeric(2,-2)"    }); });
-    assertThrow(function() { qdata.schema({ $type: "numeric(2,-2)"    }); });
-    assertThrow(function() { qdata.schema({ $type: "numeric(2, 2)"    }); });
-    assertThrow(function() { qdata.schema({ $type: "numeric(2, 4)"    }); });
-    assertThrow(function() { qdata.schema({ $type: "numeric(invalid)" }); });
+    assertThrow(function() { exmodel.schema({ $type: "numeric(-2)"      }); });
+    assertThrow(function() { exmodel.schema({ $type: "numeric(2,-2)"    }); });
+    assertThrow(function() { exmodel.schema({ $type: "numeric(2,-2)"    }); });
+    assertThrow(function() { exmodel.schema({ $type: "numeric(2, 2)"    }); });
+    assertThrow(function() { exmodel.schema({ $type: "numeric(2, 4)"    }); });
+    assertThrow(function() { exmodel.schema({ $type: "numeric(invalid)" }); });
   });
 
   // --------------------------------------------------------------------------
@@ -669,21 +678,21 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate char", function() {
-    pass(""  , qdata.schema({ $type: "char", $empty: true }));
-    pass("a" , qdata.schema({ $type: "char" }));
-    pass("b" , qdata.schema({ $type: "char" }));
+    pass(""  , exmodel.schema({ $type: "char", $empty: true }));
+    pass("a" , exmodel.schema({ $type: "char" }));
+    pass("b" , exmodel.schema({ $type: "char" }));
 
-    pass("a" , qdata.schema({ $type: "char", $allowed: "abc" }));
-    pass("c" , qdata.schema({ $type: "char", $allowed: "abc" }));
+    pass("a" , exmodel.schema({ $type: "char", $allowed: "abc" }));
+    pass("c" , exmodel.schema({ $type: "char", $allowed: "abc" }));
 
-    fail(""  , qdata.schema({ $type: "char" }));
-    fail(""  , qdata.schema({ $type: "char", $empty: false }));
+    fail(""  , exmodel.schema({ $type: "char" }));
+    fail(""  , exmodel.schema({ $type: "char", $empty: false }));
 
-    fail("A" , qdata.schema({ $type: "char", $allowed: "abc" }));
-    fail("z" , qdata.schema({ $type: "char", $allowed: "abc" }));
+    fail("A" , exmodel.schema({ $type: "char", $allowed: "abc" }));
+    fail("z" , exmodel.schema({ $type: "char", $allowed: "abc" }));
 
-    fail("ab", qdata.schema({ $type: "char" }));
-    fail("bc", qdata.schema({ $type: "char" }));
+    fail("ab", exmodel.schema({ $type: "char" }));
+    fail("bc", exmodel.schema({ $type: "char" }));
   });
 
   // --------------------------------------------------------------------------
@@ -691,25 +700,25 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate string", function() {
-    pass("\x00"  , qdata.schema({ $type: "string" }));
-    pass("xxxx"  , qdata.schema({ $type: "string" }));
+    pass("\x00"  , exmodel.schema({ $type: "string" }));
+    pass("xxxx"  , exmodel.schema({ $type: "string" }));
 
-    pass("abc"   , qdata.schema({ $type: "string", $length   : 3 }));
+    pass("abc"   , exmodel.schema({ $type: "string", $length   : 3 }));
 
-    pass("abc"   , qdata.schema({ $type: "string", $minLength: 3 }));
-    pass("abcdef", qdata.schema({ $type: "string", $minLength: 3 }));
+    pass("abc"   , exmodel.schema({ $type: "string", $minLength: 3 }));
+    pass("abcdef", exmodel.schema({ $type: "string", $minLength: 3 }));
 
-    pass("abc"   , qdata.schema({ $type: "string", $maxLength: 6 }));
-    pass("abcdef", qdata.schema({ $type: "string", $maxLength: 6 }));
+    pass("abc"   , exmodel.schema({ $type: "string", $maxLength: 6 }));
+    pass("abcdef", exmodel.schema({ $type: "string", $maxLength: 6 }));
 
-    fail("abc", qdata.schema({ $type: "string", $length   : 2 }));
-    fail("abc", qdata.schema({ $type: "string", $minLength: 4 }));
-    fail("abc", qdata.schema({ $type: "string", $maxLength: 2 }));
+    fail("abc", exmodel.schema({ $type: "string", $length   : 2 }));
+    fail("abc", exmodel.schema({ $type: "string", $minLength: 4 }));
+    fail("abc", exmodel.schema({ $type: "string", $maxLength: 2 }));
   });
 
   it("should validate string - allowed", function() {
     var allowed = ["yes", "no", "maybe"];
-    var def = qdata.schema({ $type: "text", $empty: true, $allowed: allowed });
+    var def = exmodel.schema({ $type: "text", $empty: true, $allowed: allowed });
 
     var passData = allowed.concat([""]);
     var failData = [null, "never", " yes", "no ", " maybe "];
@@ -726,7 +735,7 @@ describe("QData", function() {
   it("should validate string - text (lo)", function() {
     // Text goes through the same validator as "string", so test only parts
     // where "string" vs "text" differ.
-    var def = qdata.schema({ $type: "text" });
+    var def = exmodel.schema({ $type: "text" });
 
     // Should accept some characters below 32.
     var passData = [
@@ -754,7 +763,7 @@ describe("QData", function() {
   });
 
   it("should validate string - text (lo+hi)", function() {
-    var def = qdata.schema({ $type: "textline" });
+    var def = exmodel.schema({ $type: "textline" });
 
     var passData = [
       "",
@@ -783,7 +792,7 @@ describe("QData", function() {
   });
 
   it("should validate string - text (surrogate pairs)", function() {
-    var def = qdata.schema({ $type: "text" });
+    var def = exmodel.schema({ $type: "text" });
 
     var passData = [
       "\uD834\uDF06",
@@ -825,7 +834,7 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate bigint", function() {
-    var def = qdata.schema({ $type: "bigint" });
+    var def = exmodel.schema({ $type: "bigint" });
 
     var passData = [
       "0",
@@ -908,13 +917,13 @@ describe("QData", function() {
   });
 
   it("should validate bigint - $allowed", function() {
-    pass(""    , qdata.schema({ $type: "bigint", $allowed: ["1234", "2345"], $empty: true }));
-    pass("1234", qdata.schema({ $type: "bigint", $allowed: ["1234", "2345"] }));
-    pass("1234", qdata.schema({ $type: "bigint", $allowed: ["2345", "1234"] }));
+    pass(""    , exmodel.schema({ $type: "bigint", $allowed: ["1234", "2345"], $empty: true }));
+    pass("1234", exmodel.schema({ $type: "bigint", $allowed: ["1234", "2345"] }));
+    pass("1234", exmodel.schema({ $type: "bigint", $allowed: ["2345", "1234"] }));
 
-    fail(""    , qdata.schema({ $type: "bigint", $allowed: ["2345", "3456"] }));
-    fail("1234", qdata.schema({ $type: "bigint", $allowed: ["2345", "3456"] }));
-    fail("1234", qdata.schema({ $type: "bigint", $allowed: [] }));
+    fail(""    , exmodel.schema({ $type: "bigint", $allowed: ["2345", "3456"] }));
+    fail("1234", exmodel.schema({ $type: "bigint", $allowed: ["2345", "3456"] }));
+    fail("1234", exmodel.schema({ $type: "bigint", $allowed: [] }));
   });
 
   // --------------------------------------------------------------------------
@@ -922,7 +931,7 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate color - #XXX and #XXXXXX", function() {
-    var def = qdata.schema({ $type: "color" });
+    var def = exmodel.schema({ $type: "color" });
 
     pass("#000", def);
     pass("#123", def);
@@ -956,11 +965,11 @@ describe("QData", function() {
   });
 
   it("should validate color - color names", function() {
-    var defDefault          = qdata.schema({ $type: "color" });
-    var defAllowCssNames    = qdata.schema({ $type: "color", $cssNames: true  });
-    var defDisallowCssNames = qdata.schema({ $type: "color", $cssNames: false });
+    var defDefault          = exmodel.schema({ $type: "color" });
+    var defAllowCssNames    = exmodel.schema({ $type: "color", $cssNames: true  });
+    var defDisallowCssNames = exmodel.schema({ $type: "color", $cssNames: false });
 
-    for (var k in qdata.util.colorNames) {
+    for (var k in exmodel.util.colorNames) {
       var K = k.toUpperCase();
 
       pass(k, defDefault);
@@ -983,7 +992,7 @@ describe("QData", function() {
       "currentcolor": true
     };
 
-    var def = qdata.schema({
+    var def = exmodel.schema({
       $type         : "color",
       $cssNames     : true,
       $extraNames   : ExtraNames
@@ -1007,7 +1016,7 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate creditcard", function() {
-    var def = qdata.schema({ $type: "creditcard" });
+    var def = exmodel.schema({ $type: "creditcard" });
 
     // Randomly generated from:
     // http://www.freeformatter.com/credit-card-number-generator-validator.html
@@ -1157,17 +1166,17 @@ describe("QData", function() {
       var correctFormat = String(data.length);
       var invalidFormat = correctFormat === "10" ? "13" : "10";
 
-      pass(data, qdata.schema({ $type: "isbn" }));
-      pass(data, qdata.schema({ $type: "isbn" }));
+      pass(data, exmodel.schema({ $type: "isbn" }));
+      pass(data, exmodel.schema({ $type: "isbn" }));
 
-      pass(data, qdata.schema({ $type: "isbn", $format: correctFormat }));
-      fail(data, qdata.schema({ $type: "isbn", $format: invalidFormat }));
+      pass(data, exmodel.schema({ $type: "isbn", $format: correctFormat }));
+      fail(data, exmodel.schema({ $type: "isbn", $format: invalidFormat }));
     });
 
     failData.forEach(function(data) {
-      fail(data, qdata.schema({ $type: "isbn" }));
-      fail(data, qdata.schema({ $type: "isbn", $format: "10" }));
-      fail(data, qdata.schema({ $type: "isbn", $format: "13" }));
+      fail(data, exmodel.schema({ $type: "isbn" }));
+      fail(data, exmodel.schema({ $type: "isbn", $format: "10" }));
+      fail(data, exmodel.schema({ $type: "isbn", $format: "13" }));
     });
   });
 
@@ -1176,8 +1185,8 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate mac", function() {
-    var MAC  = qdata.schema({ $type: "mac" });
-    var MACd = qdata.schema({ $type: "mac", $separator: "-" });
+    var MAC  = exmodel.schema({ $type: "mac" });
+    var MACd = exmodel.schema({ $type: "mac", $separator: "-" });
 
     pass("00:00:00:00:00:00", MAC);
     pass("01:02:03:04:05:06", MAC);
@@ -1230,11 +1239,11 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate ip - ipv4", function() {
-    var IPV4 = qdata.schema({
+    var IPV4 = exmodel.schema({
       $type: "ipv4"
     });
 
-    var IPV4AllowPort = qdata.schema({
+    var IPV4AllowPort = exmodel.schema({
       $type: "ipv4",
       $allowPort: true
     });
@@ -1302,11 +1311,11 @@ describe("QData", function() {
   });
 
   it("should validate ip - ipv6", function() {
-    var IPV6 = qdata.schema({
+    var IPV6 = exmodel.schema({
       $type: "ipv6"
     });
 
-    var IPV6AllowPort = qdata.schema({
+    var IPV6AllowPort = exmodel.schema({
       $type: "ipv6",
       $allowPort: true
     });
@@ -1467,22 +1476,22 @@ describe("QData", function() {
     passData.forEach(function(value) {
       var version = value.charAt(14);
 
-      pass(value, qdata.schema({ $type: "uuid" }));
-      pass(value, qdata.schema({ $type: "uuid", $version: version       }));
-      pass(value, qdata.schema({ $type: "uuid", $version: version + "+" }));
+      pass(value, exmodel.schema({ $type: "uuid" }));
+      pass(value, exmodel.schema({ $type: "uuid", $version: version       }));
+      pass(value, exmodel.schema({ $type: "uuid", $version: version + "+" }));
 
-      pass("{" + value + "}", qdata.schema({ $type: "uuid", $format: "any"      }));
-      pass("{" + value + "}", qdata.schema({ $type: "uuid", $format: "windows"  }));
+      pass("{" + value + "}", exmodel.schema({ $type: "uuid", $format: "any"      }));
+      pass("{" + value + "}", exmodel.schema({ $type: "uuid", $format: "windows"  }));
 
-      fail("{" + value + "}", qdata.schema({ $type: "uuid", $format: null       }));
-      fail("{" + value + "}", qdata.schema({ $type: "uuid", $format: "rfc"      }));
+      fail("{" + value + "}", exmodel.schema({ $type: "uuid", $format: null       }));
+      fail("{" + value + "}", exmodel.schema({ $type: "uuid", $format: "rfc"      }));
     });
 
     failData.forEach(function(value) {
-      fail(value, qdata.schema({ $type: "uuid" }));
-      fail(value, qdata.schema({ $type: "uuid", $format: "any"     }));
-      fail(value, qdata.schema({ $type: "uuid", $format: "rfc"     }));
-      fail(value, qdata.schema({ $type: "uuid", $format: "windows" }));
+      fail(value, exmodel.schema({ $type: "uuid" }));
+      fail(value, exmodel.schema({ $type: "uuid", $format: "any"     }));
+      fail(value, exmodel.schema({ $type: "uuid", $format: "rfc"     }));
+      fail(value, exmodel.schema({ $type: "uuid", $format: "windows" }));
     });
   });
 
@@ -1491,8 +1500,8 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate datetime - date", function() {
-    var YYYY_MM    = qdata.schema({ $type: "date", $format: "YYYY-MM" });
-    var YYYY_MM_DD = qdata.schema({ $type: "date" });
+    var YYYY_MM    = exmodel.schema({ $type: "date", $format: "YYYY-MM" });
+    var YYYY_MM_DD = exmodel.schema({ $type: "date" });
 
     pass("1968-08"   , YYYY_MM);
     pass("1968-08-20", YYYY_MM_DD);
@@ -1518,8 +1527,8 @@ describe("QData", function() {
   });
 
   it("should validate datetime - time", function() {
-    var HH_mm       = qdata.schema({ $type: "time", $format: "HH:mm" });
-    var HH_mm_ss    = qdata.schema({ $type: "time" });
+    var HH_mm       = exmodel.schema({ $type: "time", $format: "HH:mm" });
+    var HH_mm_ss    = exmodel.schema({ $type: "time" });
 
     pass("14:53"   , HH_mm);
     pass("14:53:59", HH_mm_ss);
@@ -1534,9 +1543,9 @@ describe("QData", function() {
   });
 
   it("should validate datetime - datetime", function() {
-    var YYYY_MM_DD_HH_mm_ss = qdata.schema({ $type: "datetime"    });
-    var YYYY_MM_DD_HH_mm_ms = qdata.schema({ $type: "datetime-ms" });
-    var YYYY_MM_DD_HH_mm_us = qdata.schema({ $type: "datetime-us" });
+    var YYYY_MM_DD_HH_mm_ss = exmodel.schema({ $type: "datetime"    });
+    var YYYY_MM_DD_HH_mm_ms = exmodel.schema({ $type: "datetime-ms" });
+    var YYYY_MM_DD_HH_mm_us = exmodel.schema({ $type: "datetime-us" });
 
     pass("1968-08-20 12:00:59"       , YYYY_MM_DD_HH_mm_ss);
     pass("1968-08-20 12:00:59.999"   , YYYY_MM_DD_HH_mm_ms);
@@ -1556,11 +1565,11 @@ describe("QData", function() {
   });
 
   it("should validate datetime - leap year handling", function() {
-    var YYYY_MM_DD = qdata.schema({
+    var YYYY_MM_DD = exmodel.schema({
       $type: "date"
     });
 
-    var YYYY_MM_DD_no29thFeb = qdata.schema({
+    var YYYY_MM_DD_no29thFeb = exmodel.schema({
       $type: "date",
       $leapYear: false
     });
@@ -1587,18 +1596,18 @@ describe("QData", function() {
   });
 
   it("should validate datetime - leap second handling", function() {
-    var YYYY_MM_DD_HH_mm_ss = qdata.schema({
+    var YYYY_MM_DD_HH_mm_ss = exmodel.schema({
       $type: "datetime",
       $leapSecond: true
     });
 
-    var MM_DD_HH_mm_ss = qdata.schema({
+    var MM_DD_HH_mm_ss = exmodel.schema({
       $type: "datetime",
       $format: "MM-DD HH:mm:ss",
       $leapSecond: true
     });
 
-    var HH_mm_ss = qdata.schema({
+    var HH_mm_ss = exmodel.schema({
       $type: "time",
       $leapSecond: true
     });
@@ -1646,7 +1655,7 @@ describe("QData", function() {
   });
 
   it("should validate datetime - valid custom format YYYYMMDD", function() {
-    var def = qdata.schema({ $type: "date", $format: "YYYYMMDD" });
+    var def = exmodel.schema({ $type: "date", $format: "YYYYMMDD" });
 
     pass("19990101", def);
     pass("20041213", def);
@@ -1659,7 +1668,7 @@ describe("QData", function() {
   });
 
   it("should validate datetime - valid custom format YYYYMMDD HHmmss", function() {
-    var def = qdata.schema({ $type: "date", $format: "YYYYMMDD HHmmss" });
+    var def = exmodel.schema({ $type: "date", $format: "YYYYMMDD HHmmss" });
 
     pass("19990101 013030" , def);
     pass("20041213 013030" , def);
@@ -1675,7 +1684,7 @@ describe("QData", function() {
   });
 
   it("should validate datetime - valid custom format D.M.Y", function() {
-    var def = qdata.schema({ $type: "date", $format: "D.M.Y" });
+    var def = exmodel.schema({ $type: "date", $format: "D.M.Y" });
 
     pass("1.1.455"    , def);
     pass("2.8.2004"   , def);
@@ -1687,7 +1696,7 @@ describe("QData", function() {
   });
 
   it("should validate datetime - valid custom format D.M.Y H:m:s", function() {
-    var def = qdata.schema({ $type: "date", $format: "D.M.Y H:m:s" });
+    var def = exmodel.schema({ $type: "date", $format: "D.M.Y H:m:s" });
 
     pass("1.1.455 1:30:30"    , def);
     pass("2.8.2004 1:30:30"   , def);
@@ -1702,13 +1711,13 @@ describe("QData", function() {
   });
 
   it("should validate datetime - invalid custom format", function() {
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "YD"            }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "YM"            }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "YMD"           }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "DMY"           }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-DD"       }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-MM-DD mm" }); });
-    assertThrow(function() { qdata.schema({ $type: "date", $format: "YYYY-MM-DD ss" }); });
+    assertThrow(function() { exmodel.schema({ $type: "date", $format: "YD"            }); });
+    assertThrow(function() { exmodel.schema({ $type: "date", $format: "YM"            }); });
+    assertThrow(function() { exmodel.schema({ $type: "date", $format: "YMD"           }); });
+    assertThrow(function() { exmodel.schema({ $type: "date", $format: "DMY"           }); });
+    assertThrow(function() { exmodel.schema({ $type: "date", $format: "YYYY-DD"       }); });
+    assertThrow(function() { exmodel.schema({ $type: "date", $format: "YYYY-MM-DD mm" }); });
+    assertThrow(function() { exmodel.schema({ $type: "date", $format: "YYYY-MM-DD ss" }); });
   });
 
   // --------------------------------------------------------------------------
@@ -1716,14 +1725,14 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate object - empty object", function() {
-    var def = qdata.schema({});
+    var def = exmodel.schema({});
 
     pass({}, def);
     fail({ a: true }, def);
   });
 
   it("should validate object - mandatory fields", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       a: { $type: "bool"   },
       b: { $type: "int"    },
       c: { $type: "double" },
@@ -1747,7 +1756,7 @@ describe("QData", function() {
   });
 
   it("should validate object - optional fields", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       a: { $type: "bool"  , $optional: true },
       b: { $type: "int"   , $optional: true },
       c: { $type: "double", $optional: true },
@@ -1762,7 +1771,7 @@ describe("QData", function() {
   });
 
   it("should validate object - special fields", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       constructor         : { $type: "string", $optional: true },
       hasOwnProperty      : { $type: "string", $optional: true },
       toString            : { $type: "string", $optional: true },
@@ -1784,7 +1793,7 @@ describe("QData", function() {
   });
 
   it("should validate object - unicode fields", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       "\u0909": { $type: "string" },
       "\u0910": { $type: "string" }
     });
@@ -1793,7 +1802,7 @@ describe("QData", function() {
   });
 
   it("should validate object - escaped fields", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       "\\$type"  : { $type: "string" },
       "\\\\value": { $type: "string" }
     });
@@ -1802,29 +1811,29 @@ describe("QData", function() {
   });
 
   it("should validate object - default fields", function() {
-    var def = qdata.schema({
-      a: { $type: "bool"  , $default: true    },
-      b: { $type: "int"   , $default: 42      },
-      c: { $type: "double", $default: 3.14    },
-      d: { $type: "string", $default: "qdata" },
-      e: { $type: "object", $default: {}      }
+    var def = exmodel.schema({
+      a: { $type: "bool"  , $default: true  },
+      b: { $type: "int"   , $default: 42    },
+      c: { $type: "double", $default: 3.14  },
+      d: { $type: "string", $default: "exm" },
+      e: { $type: "object", $default: {}    }
     });
 
     pass({}, def, 0, null, {
       a: true,
       b: 42,
       c: 3.14,
-      d: "qdata",
+      d: "exm",
       e: {}
     });
 
-    // QData should always copy all defaults.
-    assert(qdata.process({}, def, 0, null).e !==
-           qdata.process({}, def, 0, null).e);
+    // exmodel.js should always copy all defaults.
+    assert(exmodel.process({}, def, 0, null).e !==
+           exmodel.process({}, def, 0, null).e);
   });
 
   it("should validate object - strict/extract", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       a: { $type: "bool" },
       nested: {
         b: { $type: "int" }
@@ -1844,18 +1853,18 @@ describe("QData", function() {
     var noise2 = cloneDeep(noise1);
     noise2.nested.anotherNoise = true;
 
-    pass(noise1, def, qdata.kExtractTop, null, data);
-    pass(noise2, def, qdata.kExtractAll, null, data);
+    pass(noise1, def, exmodel.kExtractTop, null, data);
+    pass(noise2, def, exmodel.kExtractAll, null, data);
 
-    fail(noise1, def, qdata.kNoOptions);
-    fail(noise1, def, qdata.kExtractNested);
+    fail(noise1, def, exmodel.kNoOptions);
+    fail(noise1, def, exmodel.kExtractNested);
 
-    fail(noise2, def, qdata.kNoOptions);
-    fail(noise2, def, qdata.kExtractTop);
+    fail(noise2, def, exmodel.kNoOptions);
+    fail(noise2, def, exmodel.kExtractTop);
   });
 
   it("should validate object - delta mode", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       a: { $type: "bool" },
       b: { $type: "int"  },
       nested: {
@@ -1864,14 +1873,14 @@ describe("QData", function() {
       }
     });
 
-    pass({ a: true }, def, qdata.kDeltaMode);
-    pass({ b: 1234 }, def, qdata.kDeltaMode);
+    pass({ a: true }, def, exmodel.kDeltaMode);
+    pass({ b: 1234 }, def, exmodel.kDeltaMode);
 
-    pass({ a: true, nested: {} }, def, qdata.kDeltaMode);
-    pass({ b: 1234, nested: {} }, def, qdata.kDeltaMode);
+    pass({ a: true, nested: {} }, def, exmodel.kDeltaMode);
+    pass({ b: 1234, nested: {} }, def, exmodel.kDeltaMode);
 
-    pass({ a: true, nested: { c: "qdata" } }, def, qdata.kDeltaMode);
-    pass({ b: 1234, nested: { d: ["qqq"] } }, def, qdata.kDeltaMode);
+    pass({ a: true, nested: { c: "exm"   } }, def, exmodel.kDeltaMode);
+    pass({ b: 1234, nested: { d: ["qqq"] } }, def, exmodel.kDeltaMode);
 
     // This is just a delta mode, invalid properties shouldn't be allowed.
     fail({ invalid: true }, def);
@@ -1879,7 +1888,7 @@ describe("QData", function() {
   });
 
   it("should validate object - delta mode with $delta", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       a: { $type: "bool" },
       b: { $type: "int"  },
       nested: {
@@ -1889,17 +1898,17 @@ describe("QData", function() {
       }
     });
 
-    pass({ a: true }, def, qdata.kDeltaMode);
-    pass({ b: 1234 }, def, qdata.kDeltaMode);
+    pass({ a: true }, def, exmodel.kDeltaMode);
+    pass({ b: 1234 }, def, exmodel.kDeltaMode);
 
-    pass({ a: true, nested: { c: "qdata", d: ["qqq" ] } }, def, qdata.kDeltaMode);
-    pass({ b: 1234, nested: { c: "qdata", d: ["qqq" ] } }, def, qdata.kDeltaMode);
+    pass({ a: true, nested: { c: "exm", d: ["qqq" ] } }, def, exmodel.kDeltaMode);
+    pass({ b: 1234, nested: { c: "exm", d: ["qqq" ] } }, def, exmodel.kDeltaMode);
 
-    fail({ a: true, nested: {} }, def, qdata.kDeltaMode);
-    fail({ b: 1234, nested: {} }, def, qdata.kDeltaMode);
+    fail({ a: true, nested: {} }, def, exmodel.kDeltaMode);
+    fail({ b: 1234, nested: {} }, def, exmodel.kDeltaMode);
 
-    fail({ a: true, nested: { c: "qdata" } }, def, qdata.kDeltaMode);
-    fail({ b: 1234, nested: { d: ["qqq"] } }, def, qdata.kDeltaMode);
+    fail({ a: true, nested: { c: "exm"   } }, def, exmodel.kDeltaMode);
+    fail({ b: 1234, nested: { d: ["qqq"] } }, def, exmodel.kDeltaMode);
   });
 
   // --------------------------------------------------------------------------
@@ -1907,18 +1916,18 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate map - any", function() {
-    var def0 = qdata.schema({
+    var def0 = exmodel.schema({
       $type: "map",
       $data: {
         $type: "any"
       }
     });
 
-    pass({ a: 1, b: true, c: "qdata", d: [[[1, 2], 3], 4] }, def0);
+    pass({ a: 1, b: true, c: "exm", d: [[[1, 2], 3], 4] }, def0);
     fail(null, def0);
     fail({ a: null }, def0);
 
-    var def1 = qdata.schema({
+    var def1 = exmodel.schema({
       $type: "map",
       $null: true,
       $data: {
@@ -1926,11 +1935,11 @@ describe("QData", function() {
       }
     });
 
-    pass({ a: 1, b: true, c: "qdata", d: [[[1, 2], 3], 4] }, def1);
+    pass({ a: 1, b: true, c: "exm", d: [[[1, 2], 3], 4] }, def1);
     pass(null, def1);
     fail({ a: null }, def1);
 
-    var def2 = qdata.schema({
+    var def2 = exmodel.schema({
       $type: "map",
       $null: true,
       $data: {
@@ -1939,13 +1948,13 @@ describe("QData", function() {
       }
     });
 
-    pass({ a: 1, b: true, c: "qdata", d: [[[1, 2], 3], 4] }, def2);
+    pass({ a: 1, b: true, c: "exm", d: [[[1, 2], 3], 4] }, def2);
     pass(null, def2);
     pass({ a: null }, def2);
   });
 
   it("should validate map - types", function() {
-    var def0 = qdata.schema({
+    var def0 = exmodel.schema({
       $type: "map",
       $data: {
         $type: "int",
@@ -1956,7 +1965,7 @@ describe("QData", function() {
     pass({ a: 0, b: 49 }, def0);
     fail({ a: 0, b: 51 }, def0);
 
-    var def1 = qdata.schema({
+    var def1 = exmodel.schema({
       $type: "map",
       $data: {
         $type: "string"
@@ -1987,7 +1996,7 @@ describe("QData", function() {
         var passData = spec.pass;
         var failData = spec.fail.concat([undefined]);
 
-        var def = qdata.schema({
+        var def = exmodel.schema({
           $type: "array",
           $data: {
             $type: type,
@@ -2007,7 +2016,7 @@ describe("QData", function() {
   });
 
   it("should validate array - nested objects", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       $type: "array",
       $data: {
         active: { $type: "bool", $null: true },
@@ -2031,7 +2040,7 @@ describe("QData", function() {
   });
 
   it("should validate array - length", function() {
-    var defLen2 = qdata.schema({
+    var defLen2 = exmodel.schema({
       $type: "array",
       $data: {
         $type: "int"
@@ -2039,7 +2048,7 @@ describe("QData", function() {
       $length: 2
     });
 
-    var defMin2 = qdata.schema({
+    var defMin2 = exmodel.schema({
       $type: "array",
       $data: {
         $type: "int"
@@ -2047,7 +2056,7 @@ describe("QData", function() {
       $minLength: 2
     });
 
-    var defMax2 = qdata.schema({
+    var defMax2 = exmodel.schema({
       $type: "array",
       $data: {
         $type: "int"
@@ -2069,7 +2078,7 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should handle shortcut '?'", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       a: { $type: "int"  },
       b: { $type: "int?" }
     });
@@ -2084,7 +2093,7 @@ describe("QData", function() {
   });
 
   it("should handle shortcut '[]'", function() {
-    var def0 = qdata.schema({
+    var def0 = exmodel.schema({
       a: { $type: "int"   },
       b: { $type: "int[]" }
     });
@@ -2096,7 +2105,7 @@ describe("QData", function() {
     fail({ a: 0, b: "s"   }, def0);
     fail({ a: 0, b: ["s"] }, def0);
 
-    var def1 = qdata.schema({
+    var def1 = exmodel.schema({
       a: { $type: "int[]", $optional: true }
     });
 
@@ -2105,10 +2114,10 @@ describe("QData", function() {
   });
 
   it("should handle shortcut '[x..y]'", function() {
-    var Exact  = qdata.schema({ $type: "int[2]"    });
-    var Min    = qdata.schema({ $type: "int[2..]"  });
-    var Max    = qdata.schema({ $type: "int[..2]"  });
-    var MinMax = qdata.schema({ $type: "int[2..4]" });
+    var Exact  = exmodel.schema({ $type: "int[2]"    });
+    var Min    = exmodel.schema({ $type: "int[2..]"  });
+    var Max    = exmodel.schema({ $type: "int[..2]"  });
+    var MinMax = exmodel.schema({ $type: "int[2..4]" });
 
     fail([]             , Exact);
     fail([0]            , Exact);
@@ -2136,7 +2145,7 @@ describe("QData", function() {
   });
 
   it("should handle shortcut '[]?'", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       a: { $type: "int"    },
       b: { $type: "int[]?" }
     });
@@ -2153,7 +2162,7 @@ describe("QData", function() {
   });
 
   it("should handle shortcut '?[]?'", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       a: { $type: "int"     },
       b: { $type: "int?[]?" }
     });
@@ -2171,11 +2180,11 @@ describe("QData", function() {
   });
 
   it("should handle shortcut (invalid)", function() {
-    assertThrow(function() { qdata.schema({ $type: "int??"    }); });
-    assertThrow(function() { qdata.schema({ $type: "int??[]"  }); });
-    assertThrow(function() { qdata.schema({ $type: "int[]??"  }); });
-    assertThrow(function() { qdata.schema({ $type: "int?[]??" }); });
-    assertThrow(function() { qdata.schema({ $type: "int??[]?" }); });
+    assertThrow(function() { exmodel.schema({ $type: "int??"    }); });
+    assertThrow(function() { exmodel.schema({ $type: "int??[]"  }); });
+    assertThrow(function() { exmodel.schema({ $type: "int[]??"  }); });
+    assertThrow(function() { exmodel.schema({ $type: "int?[]??" }); });
+    assertThrow(function() { exmodel.schema({ $type: "int??[]?" }); });
   });
 
   // --------------------------------------------------------------------------
@@ -2183,7 +2192,7 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should enrich object - properties having $g", function() {
-    var def0 = qdata.schema({
+    var def0 = exmodel.schema({
       id         : { $type: "int" },
       type       : { $type: "int" },
       flags      : { $type: "int" },
@@ -2198,7 +2207,7 @@ describe("QData", function() {
       "@default": ["id", "type", "flags", "title", "description", "metadata"]
     });
 
-    var def1 = qdata.schema({
+    var def1 = exmodel.schema({
       id         : { $type: "int" , $g: "@info" },
       type       : { $type: "int" , $g: "@info" },
       flags      : { $type: "int" , $g: "@info" },
@@ -2220,7 +2229,7 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should enrich object - properties having $pk and $fk", function() {
-    var def0 = qdata.schema({
+    var def0 = exmodel.schema({
       id         : { $type: "int", $pk: true            },
       userId     : { $type: "int", $fk: "users.userId"  },
       tagId      : { $type: "int", $fk: "tags.tagId"    }
@@ -2237,7 +2246,7 @@ describe("QData", function() {
   });
 
   it("should enrich object - properties having $unique", function() {
-    var def0 = qdata.schema({
+    var def0 = exmodel.schema({
       id         : { $type: "int", $pk: true     },
       name       : { $type: "int", $unique: true },
       taxId      : { $type: "int", $unique: true }
@@ -2247,7 +2256,7 @@ describe("QData", function() {
       sortedArrayOfArrays(def0.$uniqueArray),
       sortedArrayOfArrays([["id"], ["name"], ["taxId"]]));
 
-    var def1 = qdata.schema({
+    var def1 = exmodel.schema({
       id         : { $type: "int", $pk: true    },
       name       : { $type: "int", $unique: "nameAndTax" },
       taxId      : { $type: "int", $unique: "nameAndTax" }
@@ -2257,7 +2266,7 @@ describe("QData", function() {
       sortedArrayOfArrays(def1.$uniqueArray),
       sortedArrayOfArrays([["id"], ["name", "taxId"]]));
 
-    var def2 = qdata.schema({
+    var def2 = exmodel.schema({
       userId     : { $type: "int"   , $pk: true, $unique: "name|id" },
       tagId      : { $type: "int"   , $pk: true, $unique: "id"      },
       tagName    : { $type: "string"           , $unique: "name"    }
@@ -2267,7 +2276,7 @@ describe("QData", function() {
       sortedArrayOfArrays(def2.$uniqueArray),
       sortedArrayOfArrays([["tagId", "userId"], ["tagName", "userId"]]));
 
-    var def3 = qdata.schema({
+    var def3 = exmodel.schema({
       a: { $type: "int", $unique: "ac|ad" },
       b: { $type: "int", $unique: true    },
       c: { $type: "int", $unique: "ac"    },
@@ -2284,12 +2293,12 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should extend schema - use as nested (directly)", function() {
-    var nestedDef = qdata.schema({
+    var nestedDef = exmodel.schema({
       a: { $type: "bool" },
       b: { $type: "int"  }
     });
 
-    var rootDef = qdata.schema({
+    var rootDef = exmodel.schema({
       nested: nestedDef
     });
 
@@ -2297,12 +2306,12 @@ describe("QData", function() {
   });
 
   it("should extend schema - use as nested ($extend)", function() {
-    var nestedDef = qdata.schema({
+    var nestedDef = exmodel.schema({
       a: { $type: "bool" },
       b: { $type: "int"  }
     });
 
-    var rootDef = qdata.schema({
+    var rootDef = exmodel.schema({
       nested: {
         $extend: nestedDef
       }
@@ -2312,59 +2321,59 @@ describe("QData", function() {
   });
 
   it("should extend schema - add field", function() {
-    var def0 = qdata.schema({
+    var def0 = exmodel.schema({
       a: { $type: "bool" },
       b: { $type: "int"  }
     });
 
-    var def1 = qdata.schema({
+    var def1 = exmodel.schema({
       $extend: def0,
       c: { $type: "string" }
     });
 
-    var def2 = qdata.schema({
+    var def2 = exmodel.schema({
       $extend: def1,
       d: { $type: "string[]" }
     });
 
-    pass({ a: true, b: 1234                         }, def0);
-    pass({ a: true, b: 1234, c: "qdata"             }, def1);
-    pass({ a: true, b: 1234, c: "qdata", d: ["qqq"] }, def2);
+    pass({ a: true, b: 1234                       }, def0);
+    pass({ a: true, b: 1234, c: "exm"             }, def1);
+    pass({ a: true, b: 1234, c: "exm", d: ["qqq"] }, def2);
   });
 
   it("should extend schema - delete field", function() {
-    var def0 = qdata.schema({
+    var def0 = exmodel.schema({
       a: { $type: "bool"     },
       b: { $type: "int"      },
       c: { $type: "string"   },
       d: { $type: "string[]" }
     });
 
-    var def1 = qdata.schema({
+    var def1 = exmodel.schema({
       $extend: def0,
       d: undefined
     });
 
-    var def2 = qdata.schema({
+    var def2 = exmodel.schema({
       $extend: def1,
       c: undefined
     });
 
-    pass({ a: true, b: 1234, c: "qdata", d: ["qqq"] }, def0);
-    pass({ a: true, b: 1234, c: "qdata"             }, def1);
-    pass({ a: true, b: 1234                         }, def2);
+    pass({ a: true, b: 1234, c: "exm", d: ["qqq"] }, def0);
+    pass({ a: true, b: 1234, c: "exm"             }, def1);
+    pass({ a: true, b: 1234                       }, def2);
 
-    fail({ a: true, b: 1234, c: "qdata", d: ["qqq"] }, def1);
-    fail({ a: true, b: 1234, c: "qdata"             }, def2);
+    fail({ a: true, b: 1234, c: "exm", d: ["qqq"] }, def1);
+    fail({ a: true, b: 1234, c: "exm"             }, def2);
   });
 
   it("should extend schema - delete nonexisting field", function() {
-    var def0 = qdata.schema({
+    var def0 = exmodel.schema({
       a: { $type: "bool" },
       b: { $type: "int"  }
     });
 
-    var def1 = qdata.schema({
+    var def1 = exmodel.schema({
       $extend: def0,
       nonExisting: undefined
     });
@@ -2373,27 +2382,56 @@ describe("QData", function() {
   });
 
   it("should extend schema - modify field (optional)", function() {
-    var def0 = qdata.schema({
+    var def0 = exmodel.schema({
       a: { $type: "bool"   },
       b: { $type: "int"    },
       c: { $type: "string", $optional: true }
     });
 
-    var def1 = qdata.schema({
+    var def1 = exmodel.schema({
       $extend: def0,
       a: { $optional: true  },
       b: { $optional: undefined },
       c: { $optional: false }
     });
 
-    pass({ a: true, b: 1234             }, def0);
-    pass({ a: true, b: 1234, c: "qdata" }, def0);
+    pass({ a: true, b: 1234           }, def0);
+    pass({ a: true, b: 1234, c: "exm" }, def0);
 
-    pass({ a: true, b: 1234, c: "qdata" }, def1);
-    pass({          b: 1234, c: "qdata" }, def1);
+    pass({ a: true, b: 1234, c: "exm" }, def1);
+    pass({          b: 1234, c: "exm" }, def1);
 
-    fail({ a: true, b: 1234             }, def1);
-    fail({          b: 1234             }, def1);
+    fail({ a: true, b: 1234           }, def1);
+    fail({          b: 1234           }, def1);
+  });
+
+  // --------------------------------------------------------------------------
+  // [Include]
+  // --------------------------------------------------------------------------
+
+  it("should include", function() {
+    var MData1 = {
+      a: { $type: "bool" },
+      b: { $type: "int"  }
+    };
+
+    var MData2 = { c: { $type: "bool" } };
+    var MData3 = { d: { $type: "int"  } };
+
+    var def = exmodel.schema({
+      some: { $type: "string" },
+      $include0: MData1,
+      $include1: [MData2, MData3]
+    });
+
+    pass({ some: "some", a: false, b: 42, c: true, d: 42 }, def);
+
+    // Prevent inclusion of property that already exists.
+    assertThrow(function() { exmodel.schema({ a: { $type: "bool" }, $include: MData1 }); });
+    assertThrow(function() { exmodel.schema({ $include: MData1, a: { $type: "bool" } }); });
+
+    assertThrow(function() { exmodel.schema({ $include: [MData1, MData1] }); });
+    assertThrow(function() { exmodel.schema({ $include0: MData1, $include1: MData1 }); });
   });
 
   // --------------------------------------------------------------------------
@@ -2401,7 +2439,7 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should validate access rights - write one", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       a: { $type: "bool"     , $r: "*", $w: "basic" },
       b: { $type: "int"      , $r: "*", $w: "basic" },
       c: { $type: "string"   , $r: "*", $w: "basic" },
@@ -2412,41 +2450,41 @@ describe("QData", function() {
     var data = {
       a: true,
       b: 0,
-      c: "qdata",
+      c: "exm",
       d: {},
       e: ["test"]
     };
 
     // `null` disables access rights checking (the default).
-    pass(data, def, qdata.kNoOptions, null, data);
-    pass(data, def, qdata.kNoOptions, { basic: true, extra: true }, data);
+    pass(data, def, exmodel.kNoOptions, null, data);
+    pass(data, def, exmodel.kNoOptions, { basic: true, extra: true }, data);
 
     // Empty object means enabled access rights checks, but no access rights.
-    fail(data, def, qdata.kNoOptions, {});
+    fail(data, def, exmodel.kNoOptions, {});
 
     // Incomplete access rights.
-    fail(data, def, qdata.kNoOptions, { basic: true });
-    fail(data, def, qdata.kNoOptions, { extra: true });
+    fail(data, def, exmodel.kNoOptions, { basic: true });
+    fail(data, def, exmodel.kNoOptions, { extra: true });
 
     // Delta mode cares only about access rights required by the fields specified.
-    pass({ a: true                        }, def, qdata.kDeltaMode, { basic: true });
-    pass({ a: true, b: 0                  }, def, qdata.kDeltaMode, { basic: true });
-    pass({ a: true, b: 0, c: "s"          }, def, qdata.kDeltaMode, { basic: true });
-    pass({ d: {}                          }, def, qdata.kDeltaMode, { extra: true });
-    pass({ e: []                          }, def, qdata.kDeltaMode, { extra: true });
+    pass({ a: true                        }, def, exmodel.kDeltaMode, { basic: true });
+    pass({ a: true, b: 0                  }, def, exmodel.kDeltaMode, { basic: true });
+    pass({ a: true, b: 0, c: "s"          }, def, exmodel.kDeltaMode, { basic: true });
+    pass({ d: {}                          }, def, exmodel.kDeltaMode, { extra: true });
+    pass({ e: []                          }, def, exmodel.kDeltaMode, { extra: true });
 
     // No access.
-    fail({ a: true, b: 0, c: "s", d: null }, def, qdata.kDeltaMode, { basic: true });
-    fail({ a: true, b: 0, c: "s", d: {}   }, def, qdata.kDeltaMode, { basic: true });
-    fail({ a: true, b: 0, c: "s", e: null }, def, qdata.kDeltaMode, { basic: true });
-    fail({ a: true, b: 0, c: "s", e: []   }, def, qdata.kDeltaMode, { basic: true });
-    fail({ a: true                        }, def, qdata.kDeltaMode, { extra: true });
-    fail({ a: true, b: 0                  }, def, qdata.kDeltaMode, { extra: true });
-    fail({ a: true, b: 0, c: "s"          }, def, qdata.kDeltaMode, { extra: true });
+    fail({ a: true, b: 0, c: "s", d: null }, def, exmodel.kDeltaMode, { basic: true });
+    fail({ a: true, b: 0, c: "s", d: {}   }, def, exmodel.kDeltaMode, { basic: true });
+    fail({ a: true, b: 0, c: "s", e: null }, def, exmodel.kDeltaMode, { basic: true });
+    fail({ a: true, b: 0, c: "s", e: []   }, def, exmodel.kDeltaMode, { basic: true });
+    fail({ a: true                        }, def, exmodel.kDeltaMode, { extra: true });
+    fail({ a: true, b: 0                  }, def, exmodel.kDeltaMode, { extra: true });
+    fail({ a: true, b: 0, c: "s"          }, def, exmodel.kDeltaMode, { extra: true });
   });
 
   it("should validate access rights - write a|b", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       a: { $type: "int", $r: "*", $w: "a"   },
       b: { $type: "int", $r: "*", $w: "a|b" },
       c: { $type: "int", $r: "*", $w: "a|c" },
@@ -2461,27 +2499,27 @@ describe("QData", function() {
     };
 
     // `null` disables access rights checking (the default).
-    pass(data, def, qdata.kNoOptions, null);
-    pass(data, def, qdata.kNoOptions, { a: true, b: true });
-    pass(data, def, qdata.kNoOptions, { a: true, c: true });
-    fail(data, def, qdata.kNoOptions, { b: true, c: true });
+    pass(data, def, exmodel.kNoOptions, null);
+    pass(data, def, exmodel.kNoOptions, { a: true, b: true });
+    pass(data, def, exmodel.kNoOptions, { a: true, c: true });
+    fail(data, def, exmodel.kNoOptions, { b: true, c: true });
 
-    pass({ a: 0 }, def, qdata.kDeltaMode, { a: true });
-    pass({ b: 0 }, def, qdata.kDeltaMode, { a: true });
-    pass({ b: 0 }, def, qdata.kDeltaMode, { b: true });
-    pass({ c: 0 }, def, qdata.kDeltaMode, { a: true });
-    pass({ c: 0 }, def, qdata.kDeltaMode, { c: true });
-    pass({ d: 0 }, def, qdata.kDeltaMode, { b: true });
-    pass({ d: 0 }, def, qdata.kDeltaMode, { c: true });
+    pass({ a: 0 }, def, exmodel.kDeltaMode, { a: true });
+    pass({ b: 0 }, def, exmodel.kDeltaMode, { a: true });
+    pass({ b: 0 }, def, exmodel.kDeltaMode, { b: true });
+    pass({ c: 0 }, def, exmodel.kDeltaMode, { a: true });
+    pass({ c: 0 }, def, exmodel.kDeltaMode, { c: true });
+    pass({ d: 0 }, def, exmodel.kDeltaMode, { b: true });
+    pass({ d: 0 }, def, exmodel.kDeltaMode, { c: true });
 
-    fail({ a: 0 }, def, qdata.kDeltaMode, { b: true });
-    fail({ b: 0 }, def, qdata.kDeltaMode, { c: true });
-    fail({ c: 0 }, def, qdata.kDeltaMode, { b: true });
-    fail({ d: 0 }, def, qdata.kDeltaMode, { a: true });
+    fail({ a: 0 }, def, exmodel.kDeltaMode, { b: true });
+    fail({ b: 0 }, def, exmodel.kDeltaMode, { c: true });
+    fail({ c: 0 }, def, exmodel.kDeltaMode, { b: true });
+    fail({ d: 0 }, def, exmodel.kDeltaMode, { a: true });
   });
 
  it("should validate access rights - write inherit", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       $r: "*", $w: "user|admin",
       nested: {
         a           : { $type: "int", $r: "*"                      }, // Inherit.
@@ -2501,10 +2539,10 @@ describe("QData", function() {
       }
     };
 
-    pass(data0, def, qdata.kDeltaMode, null);
-    pass(data0, def, qdata.kDeltaMode, { user: true });
-    pass(data0, def, qdata.kDeltaMode, { admin: true });
-    fail(data0, def, qdata.kDeltaMode, {});
+    pass(data0, def, exmodel.kDeltaMode, null);
+    pass(data0, def, exmodel.kDeltaMode, { user: true });
+    pass(data0, def, exmodel.kDeltaMode, { admin: true });
+    fail(data0, def, exmodel.kDeltaMode, {});
 
     var data1 = {
       nested: {
@@ -2515,10 +2553,10 @@ describe("QData", function() {
       }
     };
 
-    pass(data1, def, qdata.kDeltaMode, null);
-    pass(data1, def, qdata.kDeltaMode, { user: true });
-    fail(data1, def, qdata.kDeltaMode, {});
-    fail(data1, def, qdata.kDeltaMode, { admin: true });
+    pass(data1, def, exmodel.kDeltaMode, null);
+    pass(data1, def, exmodel.kDeltaMode, { user: true });
+    fail(data1, def, exmodel.kDeltaMode, {});
+    fail(data1, def, exmodel.kDeltaMode, { admin: true });
 
     var data2 = {
       nested: {
@@ -2529,10 +2567,10 @@ describe("QData", function() {
       }
     };
 
-    pass(data2, def, qdata.kDeltaMode, null);
-    pass(data2, def, qdata.kDeltaMode, { admin: true });
-    fail(data2, def, qdata.kDeltaMode, {});
-    fail(data2, def, qdata.kDeltaMode, { user: true });
+    pass(data2, def, exmodel.kDeltaMode, null);
+    pass(data2, def, exmodel.kDeltaMode, { admin: true });
+    fail(data2, def, exmodel.kDeltaMode, {});
+    fail(data2, def, exmodel.kDeltaMode, { user: true });
 
     var data3 = {
       nested: {
@@ -2543,11 +2581,11 @@ describe("QData", function() {
       }
     };
 
-    pass(data3, def, qdata.kDeltaMode, null);
-    pass(data3, def, qdata.kDeltaMode, { admin: true, user: true });
-    fail(data3, def, qdata.kDeltaMode, {});
-    fail(data3, def, qdata.kDeltaMode, { user: true });
-    fail(data3, def, qdata.kDeltaMode, { admin: true });
+    pass(data3, def, exmodel.kDeltaMode, null);
+    pass(data3, def, exmodel.kDeltaMode, { admin: true, user: true });
+    fail(data3, def, exmodel.kDeltaMode, {});
+    fail(data3, def, exmodel.kDeltaMode, { user: true });
+    fail(data3, def, exmodel.kDeltaMode, { admin: true });
 
     var data4 = {
       nested: {
@@ -2555,11 +2593,11 @@ describe("QData", function() {
       }
     };
 
-    pass(data4, def, qdata.kDeltaMode, null);
-    fail(data4, def, qdata.kDeltaMode, {});
-    fail(data4, def, qdata.kDeltaMode, { user: true });
-    fail(data4, def, qdata.kDeltaMode, { admin: true });
-    fail(data4, def, qdata.kDeltaMode, { admin: true, user: true });
+    pass(data4, def, exmodel.kDeltaMode, null);
+    fail(data4, def, exmodel.kDeltaMode, {});
+    fail(data4, def, exmodel.kDeltaMode, { user: true });
+    fail(data4, def, exmodel.kDeltaMode, { admin: true });
+    fail(data4, def, exmodel.kDeltaMode, { admin: true, user: true });
   });
 
   it("should validate access rights - invalid expression ($r / $w)", function() {
@@ -2572,9 +2610,9 @@ describe("QData", function() {
     ];
 
     invalid.forEach(function(access) {
-      assertThrow(function() { qdata.schema({ field: { $type: "int", $a: access } }); });
-      assertThrow(function() { qdata.schema({ field: { $type: "int", $r: access } }); });
-      assertThrow(function() { qdata.schema({ field: { $type: "int", $w: access } }); });
+      assertThrow(function() { exmodel.schema({ field: { $type: "int", $a: access } }); });
+      assertThrow(function() { exmodel.schema({ field: { $type: "int", $r: access } }); });
+      assertThrow(function() { exmodel.schema({ field: { $type: "int", $w: access } }); });
     });
   });
 
@@ -2583,7 +2621,7 @@ describe("QData", function() {
   // --------------------------------------------------------------------------
 
   it("should accumulate errors", function() {
-    var def = qdata.schema({
+    var def = exmodel.schema({
       a: { $type: "bool"   },
       b: { $type: "int"    },
       c: { $type: "double" },
@@ -2609,10 +2647,10 @@ describe("QData", function() {
     var err;
 
     try {
-      out = qdata.process(data, def, qdata.kAccumulateErrors);
+      out = exmodel.process(data, def, exmodel.kAccumulateErrors);
     }
     catch (err) {
-      assert(err instanceof qdata.SchemaError, "Error thrown 'SchemaError' instance.");
+      assert(err instanceof exmodel.SchemaError, "Error thrown 'SchemaError' instance.");
       assert.deepEqual(err.errors, [
         { code: "ExpectedBoolean", path: "a" },
         { code: "ExpectedNumber" , path: "b" },
@@ -2628,7 +2666,7 @@ describe("QData", function() {
   });
 
   it("should refuse schema with some semantic errors", function() {
-    assertThrow(function() { qdata.schema({ $type: "invalid"               }); });
-    assertThrow(function() { qdata.schema({ $type: "object", $null: 55     }); });
+    assertThrow(function() { exmodel.schema({ $type: "invalid"               }); });
+    assertThrow(function() { exmodel.schema({ $type: "object", $null: 55     }); });
   });
 });

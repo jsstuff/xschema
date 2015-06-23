@@ -1,6 +1,11 @@
-// QData <https://github.com/jshq/qdata>
-(function(qclass, $export, $as) {
+// exmodel.js <https://github.com/exceptionaljs/exmodel>
+(function(exclass, $export, $as) {
 "use strict";
+
+// ideas:
+// extasy
+// errorless
+// painless
 
 // ============================================================================
 // [Config]
@@ -17,41 +22,41 @@ var hasOwn = Object.prototype.hasOwnProperty;
 var isArray = Array.isArray;
 
 // ============================================================================
-// [QData]
+// [exmodel.js]
 // ============================================================================
 
-// \namespace qdata
-var qdata = {};
+// \namespace exmodel
+var exmodel = {};
+
+// `exmodel.VERSION`
+//
+// Version information in a "major.minor.patch" form.
+exmodel.VERSION = "0.0.1";
+
+// `exmodel.SENTINEL`
+//
+// Private object that is used to check whether an object is a exmodel.js instance.
+var SENTINEL = freeze({});
+exmodel.SENTINEL = SENTINEL;
+
+// `exmodel.qclass`
+//
+// Link to the `qclass` library used by exmodel.js (useful mostly in NPM based
+// environment).
+exmodel.exclass = exclass;
 
 // ============================================================================
 // [Constants]
 // ============================================================================
 
-// `qdata.VERSION`
-//
-// Version information in a "major.minor.patch" form.
-qdata.VERSION = "0.1.0";
-
-// `qdata.SENTINEL`
-//
-// Private object that is used to check whether an object is a qdata instance.
-var SENTINEL = freeze({});
-qdata.SENTINEL = SENTINEL;
-
-// `qdata.qclass`
-//
-// Link to the `qclass` library used by `qdata` (useful mostly in NPM based
-// environment).
-qdata.qclass = qclass;
-
-// `qdata.kNoOptions`
+// `exmodel.kNoOptions`
 //
 // No data processing options. This constant has been added so the code that
 // is using data processing can be more clear in cases where no options are
 // used.
-var kNoOptions = qdata.kNoOptions = 0;
+var kNoOptions = exmodel.kNoOptions = 0;
 
-// `qdata.kExtractTop`
+// `exmodel.kExtractTop`
 //
 // Extract top fields from the source object.
 //
@@ -65,21 +70,21 @@ var kNoOptions = qdata.kNoOptions = 0;
 //
 // NOTE: This option can be combined with `kExtractAll`, in such case the
 // latter has priority.
-var kExtractTop = qdata.kExtractTop = 0x0001;
+var kExtractTop = exmodel.kExtractTop = 0x0001;
 
-// `qdata.kExtractNested`
+// `exmodel.kExtractNested`
 //
 // Extract nested fields from the source object.
 //
 // This option is used in case you have a top level object that doesn't contain
 // any other properties than defined by the schema, but nested objects can. When
-// combined with `qdata.kExtractTop` it efficiently forms `qdata.kExtractAll`.
+// combined with `exmodel.kExtractTop` it efficiently forms `exmodel.kExtractAll`.
 //
 // Extraction from nested objects follows the same rules as extraction from top
-// level object. See `qdata.kExtractTop` for more detailed information.
-var kExtractNested = qdata.kExtractNested = 0x0002;
+// level object. See `exmodel.kExtractTop` for more detailed information.
+var kExtractNested = exmodel.kExtractNested = 0x0002;
 
-// `qdata.kExtractAll`
+// `exmodel.kExtractAll`
 //
 // Extract all fields from the source object and all nested objects.
 //
@@ -87,10 +92,10 @@ var kExtractNested = qdata.kExtractNested = 0x0002;
 // nested. This option can be efficiently used to filter properties from source
 // objects into properties defined by the schema.
 //
-// NOTE: This is a combination of both `qdata.kExtractTop` and `qdata.kExtractNested`.
-var kExtractAll = qdata.kExtractAll = 0x0003;
+// NOTE: This is a combination of both `exmodel.kExtractTop` and `exmodel.kExtractNested`.
+var kExtractAll = exmodel.kExtractAll = 0x0003;
 
-// `qdata.kDeltaMode`
+// `exmodel.kDeltaMode`
 //
 // Delta mode allows to validate a data that contains only changes (deltas).
 // When used all required fields become optional and default values won't
@@ -99,13 +104,13 @@ var kExtractAll = qdata.kExtractAll = 0x0003;
 // NOTE: Delta updating makes sense when updating something that already exists,
 // but it doesn't make sense for data insertion, where you probably don't want
 // to omit what is 'required'. If your stack doesn't use delta updates or you
-// use `qdata` for an input validation only, this feature can be completely
+// use exmodel.js for an input validation only, this feature can be completely
 // ignored.
-var kDeltaMode = qdata.kDeltaMode = 0x0004;
+var kDeltaMode = exmodel.kDeltaMode = 0x0004;
 
 // \internal
 //
-// Flag used internally to generate code for `qdata.test()` like validation.
+// Flag used internally to generate code for `exmodel.test()` like validation.
 var kTestOnly = 0x0008;
 
 // \internal
@@ -113,7 +118,7 @@ var kTestOnly = 0x0008;
 // Flag used internally to force code generator to emit access rights checks.
 var kTestAccess = 0x0010;
 
-// `qdata.kAccumulateErrors`
+// `exmodel.kAccumulateErrors`
 //
 // Accumulate all errors instead of bailing out on the first failure.
 //
@@ -122,7 +127,7 @@ var kTestAccess = 0x0010;
 // found. This option is useful in cases that you want to see all problems
 // of the input data - for example you want to highlight fields that are
 // wrong on the client or perform an additional processing/fixing.
-var kAccumulateErrors = qdata.kAccumulateErrors = 0x1000;
+var kAccumulateErrors = exmodel.kAccumulateErrors = 0x1000;
 
 // \internal
 //
@@ -143,8 +148,8 @@ var kFuncCacheCount = kFuncCacheMask + 1;
 // Min/Max safe integer limits - 53 bits.
 //
 // NOTE: These should be fully compliant with ES6 `Number.isSafeInteger()`.
-var kSafeIntMin = qdata.kSafeIntMin = -9007199254740991;
-var kSafeIntMax = qdata.kSafeIntMax =  9007199254740991;
+var kSafeIntMin = exmodel.kSafeIntMin = -9007199254740991;
+var kSafeIntMax = exmodel.kSafeIntMax =  9007199254740991;
 
 // Minimum year that can be used in date/datetime.
 var kYearMin = 1;
@@ -203,6 +208,7 @@ var reInvalidIdentifier = /[^\w\$]/;          // Invalid identifier (test).
 var reTypeArgs = /^(\w+)\(([^\(]+)\)/;        // Type arguments "(...)" (match).
 var reTypeArray = /\[(\d+)?(\.\.)?(\d+)?]$/;  // Array type suffix "...[xxx]" (match).
 var reTypeOptional = /\?$/;                   // Optional type suffix "...?" (match).
+var reInclude = /^\$include/;                 // Test for $include directive.
 
 // Test if the given access right is valid (forbid some characters that can
 // violate with future boolean algebra that can be applied to UAC system).
@@ -214,7 +220,7 @@ var reInvalidAccessName = /[\x00-\x1F\s\(\)\[\]\{\}\&\|\*\^\!%]/;
 
 // \class RuntimeError
 //
-// Error thrown in case that `qdata` has been misused.
+// Error thrown in case that exmodel.js has been misused.
 function RuntimeError(message) {
   var e = Error.call(this, message);
 
@@ -225,7 +231,7 @@ function RuntimeError(message) {
   if (this.stack)
     this.stack = "Runtime" + this.stack;
 }
-qdata.RuntimeError = qclass({
+exmodel.RuntimeError = exclass({
   $extend: Error,
   $construct: RuntimeError
 });
@@ -253,7 +259,7 @@ function SchemaError(errors) {
   if (this.stack)
     this.stack = "Schema" + this.stack;
 }
-qdata.SchemaError = qclass({
+exmodel.SchemaError = exclass({
   $extend: Error,
   $construct: SchemaError
 });
@@ -266,23 +272,23 @@ function throwRuntimeError(msg, params) {
   }
   throw ex;
 }
-qdata.throwRuntimeError = throwRuntimeError;
+exmodel.throwRuntimeError = throwRuntimeError;
 
 function throwSchemaError(errors) {
   throw new SchemaError(errors);
 }
-qdata.throwSchemaError = throwSchemaError;
+exmodel.throwSchemaError = throwSchemaError;
 
 // ============================================================================
 // [Util]
 // ============================================================================
 
-// \namespace `qdata.util`
+// \namespace `exmodel.util`
 //
-// QData utility functions.
-var qutil = qdata.util = {};
+// exmodel.js utility functions.
+var qutil = exmodel.util = {};
 
-// \function `qdata.util.typeOf(arg)`
+// \function `exmodel.util.typeOf(arg)`
 //
 // Get extended type of the object.
 function typeOf(arg) {
@@ -291,7 +297,7 @@ function typeOf(arg) {
 }
 qutil.typeOf = typeOf;
 
-// \function `qdata.util.stringSplice(s, from, to, content)`
+// \function `exmodel.util.stringSplice(s, from, to, content)`
 //
 // Replace `s` content `from:to` by `by.`.
 function stringSplice(s, from, to, by) {
@@ -299,7 +305,7 @@ function stringSplice(s, from, to, by) {
 }
 qutil.stringSplice = stringSplice;
 
-// \function `qdata.util.trimStringArray(arr)`
+// \function `exmodel.util.trimStringArray(arr)`
 //
 // Trim all strings in the array `arr` and return `arr`.
 function trimStringArray(arr) {
@@ -308,15 +314,15 @@ function trimStringArray(arr) {
   return arr;
 }
 
-// \function `qdata.util.isDirectiveName(s)`
+// \function `exmodel.util.isDirectiveName(s)`
 //
-// Get whether the string `s` is a qdata's directive name (ie it starts with "$").
+// Get whether the string `s` is a exmodel's directive name (ie it starts with "$").
 function isDirectiveName(s) {
   return s.charCodeAt(0) === 36;
 }
 qutil.isDirectiveName = isDirectiveName;
 
-// \function `qdata.util.isVariableName(s)`
+// \function `exmodel.util.isVariableName(s)`
 //
 // Get whether the string `s` is a valid JS variable name:
 //
@@ -337,7 +343,7 @@ function isVariableName(s) {
 }
 qutil.isVariableName = isVariableName;
 
-// \function `qdata.util.escapeRegExp(s)`
+// \function `exmodel.util.escapeRegExp(s)`
 //
 // Escape a string `s` so it can be used in regexp for exact matching. For
 // example a string "[]" will be escaped to "\\[\\]".
@@ -346,15 +352,15 @@ function escapeRegExp(s) {
 }
 qutil.escapeRegExp = escapeRegExp;
 
-// \function `qdata.util.unescapeFieldName(s)`
+// \function `exmodel.util.unescapeFieldName(s)`
 //
-// Unescape a given object's field name `s` to a real name (qdata specific).
+// Unescape a given object's field name `s` to a real name (exmodel.js specific).
 function unescapeFieldName(s) {
   return s.replace(reUnescapeFieldName, "$1");
 }
 qutil.unescapeFieldName = unescapeFieldName;
 
-// \function `qdata.util.toCamelCase(s)`
+// \function `exmodel.util.toCamelCase(s)`
 //
 // Make a string camelcased.
 //
@@ -396,7 +402,7 @@ function getObjectProperty(s) {
   return isVariableName(s) ? "." + s : "[" + JSON.stringify(s) + "]";
 }
 
-// \function `qdata.util.isEmpty(obj)`
+// \function `exmodel.util.isEmpty(obj)`
 //
 // Get whether the given object or array `obj` is empty, i.e. contains no keys
 // or no elements. The given parameter has to be an object or array instance,
@@ -413,7 +419,7 @@ function isEmpty(obj) {
 }
 qutil.isEmpty = isEmpty;
 
-// \function `qdata.util.arrayToSet(arr)`
+// \function `exmodel.util.arrayToSet(arr)`
 //
 // Convert an array to a set (i.e. object having array values as key/true pairs).
 function arrayToSet(arr) {
@@ -424,7 +430,7 @@ function arrayToSet(arr) {
 }
 qutil.arrayToSet = arrayToSet;
 
-// \function `qdata.util.setToArray(arr)`
+// \function `exmodel.util.setToArray(arr)`
 //
 // Convert an object into a set (i.e. return an array containing all object keys).
 function setToArray(set) {
@@ -432,7 +438,7 @@ function setToArray(set) {
 }
 qutil.setToArray = setToArray;
 
-// \function `qdata.util.mergeSets(a, b)`
+// \function `exmodel.util.mergeSets(a, b)`
 //
 // Merge a set `a` with another set or array `b`.
 function mergeSets(a, b) {
@@ -452,7 +458,7 @@ function mergeSets(a, b) {
 }
 qutil.mergeSets = mergeSets;
 
-// \function `qdata.util.joinSet(set, sep)`
+// \function `exmodel.util.joinSet(set, sep)`
 //
 // Join all keys in a set `set` separated by `sep`. The functionality is similar
 // to `Array.join()`, however, it's designed to join an object keys.
@@ -471,7 +477,7 @@ function joinSet(set, sep) {
 }
 qutil.joinSet = joinSet;
 
-// \function `qdata.util.mergeObject(a, b)`
+// \function `exmodel.util.mergeObject(a, b)`
 //
 // Merge content from object `b` into `a`, and return `a`.
 function mergeObject(a, b) {
@@ -486,7 +492,7 @@ qutil.mergeObject = mergeObject;
 function freezeOrNoArray(arr) { return !isEmpty(arr) ? freeze(arr) : NoArray; }
 function freezeOrNoObject(arr) { return !isEmpty(arr) ? freeze(arr) : NoObject; }
 
-// \function `qdata.util.cloneWeak(v)`
+// \function `exmodel.util.cloneWeak(v)`
 //
 // Perform a weak clone of variable `v`. If the variable is an array, a new
 // array is returned containing
@@ -507,7 +513,7 @@ function cloneWeak(v) {
 }
 qutil.cloneWeak = cloneWeak;
 
-// \function `qdata.util.omit(obj, props)`
+// \function `exmodel.util.omit(obj, props)`
 //
 // Return a new object based on `obj` with omitted properties specified by `props`.
 function omit(obj, props) {
@@ -534,7 +540,7 @@ function _cloneDeep(obj) {
     return dstArr;
   }
   else {
-    // Never clone `qdata` object and all objects that extended it `qdata`.
+    // Never clone exmodel.js-like objects.
     if (obj.SENTINEL === SENTINEL)
       return obj;
 
@@ -550,7 +556,7 @@ function _cloneDeep(obj) {
   }
 }
 
-// \function `qdata.util.cloneDeep(v)`
+// \function `exmodel.util.cloneDeep(v)`
 function cloneDeep(v) {
   return (!v || typeof v !== "object") ? v : _cloneDeep(v);
 }
@@ -654,7 +660,7 @@ function _isEqual(a, b, buffer) {
   }
 }
 
-// \function `qdata.util.isEqual(a, b)`
+// \function `exmodel.util.isEqual(a, b)`
 //
 // Get whether the values `a` and `b` are deep equal.
 function isEqual(a, b) {
@@ -666,84 +672,30 @@ qutil.isEqual = isEqual;
 // [Enum]
 // ============================================================================
 
+var Enum$IllegalKeys = [
+  // exmodel.enum() members.
+  "$",
+  "hasKey",
+  "hasValue",
+  "keyToValue",
+  "valueToKey",
+
+  // JS.
+  "prototype",
+
+  // This probably can't really be specified.
+  "__proto__"
+];
+
 function Enum$sortIntFn(a, b) { return a - b; }
 
-// \function `Enum.$hasKey(key)`
+// \function `exmodel.enum(def)`
 //
-// Get whether the enum has `key`.
-function Enum$hasKey(key) {
-  if (typeof key !== "string")
-    return undefined;
-
-  return hasOwn.call(this.$keyMap, key);
-}
-
-// \function `Enum.$keyToValue(key)`
+// Create an enumeration, which is a mapping between a key (always string) and
+// value (always number).
 //
-// Get a value based on `key`.
-function Enum$keyToValue(key) {
-  if (typeof key !== "string")
-    return undefined;
-
-  var map = this.$keyMap;
-  return hasOwn.call(map, key) ? map[key] : undefined;
-}
-
-// \function `Enum.$hasValue(value)`
-//
-// Get whether the enum has `value`.
-function Enum$hasValue(value) {
-  if (typeof value !== "number")
-    return false;
-
-  var str = String(value);
-  return hasOwn.call(this.$valueMap, str);
-}
-
-// \internal
-function Enum$hasValueSequential(value) {
-  if (typeof value !== "number")
-    return false;
-
-  var min = this.$min;
-  var max = this.$max;
-
-  return !(value < min || value > max || Math.floor(value) !== value);
-}
-
-// \function `Enum.$valueToKey(value)`
-//
-// Get a key based on `value`.
-function Enum$valueToKey(value) {
-  if (typeof value !== "number")
-    return undefined;
-
-  var map = this.$valueMap;
-  var str = String(value);
-  return hasOwn.call(map, str) ? map[str] : undefined;
-}
-
-// \internal
-function Enum$valueToKeySequential(value) {
-  if (typeof value !== "number")
-    return undefined;
-
-  var min = this.$min;
-  var max = this.$max;
-
-  if (value < min || value > max || Math.floor(value) !== value)
-    return undefined;
-
-  return this.$valueKeys[value - min];
-}
-
-// \function `qdata.enum(def)`
-//
-// Create an enumeration, which is a mapping between a key (always a string) and
-// a value, always a number.
-//
-// QData library knows how to recognize common patterns in enums and enriches
-// the instance with metadata that can be used to improve and simplify data
+// exmodel.js knows how to recognize common patterns in enums and adds some
+// metadata to the instance that can be used to improve and simplify data
 // validation.
 //
 // The instance returned is always immutable, if JS environment allows it. This
@@ -755,47 +707,56 @@ function Enum(def) {
     return new Enum(def);
 
   if (!def || typeof def !== "object")
-    throwRuntimeError("qdata.enum() - Invalid definition of type '" + typeOf(def) + "' passed.");
+    throwRuntimeError("exmodel.enum() - Invalid definition of type '" + typeOf(def) + "' passed.");
 
-  var keyList      = [];
-  var valueMap     = {};
-  var valueList    = [];
+  var keyMap     = def;
+  var keyArray    = [];
+  var valueMap   = {};
+  var valueArray  = [];
 
-  var safe         = true;
-  var unique       = true;
-  var sequential   = true;
+  var safe       = true;
+  var unique     = true;
+  var sequential = true;
 
-  // Move these functions closer to the object.
-  this.$hasKey     = Enum$hasKey;
-  this.$keyToValue = Enum$keyToValue;
-  this.$hasValue   = Enum$hasValue;
-  this.$valueToKey = Enum$valueToKey;
+  // The only member variable we use, everything else (except member functions)
+  // can be used as keys.
+  var $ = {
+    keyMap    : keyMap,    // Mapping of keys to values.
+    keyArray  : keyArray,  // Array containing all keys.
+    valueMap  : valueMap,  // Mapping of values to keys.
+    valueArray: valueArray,// Array containing all unique values, sorted.
+    valueSeq  : null,      // Keys in value order if all values are sequential.
 
-  this.$keyMap     = def;       // Mapping of keys to values.
-  this.$keyList    = keyList;   // Array containing all keys.
-  this.$valueMap   = valueMap;  // Mapping of values to keys.
-  this.$valueList  = valueList; // Array containing all unique values, sorted.
-  this.$valueKeys  = null;      // Keys in value order if all values are sequential.
+    min       : null,      // Minimum value (can be used to start a loop).
+    max       : null,      // Maximum value (can be used to end a loop).
+    safe      : true,      // True if all values are safe integers.
+    unique    : true,      // True if all values are unique (ie don't overlap).
+    sequential: true       // True if all values form a sequence and don't overlap.
+  };
 
-  this.$min        = null;      // Minimum value (can be used to start a loop).
-  this.$max        = null;      // Maximum value (can be used to end a loop).
-  this.$safe       = true;      // True if all values are safe integers.
-  this.$unique     = true;      // True if all values are unique (ie don't overlap).
-  this.$sequential = true;      // True if all values form a sequence and don't overlap.
+  Object.defineProperty(this, "$", {
+    value       : $,
+    enumerable  : false,
+    configurable: false,
+    writable    : false
+  });
 
-  for (var key in def) {
-    if (!hasOwn.call(def, key))
+  for (var key in keyMap) {
+    if (!hasOwn.call(keyMap, key))
       continue;
 
-    var val = def[key];
+    if (Enum$IllegalKeys.indexOf(key) !== -1)
+      throwRuntimeError("exmodel.enum() - Key '" + key + "' is reserved and can't be used.");
+
+    var val = keyMap[key];
     var str = String(val);
 
-    if (!key || key.charCodeAt(0) === 36 || typeof val !== "number" || !isFinite(val))
-      throwRuntimeError("qdata.enum() - Invalid key/value pair '" + key +"' -> '" + str + "'.");
+    if (!key || typeof val !== "number" || !isFinite(val))
+      throwRuntimeError("exmodel.enum() - Invalid key/value pair '" + key + "' -> '" + str + "'.");
 
     if (!hasOwn.call(valueMap, str)) {
       valueMap[str] = key;
-      valueList.push(val);
+      valueArray.push(val);
     }
     else {
       unique = false;
@@ -804,49 +765,117 @@ function Enum(def) {
     if (Math.floor(val) !== val || val < kSafeIntMin || val > kSafeIntMax)
       safe = false;
 
-    keyList.push(key);
+    keyArray.push(key);
     this[key] = val;
   }
 
-  // Compute $min, $max, and $sequential properties.
-  if (valueList.length) {
-    valueList.sort(Enum$sortIntFn);
+  // Compute `min`, `max`, and `sequential` properties.
+  if (valueArray.length) {
+    valueArray.sort(Enum$sortIntFn);
 
-    var a = valueList[0];
-    var b = valueList[valueList.length - 1];
+    var a = valueArray[0];
+    var b = valueArray[valueArray.length - 1];
     var i;
 
-    this.$min = a;
-    this.$max = b;
+    $.min = a;
+    $.max = b;
 
     if (safe) {
-      for (i = 1; i < valueList.length; i++) {
-        if (++a !== valueList[i]) {
+      for (i = 1; i < valueArray.length; i++) {
+        if (++a !== valueArray[i]) {
           sequential = false;
           break;
         }
       }
 
-      // Replace `$hasValue` and `$valueToKey` by an optimized versions if all
-      // values are sequential, so the mapping is not needed for making lookups.
+      // Create an array that is used for sequential value to key conversion.
       if (sequential) {
-        var valueKeys = this.$valueKeys = [];
-
-        for (i = 0; i < valueList.length; i++) {
-          valueKeys.push(valueMap[String(valueList[i])]);
-        }
-
-        this.$hasValue = Enum$hasValueSequential;
-        this.$valueToKey = Enum$valueToKeySequential;
+        var valueSeq = $.valueSeq = [];
+        for (i = 0; i < valueArray.length; i++)
+          valueSeq.push(valueMap[String(valueArray[i])]);
       }
     }
   }
 
-  this.$safe = safe;
-  this.$unique = unique;
-  this.$sequential = sequential;
+  $.safe = safe;
+  $.unique = unique;
+  $.sequential = sequential;
+
+  // Make the whole object immutable.
+  freeze(keyMap);
+  freeze(keyArray);
+  freeze(valueMap);
+  freeze(valueArray);
+
+  freeze($);
+  freeze(this);
 }
-qdata.enum = Enum;
+exmodel.enum = exclass({
+  $construct: Enum,
+
+  // \function `Enum.hasKey(key)`
+  //
+  // Get whether the enum has `key`.
+  hasKey: function(key) {
+    if (typeof key !== "string")
+      return undefined;
+
+    return hasOwn.call(this.$.keyMap, key);
+  },
+
+  // \function `Enum.hasValue(value)`
+  //
+  // Get whether the enum has `value`.
+  hasValue: function(value) {
+    var $ = this.$;
+    if (typeof value !== "number")
+      return false;
+
+    if ($.sequential) {
+      return !(value < $.min || value > $.max || Math.floor(value) !== value);
+    }
+    else {
+      var map = $.valueMap;
+      var str = String(value);
+      return hasOwn.call(map, str);
+    }
+  },
+
+  // \function `Enum.keyToValue(key)`
+  //
+  // Get a value based on `key`.
+  keyToValue: function(key) {
+    if (typeof key !== "string")
+      return undefined;
+
+    var map = this.$.keyMap;
+    return hasOwn.call(map, key) ? map[key] : undefined;
+  },
+
+  // \function `Enum.valueToKey(value)`
+  //
+  // Get a key based on `value`.
+  valueToKey: function(value) {
+    var $ = this.$;
+    if (typeof value !== "number")
+      return undefined;
+
+    if ($.sequential) {
+      var min = $.min;
+      var max = $.max;
+
+      if (value < min || value > max || Math.floor(value) !== value)
+        return undefined;
+
+      return $.valueSeq[value - min];
+    }
+    else {
+      var map = $.valueMap;
+      var str = String(value);
+      return hasOwn.call(map, str) ? map[str] : undefined;
+    }
+  }
+});
 
 // ============================================================================
 // [BitArray]
@@ -862,7 +891,7 @@ var kNumBits = 31;
 // A simple bitarray implementation that uses integers having `kNumBits`. The
 // reason for such class is to avoid having integers with the highest bit set
 // as it can dramaticaly decrease possible optimizations by JavaScript VM (V8).
-var BitArray = qclass({
+var BitArray = exclass({
   $construct: function(bits) {
     this.bits = bits || [];
   },
@@ -948,7 +977,7 @@ var BitArray = qclass({
 // [ValueRange]
 // ============================================================================
 
-var ValueRange = qclass({
+var ValueRange = exclass({
   $construct: function(min, max, minExclusive, maxExclusive) {
     this.init(min, max, minExclusive, maxExclusive);
   },
@@ -1012,7 +1041,7 @@ var ValueRange = qclass({
 // [CoreCompiler]
 // ============================================================================
 
-// \class `qdata.CoreCompiler`
+// \class `exmodel.CoreCompiler`
 //
 // Base class used for compiling JS code. The reason there is `CoreCompiler`
 // and not just `SchemaCompiler` is that `CoreCompiler` is used by other
@@ -1081,7 +1110,7 @@ function CoreCompiler() {
   this._dataName = "$$_data"; // Reserved name for outer data argument.
   this._dataToVar = {};       // Mapping of global data index and variables.
 }
-qclass({
+exclass({
   $construct: CoreCompiler,
 
   // \internal
@@ -1119,8 +1148,8 @@ qclass({
   // generated function.
   //
   // Global variables can contain values that are constant to the function and
-  // that can reference objects outside. For example you can add `qdata` global
-  // and reference it inside the generated function.
+  // that can reference objects outside. For example you can add `exmodel`
+  // global and reference it inside the generated function.
   declareGlobal: function(name, exp) {
     var globals = this._globals;
 
@@ -1346,11 +1375,11 @@ function mergePath(a, b) {
     return a + " + " + b;
 }
 
-// \class `qdata.SchemaCompiler`
+// \class `exmodel.SchemaCompiler`
 function SchemaCompiler(env, options) {
   CoreCompiler.call(this);
 
-  this._env = env;            // Schema environment (`qdata` or customized).
+  this._env = env;            // Schema environment (`exmodel` or customized).
   this._options = options;    // Schema validation options.
   this._extract = false;      // Whether to extract properties from this level.
   this._delta = false;        // Whether we are in delta-mode (at the moment).
@@ -1363,7 +1392,7 @@ function SchemaCompiler(env, options) {
   // Cached ValueRange instance.
   this._cachedRange = new ValueRange();
 }
-qclass({
+exclass({
   $extend: CoreCompiler,
   $construct: SchemaCompiler,
 
@@ -1373,12 +1402,12 @@ qclass({
     this.arg("options");
     this.arg("access");
 
-    this.declareData("qdata", this._env);
+    this.declareData("exmodel", this._env);
     this.setExtract(this.hasOption(kExtractTop));
     this.setDelta(this.hasOption(kDeltaMode));
 
     if (this.hasOption(kTestAccess)) {
-      this._accessMap = def.$_qPrivate.wMap;
+      this._accessMap = def.$_exmData.wMap;
       this._prepareAccess("access");
     }
 
@@ -1612,7 +1641,7 @@ qclass({
 // [SchemaBuilder]
 // ============================================================================
 
-var SchemaAccess = qclass({
+var SchemaAccess = exclass({
   $construct: function(type, initial, inherit) {
     this.type = type;
     this.inherit = "";
@@ -1782,6 +1811,50 @@ function sanityNormalized(def) {
   }
 }
 
+function hasInclude(def) {
+  for (var k in def)
+    if (reInclude.test(k))
+      return true;
+  return false;
+}
+
+function mergeInclude(src) {
+  var dst = {};
+
+  for (var k in src) {
+    var v = src[k];
+    if (reInclude.test(k)) {
+      if (!isArray(v))
+        v = [v];
+
+      for (var i = 0, len = v.length; i < len; i++) {
+        var incDef = v[i];
+
+        if (incDef === null || typeof incDef !== "object")
+          throwRuntimeError("Invalid " + k + "[" + i + "] data of type " + typeOf(incDef) + ".");
+
+        for (var incKey in incDef) {
+          if (isDirectiveName(incKey))
+            throwRuntimeError("Invalid " + k + "[" + i + "] data, directive " + incKey + " is not allowed.");
+
+          if (hasOwn.call(dst, incKey))
+            throwRuntimeError("Invalid " + k + "[" + i + "] data, property " + incKey + " already exists.");
+
+          dst[incKey] = incDef[incKey];
+        }
+      }
+    }
+    else {
+      if (hasOwn.call(dst, k))
+        throwRuntimeError("The " + k + " was already included.");
+
+      dst[k] = v;
+    }
+  }
+
+  return dst;
+}
+
 // \internal
 //
 // Schema builder is responsible for translating a non-normalized schema into
@@ -1790,7 +1863,7 @@ function SchemaBuilder(env, options) {
   if (!options)
     options = NoObject;
 
-  // The environment the schema is bound to (qdata or inherited).
+  // The environment the schema is bound to (exmodel.js or inherited).
   this.env = env;
   this.options = options;
 
@@ -1798,18 +1871,18 @@ function SchemaBuilder(env, options) {
   this.rAccess = new SchemaAccess("r", options.$r || options.$a || null, "any");
   this.wAccess = new SchemaAccess("w", options.$w || options.$a || null, "any");
 }
-qclass({
+exclass({
   $construct: SchemaBuilder,
 
   // \internal
   //
   // Called once per schema, it adds the root field.
   build: function(def) {
-    var def = this.field(def, null, null);
+    def = this.field(def, null, null);
 
-    // The member `$_qPrivate` is considered private and used exclusively by
-    // the QData library. This is the only reserved key so far.
-    def.$_qPrivate = {
+    // The member `$_exmData` is considered private and used exclusively by
+    // the exmodel.js library. This is the only reserved key so far.
+    def.$_exmData = {
       env  : this.env,
       rMap : this.rAccess.map,
       wMap : this.wAccess.map,
@@ -1822,9 +1895,15 @@ qclass({
   // \internal
   //
   // Translate the given schema definition into a normalized format that is used
-  // by `qdata` library. This function is called for root type and all children
+  // by exmodel.js library. This function is called for root type and all children
   // it contains, basically per recognized type.
   field: function(def, override, parent) {
+    // If the `def` contains one or more include directive we create a new
+    // merged definition.
+    if (hasInclude(def)) {
+      def = mergeInclude(def);
+    }
+
     // If the definition extends another one, we switch it to `def` and use the
     // former as `override`. The `$extend` directive is never set on normalized
     // schema object, so if we are already extending, we should never see it.
@@ -1836,8 +1915,8 @@ qclass({
         throwRuntimeError("Directive '$extend' should never appear in normalized schema.");
 
       // ERROR: Extend has to be an existing schema.
-      if (extend == null || typeof extend !== "object" || !hasOwn.call(extend, "$_qPrivate"))
-        throwRuntimeError("Directive '$extend' requires an existing qdata.schema.");
+      if (extend == null || typeof extend !== "object" || !hasOwn.call(extend, "$_exmData"))
+        throwRuntimeError("Directive '$extend' requires an existing exmodel.schema.");
 
       override = def;
       def = extend;
@@ -1855,8 +1934,8 @@ qclass({
     var m = null;
 
     // Helpers.
-    var k, v, o;     // Key/Value/OverriddenValue.
-    var r, w, g; // Read/Write/Group.
+    var k, v, o; // Key/Value/Overridden.
+    var g, r, w; // Group/Read/Write.
 
     // Process `defType`:
     //   1. Check if the type has arguments:
@@ -1969,7 +2048,7 @@ qclass({
       $w        : w,
       $rExp     : this.rAccess.process(r, parent ? parent.$rExp : null),
       $wExp     : this.wAccess.process(w, parent ? parent.$wExp : null),
-      $_qPrivate: null
+      $_exmData : null
     };
 
     if (m) {
@@ -2018,7 +2097,7 @@ qclass({
           for (k in def) {
             // Properties are stored in `obj` itself, however, object fields are
             // stored always in `obj.$data`. This is just a way to distinguish
-            // qdata properties from object's properties.
+            // exmodel.js properties from object's properties.
             if (artificial[k] === true || !isDirectiveName(k) || hasOwn.call(obj, k))
               continue;
             obj[k] = def[k];
@@ -2035,7 +2114,7 @@ qclass({
           for (k in def) {
             // We don't have to worry about properties in the field vs $data,
             // as the schema has already been normalized. So here we expect
-            // qdata directives only, not objects' fields.
+            // exmodel.js directives only, not objects' fields.
             if (artificial[k] === true || hasOwn.call(obj, k))
               continue;
 
@@ -2180,20 +2259,20 @@ qclass({
   }
 });
 
-// \function `qdata.schema(def)`
+// \function `exmodel.schema(def)`
 //
 // Processes the given definition `def` and creates a schema that can be used
-// and compiled by `qdata` library. It basically normalizes the input object
+// and compiled by exmodel.js library. It basically normalizes the input object
 // and calls `type` and `rule` hooks on it.
 function schema(def, options) {
-  return (new SchemaBuilder(this || qdata, options)).build(def);
+  return (new SchemaBuilder(this || exmodel, options)).build(def);
 }
-qdata.schema = schema;
+exmodel.schema = schema;
 
 function isSchema(def) {
-  return def != null && typeof def === "object" && hasOwn.call(def, "$_qPrivate");
+  return def != null && typeof def === "object" && hasOwn.call(def, "$_exmData");
 }
-qdata.isSchema = isSchema;
+exmodel.isSchema = isSchema;
 
 // Serialize the given schema `def` into something that can be printed as JSON.
 // It basically removes some helper variables and data structures associated
@@ -2217,7 +2296,7 @@ function printableSchema(def) {
     for (var k in srcObj) {
       var value = srcObj[k];
 
-      if (k === "$_qPrivate")
+      if (k === "$_exmData")
         dstObj[k] = value ? "<...>" : null;
       else
         dstObj[k] = printableSchema(value);
@@ -2225,7 +2304,7 @@ function printableSchema(def) {
     return dstObj;
   }
 }
-qdata.printableSchema = printableSchema;
+exmodel.printableSchema = printableSchema;
 
 // ============================================================================
 // [Schema - Interface]
@@ -2245,7 +2324,7 @@ var _errorsGlobal = null;
 // Compile and return a function that can be used to process data based on the
 // definition `def` and options given in `index` (options and processing mode).
 function compile(env, def, index) {
-  var cache = def.$_qPrivate.cache;
+  var cache = def.$_exmData.cache;
   var fn = (new SchemaCompiler(env, index)).compileFunc(def);
 
   cache[index] = fn;
@@ -2263,31 +2342,31 @@ function precompile(func, def, options, hasAccess) {
     index |= kTestOnly;
   }
   else {
-    throwRuntimeError("qdata.precompile() - 'func' parameter can be either 'process' or 'test'.");
+    throwRuntimeError("exmodel.precompile() - 'func' parameter can be either 'process' or 'test'.");
   }
 
   if (hasAccess)
     index |= kTestAccess;
 
-  return compile(this || qdata, def, index);
+  return compile(this || exmodel, def, index);
 }
-qdata.precompile = precompile;
+exmodel.precompile = precompile;
 
-// \function `qdata.process(data, def, options, access)`
+// \function `exmodel.process(data, def, options, access)`
 //
 // Process the given `data` by using a definition `def`, `options` and `access`
 // rights. The function specific for the validation type and options is compiled
 // on demand and then cached.
-qdata.process = function(data, def, _options, access) {
+exmodel.process = function(data, def, _options, access) {
   var options = typeof _options === "number" ? _options : 0;
 
-  var cache = def.$_qPrivate.cache;
+  var cache = def.$_exmData.cache;
   var index = options & kFuncCacheMask;
 
   if (access)
     index |= kTestAccess;
 
-  var fn = cache[index] || compile(this || qdata, def, index);
+  var fn = cache[index] || compile(this || exmodel, def, index);
   var errors = _errorsGlobal || [];
 
   _errorsGlobal = null;
@@ -2300,20 +2379,20 @@ qdata.process = function(data, def, _options, access) {
   return result;
 };
 
-// \function `qdata.test(data, def, options, access)`
+// \function `exmodel.test(data, def, options, access)`
 //
 // Tests the given `data` by using a definition `def`, `options` and `access`
 // right.
-qdata.test = function(data, def, _options, access) {
+exmodel.test = function(data, def, _options, access) {
   var options = typeof _options === "number" ? _options | kTestOnly : kTestOnly;
 
-  var cache = def.$_qPrivate.cache;
+  var cache = def.$_exmData.cache;
   var index = options & kFuncCacheMask;
 
   if (access)
     index |= kTestAccess;
 
-  var fn = cache[index] || compile(this || qdata, def, index);
+  var fn = cache[index] || compile(this || exmodel, def, index);
   return fn(null, data, options, access);
 };
 
@@ -2321,25 +2400,25 @@ qdata.test = function(data, def, _options, access) {
 // [Schema - Customize]
 // ============================================================================
 
-// \object `qdata.types`
+// \object `exmodel.types`
 //
-// Types supported by `qdata`. Mapping between a type names (or aliases) and
+// Types supported by `exmodel`. Mapping between a type names (or aliases) and
 // type objects.
-qdata.types = {};
+exmodel.types = {};
 
-// \object `qdata.rules`
+// \object `exmodel.rules`
 //
-// Rules supported by `qdata`. Mapping between a rule names and rule objects.
-qdata.rules = {};
+// Rules supported by `exmodel`. Mapping between a rule names and rule objects.
+exmodel.rules = {};
 
-// \object `qdata.artificialDirectives`
+// \object `exmodel.artificialDirectives`
 //
 // Directives, which are artificially generated by the schema post-processing
 // and will never be copied from one schema to another in case of extending.
-// QData rules can specify additional artificial directives that will be added
-// to the global map of a QData environment where the rule is defined.
-qdata.artificialDirectives = {
-  $_qPrivate  : true, // Private data.
+// exmodel.js rules can specify additional artificial directives that will be
+// added to the global map in the exmodel.js environment that defines such rule.
+exmodel.artificialDirectives = {
+  $_exmData   : true, // Private data used exclusively by exmodel.js.
   $a          : true, // Shortcut to setup both `$r` and `$w` access information.
   $extend     : true, // Extend directive.
   $rExp       : true, // Expanded read access (expression).
@@ -2355,11 +2434,11 @@ qdata.artificialDirectives = {
   $idArray    : true  // Primary and foreign key array.
 };
 
-// \object `qdata.shortcutDirectives`
+// \object `exmodel.shortcutDirectives`
 //
 // List of directives that won't be moved into the child object in case of using
 // array shortcut in $type directive.
-qdata.shortcutDirectives = {
+exmodel.shortcutDirectives = {
   $r          : true, // Read access.
   $w          : true, // Write access,
   $a          : true, // Read/write access.
@@ -2369,19 +2448,19 @@ qdata.shortcutDirectives = {
   $optional   : true  // Doesn't make sense, the array optional / not.
 };
 
-// \function `qdata.getType(name)`
+// \function `exmodel.getType(name)`
 //
 // Get a type by `name`.
 //
 // The function also matches type aliases.
-qdata.getType = function(name) {
+exmodel.getType = function(name) {
   var types = this.types;
   return (hasOwn.call(types, name)) ? types[name] : null;
 };
 
-// \function `qdata.addType(t)`
+// \function `exmodel.addType(t)`
 //
-// Add a type or types to the `qdata` environment.
+// Add a type or types to the exmodel.js environment.
 //
 // The type `t` can be an array of types or a single type. The type added
 // is a POD object having the following signature:
@@ -2403,7 +2482,7 @@ qdata.getType = function(name) {
 //   compile: Function(c, v, def) { ... }
 // }
 // ```
-qdata.addType = function(data) {
+exmodel.addType = function(data) {
   var types = this.types;
 
   if (!isArray(data))
@@ -2421,18 +2500,18 @@ qdata.addType = function(data) {
   return this;
 };
 
-// \function `qdata.getRule(name)`
+// \function `exmodel.getRule(name)`
 //
 // Get a rule by `name`.
-qdata.getRule = function(name) {
+exmodel.getRule = function(name) {
   var rules = this.rules;
   return (hasOwn.call(rules, name)) ? rules[name] : null;
 };
 
-// \function `qdata.addRule(rule)`
+// \function `exmodel.addRule(rule)`
 //
-// Add a rule or rules to the `qdata` environment.
-qdata.addRule = function(data) {
+// Add a rule or rules to the exmodel.js environment.
+exmodel.addRule = function(data) {
   var rules = this.rules;
 
   if (!isArray(data))
@@ -2449,47 +2528,47 @@ qdata.addRule = function(data) {
   return this;
 };
 
-// \function `qdata.customize(opt)`
+// \function `exmodel.customize(opt)`
 //
-// Extend the `qdata` library by custom types and rules. It returns a completely
-// new object that acts as `qdata` library itself. This is the recommended way
-// of extending `qdata` library.
+// Extend the exmodel.js library by custom types and rules. It returns a
+// completely new object that acts as exmodel.js itself. This is the recommended
+// way to extend the library (it's nonintrusive, won't break anybody's else code).
 //
 // For example let's say that you have your own type `CustomType` and you want
-// to extend the library. The recommended way is to extend `qdata` and use the
-// extended library in your code base (node.js example):
+// to extend the library. The recommended way is to extend exmodel.js and use
+// the extended library in your code base (node.js example):
 //
 // ```
-// var qdata = require("qdata");
+// var exmodel = require("exmodel");
 //
 // var CustomType = {
 //   ...
 // };
 //
-// var xdata = qdata.customize({
+// var xmodel = exmodel.customize({
 //   types: [
 //     CustomType
 //   ]
 // });
 //
 // // Export the new interface and always use your library to load the custom
-// // version of `qdata`.
-// module.exports = xdata;
+// // version of exmodel.js.
+// module.exports = xmodel;
 // ```
 //
 // The advantage of this approach is that changes are not made globally and the
-// new types or rules can be accessed only through the new `qdata` like object
-// returned.
-qdata.customize = function(opt) {
+// new types or rules can be accessed only through the new exmodel.js like
+// object returned.
+exmodel.customize = function(opt) {
   if (opt == null)
     opt = NoObject;
 
   if (typeOf(opt) !== "object")
     throwRuntimeError(
-      "qdata.customize(opt) - The `opt` parameter has to be an object, received " + typeOf(opt) + ".");
+      "exmodel.customize(opt) - The `opt` parameter has to be an object, received " + typeOf(opt) + ".");
 
-  // Create a new object extending `qdata`.
-  var obj = cloneWeak(this || qdata);
+  // Create a new object extending exmodel.js.
+  var obj = cloneWeak(this || exmodel);
   var tmp;
 
   // Clone members that can change.
@@ -2509,10 +2588,10 @@ qdata.customize = function(opt) {
   return obj;
 };
 
-// \function `qdata.freeze()`
+// \function `exmodel.freeze()`
 //
 // Freeze the object (deep) to prevent any future modifications.
-qdata.freeze = function() {
+exmodel.freeze = function() {
   freeze(this.types);
   freeze(this.rules);
   freeze(this.artificialDirectives);
@@ -2557,7 +2636,7 @@ function compileAccessCheck(data, negate) {
 }
 
 function BaseType() {}
-qdata.BaseType = qclass({
+exmodel.BaseType = exclass({
   $construct: BaseType,
 
   // Field type name and aliases ("array", "date", "color", ...), not strictly
@@ -2698,7 +2777,7 @@ qdata.BaseType = qclass({
 // [SchemaType - Custom]
 // ============================================================================
 
-var CustomType = qclass({
+var CustomType = exclass({
   $extend: BaseType,
 
   // The most used type of all custom validators is "string". It can be omitted
@@ -2736,7 +2815,7 @@ var CustomType = qclass({
   // Error code to be returned.
   error: "InvalidCustomType"
 });
-qdata.CustomType = CustomType;
+exmodel.CustomType = CustomType;
 
 // ============================================================================
 // [SchemaType - Any]
@@ -2751,7 +2830,7 @@ function hasObjectType(arr) {
   return false;
 }
 
-var AnyType = qclass({
+var AnyType = exclass({
   $extend: BaseType,
 
   name: ["any"],
@@ -2805,13 +2884,13 @@ var AnyType = qclass({
     return false;
   }
 });
-qdata.addType(new AnyType());
+exmodel.addType(new AnyType());
 
 // ============================================================================
 // [SchemaType - Bool]
 // ============================================================================
 
-var BooleanType = qclass({
+var BooleanType = exclass({
   $extend: BaseType,
 
   name: ["boolean", "bool"],
@@ -2837,7 +2916,7 @@ var BooleanType = qclass({
     }
   }
 });
-qdata.addType(new BooleanType());
+exmodel.addType(new BooleanType());
 
 // ============================================================================
 // [SchemaType - Number]
@@ -2867,7 +2946,7 @@ var NumberInfo = {
 };
 
 // TODO: $scale not honored.
-var NumberType = qclass({
+var NumberType = exclass({
   $extend: BaseType,
 
   name: setToArray(NumberInfo),
@@ -2947,7 +3026,7 @@ var NumberType = qclass({
     return v;
   }
 });
-qdata.addType(new NumberType());
+exmodel.addType(new NumberType());
 
 // ============================================================================
 // [SchemaType - String / Text]
@@ -3030,7 +3109,7 @@ function isText(s, loMask, hiMask) {
   return true;
 }
 
-var StringType = qclass({
+var StringType = exclass({
   $extend: BaseType,
 
   name: ["string", "text", "textline", "text-line"],
@@ -3119,13 +3198,13 @@ var StringType = qclass({
     return v;
   }
 });
-qdata.addType(new StringType());
+exmodel.addType(new StringType());
 
 // ============================================================================
 // [SchemaType - Char]
 // ============================================================================
 
-var CharType = qclass({
+var CharType = exclass({
   $extend: BaseType,
 
   name: ["char"],
@@ -3150,7 +3229,7 @@ var CharType = qclass({
     return v;
   }
 });
-qdata.addType(new CharType());
+exmodel.addType(new CharType());
 
 // ============================================================================
 // [SchemaType - BigInt]
@@ -3212,7 +3291,7 @@ function isBigInt(s, min, max) {
 }
 qutil.isBigInt = isBigInt;
 
-var BigIntType = qclass({
+var BigIntType = exclass({
   $extend: BaseType,
 
   name: ["bigint"],
@@ -3262,7 +3341,7 @@ var BigIntType = qclass({
     return v;
   }
 });
-qdata.addType(new BigIntType());
+exmodel.addType(new BigIntType());
 
 // ============================================================================
 // [SchemaType - Color]
@@ -3387,7 +3466,7 @@ function isColor(s, cssNames, extraNames) {
 }
 qutil.isColor = isColor;
 
-var ColorType = qclass({
+var ColorType = exclass({
   $extend: BaseType,
 
   name: ["color"],
@@ -3422,7 +3501,7 @@ var ColorType = qclass({
     return v;
   }
 });
-qdata.addType(new ColorType());
+exmodel.addType(new ColorType());
 
 // ============================================================================
 // [SchemaType - CreditCard]
@@ -3463,7 +3542,7 @@ function isCreditCard(s) {
 }
 qutil.isCreditCard = isCreditCard;
 
-var CreditCardType = qclass({
+var CreditCardType = exclass({
   $extend: CustomType,
   name: ["creditcard"],
 
@@ -3472,7 +3551,7 @@ var CreditCardType = qclass({
 
   error: "InvalidCreditCard"
 });
-qdata.addType(new CreditCardType());
+exmodel.addType(new CreditCardType());
 
 // ============================================================================
 // [SchemaType - ISBN]
@@ -3526,7 +3605,7 @@ function isISBN(s) {
 }
 qutil.isISBN = isISBN;
 
-var ISBNType = qclass({
+var ISBNType = exclass({
   $extend: BaseType,
 
   name: ["isbn"],
@@ -3555,7 +3634,7 @@ var ISBNType = qclass({
     return v;
   }
 });
-qdata.addType(new ISBNType());
+exmodel.addType(new ISBNType());
 
 // ============================================================================
 // [SchemaType - MAC Address]
@@ -3588,7 +3667,7 @@ function isMAC(s, sep) {
 }
 qutil.isMAC = isMAC;
 
-var MACType = qclass({
+var MACType = exclass({
   $extend: BaseType,
 
   name: ["mac"],
@@ -3612,7 +3691,7 @@ var MACType = qclass({
     return v;
   }
 });
-qdata.addType(new MACType());
+exmodel.addType(new MACType());
 
 // ============================================================================
 // [SchemaType - IPV4 / IPV6]
@@ -3831,7 +3910,7 @@ function isIPV6(s, allowPort) {
 }
 qutil.isIPV6 = isIPV6;
 
-var IPType = qclass({
+var IPType = exclass({
   $extend: BaseType,
 
   name: ["ip", "ipv4", "ipv6"],
@@ -3869,7 +3948,7 @@ var IPType = qclass({
     return v;
   }
 });
-qdata.addType(new IPType());
+exmodel.addType(new IPType());
 
 // ============================================================================
 // [SchemaType - UUID]
@@ -3949,7 +4028,7 @@ function isUUID(s, brackets) {
 }
 qutil.isUUID = isUUID;
 
-var UUIDType = qclass({
+var UUIDType = exclass({
   $extend: BaseType,
 
   name: ["uuid"],
@@ -3990,7 +4069,7 @@ var UUIDType = qclass({
     return v;
   }
 });
-qdata.addType(new UUIDType());
+exmodel.addType(new UUIDType());
 
 // ============================================================================
 // [SchemaType - DateTime]
@@ -4397,7 +4476,7 @@ var DateFactory = {
   }
 };
 
-var DateTimeType = qclass({
+var DateTimeType = exclass({
   $extend: BaseType,
 
   name: setToArray(DateFormats),
@@ -4442,7 +4521,7 @@ var DateTimeType = qclass({
     return v;
   }
 });
-qdata.addType(new DateTimeType());
+exmodel.addType(new DateTimeType());
 
 // ============================================================================
 // [SchemaType - Object]
@@ -4467,7 +4546,7 @@ function addKeyToGroup(map, group, k) {
   }
 }
 
-var ObjectType = qclass({
+var ObjectType = exclass({
   $extend: BaseType,
 
   name: ["object"],
@@ -4748,13 +4827,13 @@ var ObjectType = qclass({
     };
   }
 });
-qdata.addType(new ObjectType());
+exmodel.addType(new ObjectType());
 
 // ============================================================================
 // [SchemaType - Map]
 // ============================================================================
 
-var MapType = qclass({
+var MapType = exclass({
   $extend: BaseType,
 
   name: ["map"],
@@ -4765,7 +4844,7 @@ var MapType = qclass({
 
     var eDef = def.$data;
     if (eDef == null || typeof eDef !== "object")
-      throwRuntimeError("Invalid ArrayType.$data definition, expected object, got " + typeOf(eDef) + ".");
+      throwRuntimeError("Invalid MapType.$data definition, expected object, got " + typeOf(eDef) + ".");
 
     var eMangledType = c.mangledType(eDef);
     var eIn = c.addLocal("element", eMangledType);
@@ -4791,13 +4870,13 @@ var MapType = qclass({
     return vOut;
   }
 });
-qdata.addType(new MapType());
+exmodel.addType(new MapType());
 
 // ============================================================================
 // [SchemaType - Array]
 // ============================================================================
 
-var ArrayType = qclass({
+var ArrayType = exclass({
   $extend: BaseType,
 
   name: ["array"],
@@ -4858,14 +4937,14 @@ var ArrayType = qclass({
     return vOut;
   }
 });
-qdata.addType(new ArrayType());
+exmodel.addType(new ArrayType());
 
 // ============================================================================
 // [Exports]
 // ============================================================================
 
-$export[$as] = qdata.freeze();
+$export[$as] = exmodel.freeze();
 
 }).apply(this, typeof module === "object"
-  ? [require("qclass"), module, "exports"]
-  : [this.qclass, this, "qdata"]);
+  ? [require("exclass"), module, "exports"]
+  : [this.exclass, this, "exmodel"]);

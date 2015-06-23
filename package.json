@@ -1,6 +1,6 @@
 {
-  "name": "qdata",
-  "version": "0.1.0",
+  "name": "exmodel",
+  "version": "0.0.1",
 
   "description": "High performance and extensible data processing library, including schema builder, data validator, and sanitizer.",
   "keywords": [
@@ -15,9 +15,9 @@
     "validator"
   ],
 
-  "homepage": "https://github.com/jshq/qdata",
+  "homepage": "https://github.com/exceptionaljs/exmodel",
   "bugs": {
-    "url": "https://github.com/jshq/qdata/issues"
+    "url": "https://github.com/exceptional/exmodel/issues"
   },
 
   "contributors": [{
@@ -28,10 +28,10 @@
 
   "license": "Unlicense",
 
-  "main": "qdata.js",
+  "main": "exmodel.js",
 
   "dependencies": {
-    "qclass": "*"
+    "exclass": "*"
   },
 
   "devDependencies": {
@@ -40,10 +40,10 @@
 
   "repository" : {
     "type": "git",
-    "url": "https://github.com/jshq/qdata.git"
+    "url": "https://github.com/exceptionaljs/exmodel.git"
   },
 
   "scripts": {
-    "test": "mocha qdata-spec.js"
+    "test": "mocha exmodel-spec.js"
   }
 }
