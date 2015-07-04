@@ -2785,8 +2785,6 @@ var CustomType = exclass({
 
   compileType: function(c, vOut, v, def) {
     var cond = this.fail
-      .replace("func", c.declareData(null, this.func))
-      .replace("@", v)
       .replace(/\$[\w]+/g, function(key) {
         var value = def[key];
         if (value !== null && typeof value === "object")
@@ -2794,7 +2792,9 @@ var CustomType = exclass({
         else
           value = JSON.stringify(value !== undefined ? value : null);
         return value;
-      });
+      })
+      .replace("func", c.declareData(null, this.func))
+      .replace("@", v);
 
     if (def.$empty === true)
       cond = v + " && " + cond;
