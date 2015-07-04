@@ -252,7 +252,7 @@ function SchemaError(errors) {
   var e = Error.call(this);
 
   this.name = "SchemaError";
-  this.message = "Data is not valid according to the schema.";
+  this.message = "Invalid data";
   this.stack = e.stack || "";
   this.errors = errors;
 
@@ -593,7 +593,7 @@ function _isEqual(a, b, buffer) {
     // Detect cyclic references.
     for (i = 0; i < buffer.length; i += 2) {
       if (buffer[i] === a || buffer[i + 1] === b)
-        throwRuntimeError("Detected cyclic references.");
+        throwRuntimeError("Detected cyclic references");
     }
 
     buffer.push(a);
@@ -622,7 +622,7 @@ function _isEqual(a, b, buffer) {
     // Detect cyclic references.
     for (i = 0; i < buffer.length; i += 2) {
       if (buffer[i] === a || buffer[i + 1] === b)
-        throwRuntimeError("Detected cyclic references.");
+        throwRuntimeError("Detected cyclic references");
     }
 
     buffer.push(a);
@@ -707,7 +707,7 @@ function Enum(def) {
     return new Enum(def);
 
   if (!def || typeof def !== "object")
-    throwRuntimeError("exmodel.enum() - Invalid definition of type '" + typeOf(def) + "' passed.");
+    throwRuntimeError("exmodel.enum() - Invalid definition of type '" + typeOf(def) + "' passed");
 
   var keyMap     = def;
   var keyArray    = [];
@@ -746,13 +746,13 @@ function Enum(def) {
       continue;
 
     if (Enum$IllegalKeys.indexOf(key) !== -1)
-      throwRuntimeError("exmodel.enum() - Key '" + key + "' is reserved and can't be used.");
+      throwRuntimeError("exmodel.enum() - Key '" + key + "' is reserved and can't be used");
 
     var val = keyMap[key];
     var str = String(val);
 
     if (!key || typeof val !== "number" || !isFinite(val))
-      throwRuntimeError("exmodel.enum() - Invalid key/value pair '" + key + "' -> '" + str + "'.");
+      throwRuntimeError("exmodel.enum() - Invalid key/value pair '" + key + "' -> '" + str + "'");
 
     if (!hasOwn.call(valueMap, str)) {
       valueMap[str] = key;
@@ -907,7 +907,7 @@ var BitArray = exclass({
     var msk = 1 << Math.floor(n % kNumBits);
 
     if (idx >= bits.length)
-      throwRuntimeError("BitArray.test() - Out of range (n=" + n + " len=" + (bits.length * kNumBits) + ").");
+      throwRuntimeError("BitArray.test() - Out of range (n=" + n + " len=" + (bits.length * kNumBits) + ")");
 
     return (bits[idx] & msk) !== 0;
   },
@@ -935,13 +935,13 @@ var BitArray = exclass({
       var msk = 1 << Math.floor(arg % kNumBits);
 
       if (idx >= bits.length)
-        throwRuntimeError("BitArray.combine(" + arg + ") - Out of range (max=" + (bits.length * kNumBits) + ").");
+        throwRuntimeError("BitArray.combine(" + arg + ") - Out of range (max=" + (bits.length * kNumBits) + ")");
 
       switch (op) {
         case "or"    : bits[idx] |= msk; break;
         case "and"   : bits[idx] &= msk; break;
         case "andnot": bits[idx] &=~msk; break;
-        default: throwRuntimeError("Invalid operator '" + op + "'.");
+        default: throwRuntimeError("Invalid operator '" + op + "'");
       }
     }
     else {
@@ -949,14 +949,14 @@ var BitArray = exclass({
       var len = bits.length;
 
       if (len !== src.length)
-        throwRuntimeError("BitArray.combine([...]) - Length mismatch (" + len + " vs " + src.length + ").");
+        throwRuntimeError("BitArray.combine([...]) - Length mismatch (" + len + " vs " + src.length + ")");
 
       var i = 0;
       switch (op) {
         case "or"    : for (; i < len; i++) bits[i] |= src[i]; break;
         case "and"   : for (; i < len; i++) bits[i] &= src[i]; break;
         case "andnot": for (; i < len; i++) bits[i] &=~src[i]; break;
-        default: throwRuntimeError("Invalid operator '" + op + "'.");
+        default: throwRuntimeError("Invalid operator '" + op + "'");
       }
     }
 
@@ -1287,7 +1287,7 @@ exclass({
     var index = this._scopeIndex;
 
     if (index === 0)
-      throwRuntimeError("CoreCompiler.denest() - Can't denest the root scope.");
+      throwRuntimeError("CoreCompiler.denest() - Can't denest the root scope");
 
     var obj = array[--index];
     this._scopeIndex = index;
@@ -1429,7 +1429,7 @@ exclass({
     var type = this._env.getType(name);
 
     if (!type)
-      throwRuntimeError("Can't find handler for type " + name + ".");
+      throwRuntimeError("Can't find handler for type " + name);
 
     return type.compile(this, vIn, def);
   },
@@ -1697,11 +1697,11 @@ var SchemaAccess = exclass({
     while (i < names.length) {
       name = names[i].trim();
       if (!name)
-        throwRuntimeError("Invalid access string '" + s + "'.");
+        throwRuntimeError("Invalid access string '" + s + "'");
 
       var normalized = this.normalize(name, inherit);
       if (normalized === null)
-        throwRuntimeError("Invalid access string '" + s + "' (can't normalize '" + name + "').");
+        throwRuntimeError("Invalid access string '" + s + "' (can't normalize '" + name + "')");
 
       if (normalized.indexOf("|") !== -1) {
         // Prevent recursion, add to `names` we are interating over.
@@ -1721,7 +1721,7 @@ var SchemaAccess = exclass({
 
     // It's an error if both "none" and "any" have been specified.
     if (tmpMap.any === tmpSig && tmpMap.none === tmpSig)
-      throwRuntimeError("Access string can't have both 'any' and 'none' specified.");
+      throwRuntimeError("Access string can't have both 'any' and 'none' specified");
 
     // If there is 'any' or 'none' at least once it cancels effect of all others.
     if (tmpMap.any  === tmpSig) return "any";
@@ -1793,11 +1793,11 @@ function extractDefData(def, data) {
     return dst;
 
   if (typeof data !== "object")
-    throwRuntimeError("Directive '$data' has to be an object, not '" + typeOf(data) + "'.");
+    throwRuntimeError("Directive '$data' has to be an object, not '" + typeOf(data) + "'");
 
   for (k in data) {
     if (hasOwn.call(dst, k))
-      throwRuntimeError("Property '" + k + "' specified in both definition and $data directives.");
+      throwRuntimeError("Property '" + k + "' specified in both definition and $data directives");
     dst[k] = data[k];
   }
 
@@ -1807,7 +1807,7 @@ function extractDefData(def, data) {
 function sanityNormalized(def) {
   for (var k in def) {
     if (!isDirectiveName(k))
-      throwRuntimeError("Found a non-directive '" + k + "' in normalized schema.");
+      throwRuntimeError("Found a non-directive '" + k + "' in normalized schema");
   }
 }
 
@@ -1831,14 +1831,14 @@ function mergeInclude(src) {
         var incDef = v[i];
 
         if (incDef === null || typeof incDef !== "object")
-          throwRuntimeError("Invalid " + k + "[" + i + "] data of type " + typeOf(incDef) + ".");
+          throwRuntimeError("Invalid " + k + "[" + i + "] data of type " + typeOf(incDef));
 
         for (var incKey in incDef) {
           if (isDirectiveName(incKey))
-            throwRuntimeError("Invalid " + k + "[" + i + "] data, directive " + incKey + " is not allowed.");
+            throwRuntimeError("Invalid " + k + "[" + i + "] data, directive " + incKey + " is not allowed");
 
           if (hasOwn.call(dst, incKey))
-            throwRuntimeError("Invalid " + k + "[" + i + "] data, property " + incKey + " already exists.");
+            throwRuntimeError("Invalid " + k + "[" + i + "] data, property " + incKey + " already exists");
 
           dst[incKey] = incDef[incKey];
         }
@@ -1846,7 +1846,7 @@ function mergeInclude(src) {
     }
     else {
       if (hasOwn.call(dst, k))
-        throwRuntimeError("The " + k + " was already included.");
+        throwRuntimeError("The " + k + " was already included");
 
       dst[k] = v;
     }
@@ -1912,11 +1912,11 @@ exclass({
 
       // ERROR: The `$extend` directive shouldn't be part of an existing schema.
       if (override !== null)
-        throwRuntimeError("Directive '$extend' should never appear in normalized schema.");
+        throwRuntimeError("Directive '$extend' should never appear in normalized schema");
 
       // ERROR: Extend has to be an existing schema.
       if (extend == null || typeof extend !== "object" || !hasOwn.call(extend, "$_exmData"))
-        throwRuntimeError("Directive '$extend' requires an existing exmodel.schema.");
+        throwRuntimeError("Directive '$extend' requires an existing exmodel.schema");
 
       override = def;
       def = extend;
@@ -1966,7 +1966,7 @@ exclass({
 
         // Prevent from having invalid type that contains for example "??" by mistake.
         if (reTypeOptional.test(defType))
-          throwRuntimeError("Invalid type '" + def.$type + "'.");
+          throwRuntimeError("Invalid type '" + def.$type + "'");
       }
 
       // If the $type ends with "[...]" it implies `{ $type: "array", $data: ... }`.
@@ -1978,19 +1978,19 @@ exclass({
       // Handle "$null" + do some checks.
       if (!m) {
         if (defType.indexOf("[") !== -1)
-          throwRuntimeError("Invalid type '" + def.$type + "'.");
+          throwRuntimeError("Invalid type '" + def.$type + "'");
 
         if (def.$null != null) {
           nullable = def.$null;
           if (typeof nullable !== "boolean")
-            throwRuntimeError("Directive '$null' can only contain null/boolean, not '" + def.$null + "'.");
+            throwRuntimeError("Directive '$null' can only contain null/boolean, not '" + def.$null + "'");
         }
       }
 
       if (def.$optional != null) {
         optional = def.$optional;
         if (typeof optional !== "boolean")
-          throwRuntimeError("Directive '$optional' can only contain null/boolean, not '" + def.$optional + "'.");
+          throwRuntimeError("Directive '$optional' can only contain null/boolean, not '" + def.$optional + "'");
       }
 
       // Handle "$r" and "$w".
@@ -2004,7 +2004,7 @@ exclass({
       // Handle the override basics here. Be pedantic as it's better to catch
       // errors here than failing later.
       if (hasOwn.call(override, "$type") && override.$type !== defType)
-        throwRuntimeError("Can't override type '" + defType + "' to '" + override.$type + "'.");
+        throwRuntimeError("Can't override type '" + defType + "' to '" + override.$type + "'");
 
       // Override "$null".
       if (hasOwn.call(override, "$null")) {
@@ -2056,7 +2056,7 @@ exclass({
 
       // Never in override mode here.
       if (override)
-        throwRuntimeError("Internal error.");
+        throwRuntimeError("Internal error");
 
       var nested = omit(def, omitted);
       nested.$type = defType.substr(0, defType.length - m[0].length);
@@ -2065,7 +2065,7 @@ exclass({
       var maxLen = m[3] ? parseInt(m[3]) : null;
 
       if (minLen !== null && maxLen !== null && minLen > maxLen)
-        throwRuntimeError("Invalid type '" + def.$type + "'.");
+        throwRuntimeError("Invalid type '" + def.$type + "'");
 
       // Set to array and copy directives that are omitted in the nested object.
       obj.$type = "array";
@@ -2186,14 +2186,14 @@ exclass({
             if (artificial[k] === true || hasOwn.call(obj, k))
               continue;
             if (!isDirectiveName(k))
-              throwRuntimeError("Property '" + k + "'can't be used by '" + defType + "' type.");
+              throwRuntimeError("Property '" + k + "'can't be used by '" + defType + "' type");
             obj[k] = def[k];
           }
 
           // Handle "any" properties.
           if (defData != null) {
             if (typeof defData !== "object")
-              throwRuntimeError("Directive '$data' has to be object, not '" + typeOf(defData) + "'.");
+              throwRuntimeError("Directive '$data' has to be object, not '" + typeOf(defData) + "'");
 
             obj.$data = this.field(defData, null, obj);
           }
@@ -2233,7 +2233,7 @@ exclass({
           // Override "any" properties.
           if (defData != null) {
             if (typeof defData !== "object")
-              throwRuntimeError("Directive '$data' has to be object, not '" + typeOf(defData) + "'.");
+              throwRuntimeError("Directive '$data' has to be object, not '" + typeOf(defData) + "'");
 
             obj.$data = this.field(defData, override.$data, obj);
           }
@@ -2244,7 +2244,7 @@ exclass({
     // Validate that the postprocessed object is valid and can be compiled.
     var TypeObject = this.env.getType(obj.$type);
     if (!TypeObject)
-      throwRuntimeError("Unknown type '" + obj.$type + "'.");
+      throwRuntimeError("Unknown type '" + obj.$type + "'");
 
     if (typeof TypeObject.configure === "function")
       TypeObject.configure(obj, this.env, defArgs);
@@ -2342,7 +2342,7 @@ function precompile(func, def, options, hasAccess) {
     index |= kTestOnly;
   }
   else {
-    throwRuntimeError("exmodel.precompile() - 'func' parameter can be either 'process' or 'test'.");
+    throwRuntimeError("exmodel.precompile() - 'func' parameter can be either 'process' or 'test'");
   }
 
   if (hasAccess)
@@ -2565,7 +2565,7 @@ exmodel.customize = function(opt) {
 
   if (typeOf(opt) !== "object")
     throwRuntimeError(
-      "exmodel.customize(opt) - The `opt` parameter has to be an object, received " + typeOf(opt) + ".");
+      "exmodel.customize(opt) - The `opt` parameter has to be an object, received " + typeOf(opt));
 
   // Create a new object extending exmodel.js.
   var obj = cloneWeak(this || exmodel);
@@ -2769,7 +2769,7 @@ exmodel.BaseType = exclass({
   },
 
   compileType: function(c, vOut, v, def) {
-    throwRuntimeError("BaseType.compileType() has to be overridden.");
+    throwRuntimeError("BaseType.compileType() has to be overridden");
   }
 });
 
@@ -2984,8 +2984,7 @@ var NumberType = exclass({
         throwRuntimeError("Invalid scale '" + scale + "'");
 
       if (precision != null && scale != null && precision <= scale) {
-        throwRuntimeError(
-          "Precision '" + precision + "' has to be greater than scale '" + scale + ".");
+        throwRuntimeError("Precision '" + precision + "' has to be greater than scale '" + scale);
       }
     }
   },
@@ -3479,13 +3478,13 @@ var ColorType = exclass({
     if (css != null) {
       css = def.$cssNames;
       if (typeof css !== "boolean")
-        throwRuntimeError("ColorType - Invalid '$cssNames' directive '" + css + "'.");
+        throwRuntimeError("ColorType - Invalid '$cssNames' directive '" + css + "'");
     }
 
     if (extra != null) {
       extra = def.$extraNames;
       if (typeof extra !== "object" || isArray(extra))
-        throwRuntimeError("ColorType - Invalid '$extraNames' directive '" + extra + "'.");
+        throwRuntimeError("ColorType - Invalid '$extraNames' directive '" + extra + "'");
     }
   },
 
@@ -3615,7 +3614,7 @@ var ISBNType = exclass({
     var fmt = def.$format;
 
     if (fmt != null && (fmt !== "" && fmt !== "10" && fmt !== "13"))
-      throwRuntimeError("ISBNType - Invalid '$format' directive '" + fmt + "'.");
+      throwRuntimeError("ISBNType - Invalid '$format' directive '" + fmt + "'");
   },
 
   compileType: function(c, vOut, v, def) {
@@ -3677,7 +3676,7 @@ var MACType = exclass({
     var sep = def.$separator;
 
     if (sep != null && (typeof sep !== "string" || sep.length !== 1))
-      throwRuntimeError("MAC address separator has to be a single character.");
+      throwRuntimeError("MAC address separator has to be a single character");
   },
 
   compileType: function(c, vOut, v, def) {
@@ -3937,7 +3936,7 @@ var IPType = exclass({
         fn = qutil.isIPV6;
         break;
       default:
-        throwRuntimeError("Invalid type '" + type + "'.");
+        throwRuntimeError("Invalid type '" + type + "'");
     }
 
     var cond = "!" + c.declareData(null, fn) + "(" + v + ", " + allowPort + ")";
@@ -4039,10 +4038,10 @@ var UUIDType = exclass({
     var ver = def.$version;
 
     if (fmt != null && (fmt !== "any" && fmt !== "rfc" && fmt !== "windows"))
-      throwRuntimeError("UUIDType - Invalid '$format' directive '" + fmt + "'.");
+      throwRuntimeError("UUIDType - Invalid '$format' directive '" + fmt + "'");
 
     if (ver != null && (typeof ver !== "string" || (ver && !/^[1-5]\+?$/.test(ver))))
-      throwRuntimeError("UUIDType - Invalid '$version' directive '" + ver + "'.");
+      throwRuntimeError("UUIDType - Invalid '$version' directive '" + ver + "'");
   },
 
   compileType: function(c, vOut, v, def) {
@@ -4258,7 +4257,7 @@ var DateFactory = {
     var msk = 0|0;   // Mask of parsed components.
     var sep = false; // Whether the current/next component has to be a separator.
 
-    var insepected = {
+    var inspected = {
       parts: null,
       fixed: 0,
       minLength: len
@@ -4274,13 +4273,13 @@ var DateFactory = {
         // Fail if one component appears multiple times or if the separator is
         // required at this point.
         if ((msk & data.msk) !== 0 || sep)
-          throwRuntimeError("Invalid date format '" + format + "'.");
+          throwRuntimeError("Invalid date format '" + format + "'");
         msk |= data.msk;
 
         // Store the information about this date component. We always use the
         // format symbol `symb` as a key as it's always "Y" for all of "Y", "YY",
         // and "YYYY", for example.
-        insepected[symb] = {
+        inspected[symb] = {
           part : part,
           index: fixed ? index : -1,
           len  : data.len
@@ -4310,12 +4309,12 @@ var DateFactory = {
         (msk & (0x04 | 0x02)) === (0x04) || // Cannot have 'D' without 'M'.
         (msk & (0x01 | 0x02)) === (0x01) || // Cannot have 'Y' without 'M'.
         (msk & (0x05 | 0x02)) === (0x02) )  // Cannot have 'M' without either 'D' or 'Y'.
-      throwRuntimeError("Invalid date format '" + format + "'.");
+      throwRuntimeError("Invalid date format '" + format + "'");
 
-    insepected.parts = parts;
-    insepected.fixed = fixed;
+    inspected.parts = parts;
+    inspected.fixed = fixed;
 
-    return insepected;
+    return inspected;
   },
 
   compile: function(format, detail) {
@@ -4355,8 +4354,7 @@ var DateFactory = {
         var data = detail[symb];
         var jLen = data.len;
 
-        // Generate code that parses the number and assigns its value into
-        // a variable `symb`.
+        // Generate code that parses the number and assigns it to `symb`.
         c.declareVariable(symb);
 
         // If this component has a variable length we have to fix the parser
@@ -4367,8 +4365,12 @@ var DateFactory = {
         }
 
         if (jLen > 0) {
-          if (index < 0)
-            c.emit("if (index + " + String(jLen) + " > len) break;");
+          if (index < 0) {
+            if (jLen === 1)
+              c.emit("if (index >= len) break;");
+            else
+              c.emit("if (index + " + String(jLen) + " > len) break;");
+          }
 
           for (j = 0; j < jLen; j++) {
             var v = (j === 0) ? symb : "cp";
@@ -4381,6 +4383,8 @@ var DateFactory = {
 
           if (index >= 0)
             index += jLen;
+          else
+            c.emit("index += " + String(jLen) + ";");
         }
         else {
           j = -jLen;
@@ -4404,20 +4408,23 @@ var DateFactory = {
         var jLen = part.length;
 
         if (index >= 0) {
-          for (j = 0; j < jLen; j++)
+          for (j = 0; j < jLen; j++) {
             cond.push("input.charCodeAt(" + (index + j) + ") !== " + part.charCodeAt(j));
+          }
           index += jLen;
         }
         else {
-          cond.push("index + " + jLen + " > len");
-          for (j = 0; j < jLen; j++)
-            cond.push("input.charCodeAt(index + " + j + ") !== " + part.charCodeAt(j));
+          if (jLen === 1)
+            cond.push("index >= len");
+          else
+            cond.push("index + " + jLen + " > len");
+
+          for (j = 0; j < jLen; j++) {
+            cond.push("input.charCodeAt(index++) !== " + part.charCodeAt(j));
+          }
         }
 
         c.emit("if (" + cond.join(" || ") + ") break;");
-
-        if (index < 0)
-          c.emit("index += " + jLen + ";");
       }
 
       c.nl();
@@ -4487,7 +4494,7 @@ var DateTimeType = exclass({
     var format = def.$format || DateFormats[type];
 
     if (typeof format !== "string")
-      throwRuntimeError("Invalid date format '" + format + "'.");
+      throwRuntimeError("Invalid date format '" + format + "'");
 
     def.$validator = DateFactory.get(format);
   },
@@ -4663,7 +4670,7 @@ var ObjectType = exclass({
       eDef = properties[eKey];
 
       if (eDef == null || typeof eDef !== "object")
-        throwRuntimeError("Invalid property, expected object, got " + typeOf(eDef) + ".");
+        throwRuntimeError("Invalid property, expected object, got " + typeOf(eDef));
 
       var optional = !!eDef.$optional;
 
@@ -4844,7 +4851,7 @@ var MapType = exclass({
 
     var eDef = def.$data;
     if (eDef == null || typeof eDef !== "object")
-      throwRuntimeError("Invalid MapType.$data definition, expected object, got " + typeOf(eDef) + ".");
+      throwRuntimeError("Invalid MapType.$data definition, expected object, got " + typeOf(eDef));
 
     var eMangledType = c.mangledType(eDef);
     var eIn = c.addLocal("element", eMangledType);
@@ -4913,7 +4920,7 @@ var ArrayType = exclass({
 
     var eDef = def.$data;
     if (eDef == null || typeof eDef !== "object")
-      throwRuntimeError("Invalid ArrayType.$data definition, expected object, got " + typeOf(eDef) + ".");
+      throwRuntimeError("Invalid ArrayType.$data definition, expected object, got " + typeOf(eDef));
 
     var eMangledType = c.mangledType(eDef);
     var eIn = c.addLocal("element", eMangledType);
