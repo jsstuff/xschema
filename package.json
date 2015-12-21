@@ -1,6 +1,6 @@
 {
   "name": "exmodel",
-  "version": "0.0.1",
+  "version": "1.0.0",
 
   "description": "High performance and extensible data processing library, including schema builder, data validator, and sanitizer.",
   "keywords": [
@@ -15,9 +15,9 @@
     "validator"
   ],
 
-  "homepage": "https://github.com/exceptionaljs/exmodel",
+  "homepage": "https://github.com/exjs/exmodel",
   "bugs": {
-    "url": "https://github.com/exceptional/exmodel/issues"
+    "url": "https://github.com/exjs/exmodel/issues"
   },
 
   "contributors": [{
@@ -40,7 +40,7 @@
 
   "repository" : {
     "type": "git",
-    "url": "https://github.com/exceptionaljs/exmodel.git"
+    "url": "https://github.com/exjs/exmodel.git"
   },
 
   "scripts": {

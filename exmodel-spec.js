@@ -1,4 +1,4 @@
-// exmodel.js <https://github.com/exceptionaljs/exmodel>
+// exmodel.js <https://github.com/exjs/exmodel>
 "use strict";
 
 var assert = require("assert");

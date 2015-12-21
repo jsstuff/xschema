@@ -1,11 +1,6 @@
-// exmodel.js <https://github.com/exceptionaljs/exmodel>
+// exmodel.js <https://github.com/exjs/exmodel>
 (function(exclass, $export, $as) {
 "use strict";
-
-// ideas:
-// extasy
-// errorless
-// painless
 
 // ============================================================================
 // [Config]
@@ -31,7 +26,7 @@ var exmodel = {};
 // `exmodel.VERSION`
 //
 // Version information in a "major.minor.patch" form.
-exmodel.VERSION = "0.0.1";
+exmodel.VERSION = "1.0.0";
 
 // `exmodel.SENTINEL`
 //
