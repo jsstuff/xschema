@@ -457,7 +457,18 @@ Custom Types
 TODO
 
 
+Global Directives
+-----------------
+
+Global directives can be applied to any `$type`:
+
+Directive Name           | Value      | Default | Description
+:----------------------- | :--------- | :------ | :-----------------------------
+`$null`                  | `bool`     | `false` | Specifies if the value can be `null`
+`$fn`                    | `function` | `null`  | A user-defined validation function. It should return `true` or `""` on success and false or `"ErrorCode"` on failure. The function is always called on a processed object, if posible. For example, if an object is transformed to object containing less members, the user-function will be called with that object, not the input one.
+
+
 License
 -------
 
-exmodel.js has been released to public domain, [see unlicense.org](http://unlicense.org/).
+exmodel.js has been released into the public domain, [see unlicense.org](http://unlicense.org/).

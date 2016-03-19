@@ -2756,6 +2756,17 @@ exmodel.BaseType = exclass({
       this.compileType(c, vOut, vIn, def);
     }
 
+    // Emit `$fn` check if provided.
+    var $fn = def.$fn;
+    if (typeof $fn === "function") {
+      var vErr = c.declareVariable("err");
+      var vFunc = c.declareData(null, $fn);
+
+      c.failIf(
+        "(" + vErr + " = " + vFunc + "(" + vOut + ")) !== true && " + vErr + " !== \"\"",
+        "{ code: " + vErr + " || \"CustomFunctionError\", path: " + c.getPath() + " }");
+    }
+
     if (prevAccess) {
       c._accessGranted = prevAccess;
     }

@@ -2192,6 +2192,30 @@ describe("exmodel", function() {
   });
 
   // --------------------------------------------------------------------------
+  // [Directive - $fn]
+  // --------------------------------------------------------------------------
+
+  it("should call $fn, if provided", function() {
+    function fnIntBin(value) { return value === 42; }
+    function fnIntMsg(value) { return value === 42 ? true : "This has to be 42"; }
+
+    function fnStringBin(value) { return value === "aaa"; }
+    function fnStringMsg(value) { return value === "aaa" ? true : "This has to be 'aaa'"; }
+
+    pass(42, exmodel.schema({ $type: "int"   , $fn: fnIntBin }));
+    fail(43, exmodel.schema({ $type: "int"   , $fn: fnIntBin }));
+
+    pass(42, exmodel.schema({ $type: "int"   , $fn: fnIntMsg }));
+    fail(43, exmodel.schema({ $type: "int"   , $fn: fnIntMsg }));
+
+    pass("aaa", exmodel.schema({ $type: "string", $fn: fnStringBin }));
+    fail("aa" , exmodel.schema({ $type: "string", $fn: fnStringBin }));
+
+    pass("aaa", exmodel.schema({ $type: "string", $fn: fnStringMsg }));
+    fail("aa" , exmodel.schema({ $type: "string", $fn: fnStringMsg }));
+  });
+
+  // --------------------------------------------------------------------------
   // [Directive - $g]
   // --------------------------------------------------------------------------
 
