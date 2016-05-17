@@ -1,6 +1,7 @@
 {
-  "name": "exmodel",
+  "name": "xschema",
   "version": "1.0.0",
+  "license": "Unlicense",
 
   "description": "High performance and extensible data processing library, including schema builder, data validator, and sanitizer.",
   "keywords": [
@@ -15,35 +16,26 @@
     "validator"
   ],
 
-  "homepage": "https://github.com/exjs/exmodel",
+  "homepage": "https://github.com/exjs/xschema",
   "bugs": {
-    "url": "https://github.com/exjs/exmodel/issues"
+    "url": "https://github.com/exjs/xschema/issues"
   },
 
-  "contributors": [{
-    "name": "Petr Kobalicek",
-    "email": "kobalicek.petr@gmail.com",
-    "url": "http://kobalicek.com"
-  }],
+  "contributors": [
+    "Petr Kobalicek <kobalicek.petr@gmail.com> (kobalicek.com)"
+  ],
 
-  "license": "Unlicense",
+  "main": "xschema.js",
 
-  "main": "exmodel.js",
-
-  "dependencies": {
-    "exclass": "*"
-  },
-
-  "devDependencies": {
-    "mocha": "*"
-  },
+  "engines": { "node": ">=4" },
+  "devDependencies": { "mocha": "*" },
 
   "repository" : {
     "type": "git",
-    "url": "https://github.com/exjs/exmodel.git"
+    "url": "https://github.com/exjs/xschema.git"
   },
 
   "scripts": {
-    "test": "mocha exmodel-spec.js"
+    "test": "mocha xschema-spec.js"
   }
 }

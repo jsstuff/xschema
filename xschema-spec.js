@@ -1,25 +1,16 @@
-// exmodel.js <https://github.com/exjs/exmodel>
+// xschema.js <https://github.com/exjs/xschema>
 "use strict";
 
 var assert = require("assert");
-var exclass = require("exclass");
-var exmodel = require("./exmodel");
+var xschema = require("./xschema");
 
 // ============================================================================
 // [Helpers]
 // ============================================================================
 
-var isArray = Array.isArray;
-var isEqual = exmodel.util.isEqual;
-var cloneDeep = exmodel.util.cloneDeep;
-var printableSchema = exmodel.printableSchema;
-
-function repeatString(s, n) {
-  var result = "";
-  for (var i = 0; i < n; i++)
-    result += s;
-  return result;
-}
+var cloneDeep = xschema.misc.cloneDeep;
+var equals = xschema.misc.equals;
+var printableSchema = xschema.misc.printableSchema;
 
 function sortedArrayOfArrays(arr) {
   arr = arr.slice();
@@ -37,19 +28,19 @@ function sortedArrayOfArrays(arr) {
 function printableOptions(options) {
   var arr = [];
 
-  if ((options & exmodel.kExtractAll) === exmodel.kExtractTop)
+  if ((options & xschema.kExtractAll) === xschema.kExtractTop)
     arr.push("kExtractTop");
 
-  if ((options & exmodel.kExtractAll) === exmodel.kExtractNested)
+  if ((options & xschema.kExtractAll) === xschema.kExtractNested)
     arr.push("kExtractNested");
 
-  if ((options & exmodel.kExtractAll) === exmodel.kExtractAll)
+  if ((options & xschema.kExtractAll) === xschema.kExtractAll)
     arr.push("kExtractAll");
 
-  if ((options & exmodel.kDeltaMode) !== 0)
+  if ((options & xschema.kDeltaMode) !== 0)
     arr.push("kDeltaMode");
 
-  if ((options & exmodel.kAccumulateErrors) !== 0)
+  if ((options & xschema.kAccumulateErrors) !== 0)
     arr.push("kAccumulateErrors");
 
   return arr;
@@ -57,7 +48,7 @@ function printableOptions(options) {
 
 function serializeFailure(reason, schema, options, access, input, output, expected, errors) {
   var e = "ERROR - " + reason;
-  var s = e + "\n" + repeatString("-", e.length) + "\n";
+  var s = e + "\n" + "-".repeat(e.length) + "\n";
 
   if (schema   !== undefined) s += "schema"   + " = " + JSON.stringify(printableSchema(schema), null, 2) + "\n";
   if (options  !== undefined) s += "options"  + " = " + JSON.stringify(printableOptions(options)) + "\n";
@@ -68,7 +59,7 @@ function serializeFailure(reason, schema, options, access, input, output, expect
   if (errors   !== undefined) s += "errors"   + " = " + JSON.stringify(errors, null, 2) + "\n";
 
   try {
-    var fn = exmodel.precompile("process", schema, options, access);
+    var fn = xschema.precompile("process", schema, options, access);
     s += "process = " + fn.toString();
   }
   catch (ex) {
@@ -78,30 +69,27 @@ function serializeFailure(reason, schema, options, access, input, output, expect
   return reason + "\n" + s;
 }
 
-function TestError(message) {
-  this.message = message;
-
-  this.name = "TestError";
-  this.stack = "Test" + Error(message).stack;
+class TestError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "TestError";
+    this.message = message;
+  }
 }
-exclass({
-  $extend: Error,
-  $construct: TestError
-});
 
 function pass(input, schema, options, access, expected) {
   var output = null;
   var err = null;
 
   try {
-    output = exmodel.process(input, schema, options, access);
+    output = xschema.process(input, schema, options, access);
   }
   catch (ex) {
     err = ex;
   }
 
   if (err) {
-    var errors = err instanceof exmodel.SchemaError ? err.errors : undefined;
+    var errors = err instanceof xschema.SchemaError ? err.errors : undefined;
     console.log(serializeFailure(
       "Should have passed", schema, options, access, input, undefined, expected, errors));
     throw err;
@@ -110,7 +98,7 @@ function pass(input, schema, options, access, expected) {
   if (arguments.length <= 4)
     expected = input;
 
-  if (!isEqual(output, expected)) {
+  if (!equals(output, expected)) {
     throw new TestError(serializeFailure(
       "Didn't match the expected output", schema, options, access, input, output, arguments.length <= 4 ? undefined : expected));
   }
@@ -121,10 +109,10 @@ function fail(input, schema, options, access) {
   var message = "Should have failed";
 
   try {
-    output = exmodel.process(input, schema, options, access);
+    output = xschema.process(input, schema, options, access);
   }
   catch (ex) {
-    if (ex instanceof exmodel.SchemaError)
+    if (ex instanceof xschema.SchemaError)
       return;
     message = "Should have thrown SchemaError (but thrown " + ex.name + ")";
   }
@@ -151,51 +139,51 @@ describe("exmodel", function() {
   // [Utilities]
   // --------------------------------------------------------------------------
 
-  it("should test utilities - isEqual", function() {
+  it("should test xschema.misc.equals", function() {
     // Basics.
-    assert(isEqual(null     , null     ));
-    assert(isEqual(undefined, undefined));
-    assert(isEqual(true     , true     ));
-    assert(isEqual(false    , false    ));
-    assert(isEqual(0        , 0        ));
-    assert(isEqual(0.10     , 0.10     ));
-    assert(isEqual(""       , ""       ));
-    assert(isEqual("string" , "string" ));
-    assert(isEqual(Infinity , Infinity ));
-    assert(isEqual(-Infinity, -Infinity));
-    assert(isEqual(NaN      , NaN      ));
-    assert(isEqual({ a: 0 } , { a: 0 } ));
-    assert(isEqual([0, 1, 2], [0, 1, 2]));
+    assert(equals(null     , null     ));
+    assert(equals(undefined, undefined));
+    assert(equals(true     , true     ));
+    assert(equals(false    , false    ));
+    assert(equals(0        , 0        ));
+    assert(equals(0.10     , 0.10     ));
+    assert(equals(""       , ""       ));
+    assert(equals("string" , "string" ));
+    assert(equals(Infinity , Infinity ));
+    assert(equals(-Infinity, -Infinity));
+    assert(equals(NaN      , NaN      ));
+    assert(equals({ a: 0 } , { a: 0 } ));
+    assert(equals([0, 1, 2], [0, 1, 2]));
 
-    assert(!isEqual(null, undefined));
-    assert(!isEqual(undefined, null));
+    assert(!equals(null, undefined));
+    assert(!equals(undefined, null));
 
-    assert(!isEqual(0, "0"));
-    assert(!isEqual("0", 0));
+    assert(!equals(0, "0"));
+    assert(!equals("0", 0));
 
-    assert(!isEqual(false, "false"));
-    assert(!isEqual("true", true));
+    assert(!equals(false, "false"));
+    assert(!equals("true", true));
 
-    assert(!isEqual("", null));
-    assert(!isEqual(null, ""));
+    assert(!equals("", null));
+    assert(!equals(null, ""));
 
-    assert(!isEqual(0, null));
-    assert(!isEqual(null, 0));
+    assert(!equals(0, null));
+    assert(!equals(null, 0));
 
-    assert(!isEqual(null, {}));
-    assert(!isEqual({}, null));
+    assert(!equals(null, {}));
+    assert(!equals({}, null));
 
-    assert(!isEqual(null, []));
-    assert(!isEqual([], null));
+    assert(!equals(null, []));
+    assert(!equals([], null));
 
-    assert(!isEqual({ a: undefined }, {}));
-    assert(!isEqual({}, { a: undefined }));
+    assert(!equals({ a: undefined }, {}));
+    assert(!equals({}, { a: undefined }));
 
-    assert(!isEqual({}, []));
-    assert(!isEqual([], {}));
+    assert(!equals({}, []));
+    assert(!equals([], {}));
 
     // Object equality.
-    assert(isEqual({
+    assert(equals({
       boolValue: false,
       numberValue: 42,
       stringValue: "string",
@@ -229,11 +217,11 @@ describe("exmodel", function() {
     aCyclic.cyclic = bCyclic;
     bCyclic.cyclic = aCyclic;
 
-    assertThrow(function() { isEqual(aCyclic, bCyclic); });
-    assertThrow(function() { isEqual(bCyclic, aCyclic); });
+    assertThrow(function() { equals(aCyclic, bCyclic); });
+    assertThrow(function() { equals(bCyclic, aCyclic); });
   });
 
-  it("should test utilities - cloneDeep", function() {
+  it("should test xschema.misc.cloneDeep", function() {
     var orig = {
       a: true,
       b: false,
@@ -246,7 +234,7 @@ describe("exmodel", function() {
     };
     var copy = cloneDeep(orig);
 
-    assert(isEqual(copy, orig));
+    assert(equals(copy, orig));
     assert(copy !== orig);
     assert(copy.e !== orig.e);
     assert(copy.f !== orig.f);
@@ -255,32 +243,40 @@ describe("exmodel", function() {
     assert(copy.e.a[1] !== orig.e.a[1]);
   });
 
-  it("should test utilities - string operations", function() {
-    assert(exmodel.util.isDirectiveName("$")          === true);
-    assert(exmodel.util.isDirectiveName("$directive") === true);
-    assert(exmodel.util.isDirectiveName("")           === false);
-    assert(exmodel.util.isDirectiveName("fieldName")  === false);
+  it("should test xschema.misc.isVariableName", function() {
+    assert(xschema.misc.isVariableName("someVar")     === true);
+    assert(xschema.misc.isVariableName("SomeVar")     === true);
+    assert(xschema.misc.isVariableName("$someVar")    === true);
+    assert(xschema.misc.isVariableName("_someVar")    === true);
+    assert(xschema.misc.isVariableName("$1")          === true);
+    assert(xschema.misc.isVariableName("$$")          === true);
+    assert(xschema.misc.isVariableName("1")           === false);
+    assert(xschema.misc.isVariableName("1$NotAVar")   === false);
+    assert(xschema.misc.isVariableName("1_NotAVar")   === false);
+  });
 
-    assert(exmodel.util.isVariableName("someVar")     === true);
-    assert(exmodel.util.isVariableName("SomeVar")     === true);
-    assert(exmodel.util.isVariableName("$someVar")    === true);
-    assert(exmodel.util.isVariableName("_someVar")    === true);
-    assert(exmodel.util.isVariableName("$1")          === true);
-    assert(exmodel.util.isVariableName("$$")          === true);
-    assert(exmodel.util.isVariableName("1")           === false);
-    assert(exmodel.util.isVariableName("1$NotAVar")   === false);
-    assert(exmodel.util.isVariableName("1_NotAVar")   === false);
+  it("should test xschema.misc.isDirectiveName", function() {
+    assert(xschema.misc.isDirectiveName("$")          === true);
+    assert(xschema.misc.isDirectiveName("$directive") === true);
+    assert(xschema.misc.isDirectiveName("")           === false);
+    assert(xschema.misc.isDirectiveName("fieldName")  === false);
+  });
 
-    assert(exmodel.util.escapeRegExp("[]{}")          === "\\[\\]\\{\\}");
+  it("should test xschema.misc.escapeRegExp", function() {
+    assert(xschema.misc.escapeRegExp("[]{}")          === "\\[\\]\\{\\}");
+  });
 
-    assert(exmodel.util.unescapeFieldName("field")    === "field");
-    assert(exmodel.util.unescapeFieldName("\\$field") === "$field");
+  it("should test xschema.misc.unescapeFieldName", function() {
+    assert(xschema.misc.unescapeFieldName("field")    === "field");
+    assert(xschema.misc.unescapeFieldName("\\$field") === "$field");
+  });
 
-    assert(exmodel.util.toCamelCase("ThisIsString")   === "thisIsString");
-    assert(exmodel.util.toCamelCase("this-is-string") === "thisIsString");
-    assert(exmodel.util.toCamelCase("THIS_IS_STRING") === "thisIsString");
-    assert(exmodel.util.toCamelCase("this-isString")  === "thisIsString");
-    assert(exmodel.util.toCamelCase("THIS_IsSTRING")  === "thisIsString");
+  it("should test xschema.misc.toCamelCase", function() {
+    assert(xschema.misc.toCamelCase("ThisIsString")   === "thisIsString");
+    assert(xschema.misc.toCamelCase("this-is-string") === "thisIsString");
+    assert(xschema.misc.toCamelCase("THIS_IS_STRING") === "thisIsString");
+    assert(xschema.misc.toCamelCase("this-isString")  === "thisIsString");
+    assert(xschema.misc.toCamelCase("THIS_IsSTRING")  === "thisIsString");
   });
 
   // --------------------------------------------------------------------------
@@ -296,7 +292,7 @@ describe("exmodel", function() {
       Mouse: 4,
       Hamster: 3
     };
-    var AnimalEnum = exmodel.enum(AnimalDef);
+    var AnimalEnum = xschema.enum(AnimalDef);
 
     assert(Object.keys(AnimalEnum).length === 5);
 
@@ -328,8 +324,8 @@ describe("exmodel", function() {
     assert(AnimalEnum.valueToKey(-1)  === undefined);
     assert(AnimalEnum.valueToKey("0") === undefined);
 
-    assert(isEqual(AnimalEnum.$.keyMap, AnimalDef));
-    assert(isEqual(AnimalEnum.$.keyArray, [
+    assert(equals(AnimalEnum.$.keyMap, AnimalDef));
+    assert(equals(AnimalEnum.$.keyArray, [
       "Horse",
       "Dog",
       "Cat",
@@ -337,14 +333,14 @@ describe("exmodel", function() {
       "Hamster"
     ]));
 
-    assert(isEqual(AnimalEnum.$.valueMap, {
+    assert(equals(AnimalEnum.$.valueMap, {
       "0": "Horse",
       "1": "Dog",
       "2": "Cat",
       "3": "Hamster",
       "4": "Mouse"
     }));
-    assert(isEqual(AnimalEnum.$.valueArray, [
+    assert(equals(AnimalEnum.$.valueArray, [
       0, 1, 2, 3, 4
     ]));
 
@@ -361,7 +357,7 @@ describe("exmodel", function() {
       Object: 6563,
       Array : 1234
     };
-    var TypeIdUniqueEnum = exmodel.enum(TypeIdUniqueDef);
+    var TypeIdUniqueEnum = xschema.enum(TypeIdUniqueDef);
 
     assert(TypeIdUniqueEnum.keyToValue("String") === TypeIdUniqueEnum.String);
     assert(TypeIdUniqueEnum.keyToValue("Number") === TypeIdUniqueEnum.Number);
@@ -386,7 +382,7 @@ describe("exmodel", function() {
       Object: 6563, // Same as Array
       Array : 6563  // Same as Object, but value should be mapped to "Object".
     };
-    var TypeIdNonUniqueEnum = exmodel.enum(TypeIdNonUniqueDef);
+    var TypeIdNonUniqueEnum = xschema.enum(TypeIdNonUniqueDef);
 
     assert(TypeIdNonUniqueEnum.keyToValue("String") === TypeIdNonUniqueEnum.String);
     assert(TypeIdNonUniqueEnum.keyToValue("Number") === TypeIdNonUniqueEnum.Number);
@@ -401,12 +397,12 @@ describe("exmodel", function() {
     // so Array value has to map to "Object" string.
     assert(TypeIdNonUniqueEnum.valueToKey(TypeIdNonUniqueEnum.Array) === "Object");
 
-    assert(isEqual(TypeIdNonUniqueEnum.$.valueMap, {
+    assert(equals(TypeIdNonUniqueEnum.$.valueMap, {
       "1299": "String",
       "3345": "Number",
       "6563": "Object"
     }));
-    assert(isEqual(TypeIdNonUniqueEnum.$.valueArray, [1299, 3345, 6563]));
+    assert(equals(TypeIdNonUniqueEnum.$.valueArray, [1299, 3345, 6563]));
 
     assert(TypeIdNonUniqueEnum.$.min === 1299);
     assert(TypeIdNonUniqueEnum.$.max === 6563);
@@ -415,11 +411,11 @@ describe("exmodel", function() {
     assert(TypeIdNonUniqueEnum.$.sequential === false);
 
     // Enum - unsafe.
-    assert(exmodel.enum({ A:-1.1                   }).$.safe === false);
-    assert(exmodel.enum({ A: 1.1                   }).$.safe === false);
-    assert(exmodel.enum({ A: 1234.1234             }).$.safe === false);
-    assert(exmodel.enum({ A: exmodel.kSafeIntMin - 2 }).$.safe === false);
-    assert(exmodel.enum({ A: exmodel.kSafeIntMax + 2 }).$.safe === false);
+    assert(xschema.enum({ A:-1.1                   }).$.safe === false);
+    assert(xschema.enum({ A: 1.1                   }).$.safe === false);
+    assert(xschema.enum({ A: 1234.1234             }).$.safe === false);
+    assert(xschema.enum({ A: xschema.kSafeIntMin - 2 }).$.safe === false);
+    assert(xschema.enum({ A: xschema.kSafeIntMax + 2 }).$.safe === false);
 
     // Enum - using reserved property names (Object.prototype properties).
     var ReservedDef = {
@@ -430,9 +426,9 @@ describe("exmodel", function() {
       toString: 4,
       valueOf: 5
     };
-    var ReservedEnum = exmodel.enum(ReservedDef);
+    var ReservedEnum = xschema.enum(ReservedDef);
 
-    assert(isEqual(ReservedEnum.$.keyMap, ReservedDef));
+    assert(equals(ReservedEnum.$.keyMap, ReservedDef));
 
     assert(ReservedEnum.hasKey("constructor"         ) === true );
     assert(ReservedEnum.hasKey("__defineGetter__"    ) === true );
@@ -445,24 +441,24 @@ describe("exmodel", function() {
     assert(ReservedEnum.keyToValue("propertyIsEnumerable") === undefined);
 
     // Ban keys that collide with members exmodel.enum() provides.
-    assertThrow(function() { exmodel.enum({ $         : 0 }); });
-    assertThrow(function() { exmodel.enum({ hasKey    : 0 }); });
-    assertThrow(function() { exmodel.enum({ hasValue  : 0 }); });
-    assertThrow(function() { exmodel.enum({ keyToValue: 0 }); });
-    assertThrow(function() { exmodel.enum({ valueToKey: 0 }); });
+    assertThrow(function() { xschema.enum({ $         : 0 }); });
+    assertThrow(function() { xschema.enum({ hasKey    : 0 }); });
+    assertThrow(function() { xschema.enum({ hasValue  : 0 }); });
+    assertThrow(function() { xschema.enum({ keyToValue: 0 }); });
+    assertThrow(function() { xschema.enum({ valueToKey: 0 }); });
 
     // Ban JS keys that are essential to the JS engine.
-    assertThrow(function() { exmodel.enum({ prototype : 0 }); });
+    assertThrow(function() { xschema.enum({ prototype : 0 }); });
 
     // Non-numeric values are not allowed.
-    assertThrow(function() { exmodel.enum({ infinityValue  : Infinity }); });
-    assertThrow(function() { exmodel.enum({ infinityValue  :-Infinity }); });
-    assertThrow(function() { exmodel.enum({ nanValue       : NaN      }); });
-    assertThrow(function() { exmodel.enum({ booleanValue   : false    }); });
-    assertThrow(function() { exmodel.enum({ booleanValue   : true     }); });
-    assertThrow(function() { exmodel.enum({ stringValue    : "1"      }); });
-    assertThrow(function() { exmodel.enum({ objectValue    : {}       }); });
-    assertThrow(function() { exmodel.enum({ arrayValue     : []       }); });
+    assertThrow(function() { xschema.enum({ infinityValue  : Infinity }); });
+    assertThrow(function() { xschema.enum({ infinityValue  :-Infinity }); });
+    assertThrow(function() { xschema.enum({ nanValue       : NaN      }); });
+    assertThrow(function() { xschema.enum({ booleanValue   : false    }); });
+    assertThrow(function() { xschema.enum({ booleanValue   : true     }); });
+    assertThrow(function() { xschema.enum({ stringValue    : "1"      }); });
+    assertThrow(function() { xschema.enum({ objectValue    : {}       }); });
+    assertThrow(function() { xschema.enum({ arrayValue     : []       }); });
   });
 
   // --------------------------------------------------------------------------
@@ -471,8 +467,8 @@ describe("exmodel", function() {
 
   it("should validate null and fail if undefined", function() {
     ["bool", "int", "number", "string", "text", "date", "datetime", "object"].forEach(function(type) {
-      pass(null     , exmodel.schema({ $type: type, $null: true      }));
-      fail(undefined, exmodel.schema({ $type: type, $null: true      }));
+      pass(null     , xschema.schema({ $type: type, $null: true      }));
+      fail(undefined, xschema.schema({ $type: type, $null: true      }));
     });
   });
 
@@ -481,7 +477,7 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate any - anything", function() {
-    var def = exmodel.schema({ $type: "any" });
+    var def = xschema.schema({ $type: "any" });
 
     var passData = [false, true, 0, 1, 42.42, "", "string", {}, [], { a: true }, [[[1, 2], 3], 4, { a: true }]];
     var failData = [null, undefined];
@@ -491,7 +487,7 @@ describe("exmodel", function() {
   });
 
   it("should validate any - $allowed", function() {
-    var def = exmodel.schema({ $type: "any" });
+    var def = xschema.schema({ $type: "any" });
 
     var passData = [false, true, 0, 1, 42.42, "", "string", {}, [], { a: true }, [[[1, 2], 3], 4, { a: true }]];
     var failData = [null, undefined];
@@ -505,7 +501,7 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate bool", function() {
-    var def = exmodel.schema({ $type: "bool" });
+    var def = xschema.schema({ $type: "bool" });
 
     var passData = [false, true];
     var failData = [0, 1, "", "string", {}, [], Infinity, -Infinity, NaN];
@@ -519,7 +515,7 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate number - int", function() {
-    var def = exmodel.schema({ $type: "int" });
+    var def = xschema.schema({ $type: "int" });
 
     var passData = [0, 1, -1];
     var failData = [false, true, "", "0", "string", {}, [], 0.1, -0.23211, Infinity, -Infinity, NaN];
@@ -529,36 +525,36 @@ describe("exmodel", function() {
   });
 
   it("should validate number - intxx", function() {
-    pass(-128       , exmodel.schema({ $type: "int8"  }));
-    pass( 127       , exmodel.schema({ $type: "int8"  }));
-    pass( 255       , exmodel.schema({ $type: "uint8" }));
+    pass(-128       , xschema.schema({ $type: "int8"  }));
+    pass( 127       , xschema.schema({ $type: "int8"  }));
+    pass( 255       , xschema.schema({ $type: "uint8" }));
 
-    pass(-32768     , exmodel.schema({ $type: "int16"  }));
-    pass( 32767     , exmodel.schema({ $type: "int16"  }));
-    pass( 65535     , exmodel.schema({ $type: "uint16" }));
+    pass(-32768     , xschema.schema({ $type: "int16"  }));
+    pass( 32767     , xschema.schema({ $type: "int16"  }));
+    pass( 65535     , xschema.schema({ $type: "uint16" }));
 
-    pass(-2147483648, exmodel.schema({ $type: "int32"  }));
-    pass( 2147483647, exmodel.schema({ $type: "int32"  }));
-    pass( 4294967295, exmodel.schema({ $type: "uint32" }));
+    pass(-2147483648, xschema.schema({ $type: "int32"  }));
+    pass( 2147483647, xschema.schema({ $type: "int32"  }));
+    pass( 4294967295, xschema.schema({ $type: "uint32" }));
 
-    fail(-129       , exmodel.schema({ $type: "int8"  }));
-    fail( 128       , exmodel.schema({ $type: "int8"  }));
-    fail(-1         , exmodel.schema({ $type: "uint8" }));
-    fail( 256       , exmodel.schema({ $type: "uint8" }));
+    fail(-129       , xschema.schema({ $type: "int8"  }));
+    fail( 128       , xschema.schema({ $type: "int8"  }));
+    fail(-1         , xschema.schema({ $type: "uint8" }));
+    fail( 256       , xschema.schema({ $type: "uint8" }));
 
-    fail(-32769     , exmodel.schema({ $type: "int16"  }));
-    fail( 32768     , exmodel.schema({ $type: "int16"  }));
-    fail(-1         , exmodel.schema({ $type: "uint16" }));
-    fail( 65536     , exmodel.schema({ $type: "uint16" }));
+    fail(-32769     , xschema.schema({ $type: "int16"  }));
+    fail( 32768     , xschema.schema({ $type: "int16"  }));
+    fail(-1         , xschema.schema({ $type: "uint16" }));
+    fail( 65536     , xschema.schema({ $type: "uint16" }));
 
-    fail(-2147483649, exmodel.schema({ $type: "int32"  }));
-    fail( 2147483648, exmodel.schema({ $type: "int32"  }));
-    fail(-1         , exmodel.schema({ $type: "uint32" }));
-    fail( 4294967296, exmodel.schema({ $type: "uint32" }));
+    fail(-2147483649, xschema.schema({ $type: "int32"  }));
+    fail( 2147483648, xschema.schema({ $type: "int32"  }));
+    fail(-1         , xschema.schema({ $type: "uint32" }));
+    fail( 4294967296, xschema.schema({ $type: "uint32" }));
   });
 
   it("should validate number - double", function() {
-    var def = exmodel.schema({ $type: "number" });
+    var def = xschema.schema({ $type: "number" });
 
     var passData = [0, 1, -1, 0.1, -0.23211];
     var failData = [false, true, "", "0", "string", {}, [], Infinity, -Infinity, NaN];
@@ -568,8 +564,8 @@ describe("exmodel", function() {
   });
 
   it("should validate number - lat/lon", function() {
-    var defLat = exmodel.schema({ $type: "lat" });
-    var defLon = exmodel.schema({ $type: "lon" });
+    var defLat = xschema.schema({ $type: "lat" });
+    var defLon = xschema.schema({ $type: "lon" });
 
     var passLat = [-90, -45.5334, 0, 34.4432, 90];
     var failLat = [-90.0001, 90.0001, "", true, null, undefined];
@@ -590,12 +586,12 @@ describe("exmodel", function() {
     ];
 
     types.forEach(function(type) {
-      pass( 0, exmodel.schema({ $type: type, $allowed: [0, 1, 2] }));
-      pass( 0, exmodel.schema({ $type: type, $allowed: [0, 1, 5] }));
-      pass( 5, exmodel.schema({ $type: type, $allowed: [1, 5, 0] }));
+      pass( 0, xschema.schema({ $type: type, $allowed: [0, 1, 2] }));
+      pass( 0, xschema.schema({ $type: type, $allowed: [0, 1, 5] }));
+      pass( 5, xschema.schema({ $type: type, $allowed: [1, 5, 0] }));
 
-      fail(-1, exmodel.schema({ $type: type, $allowed: [0, 1, 2] }));
-      fail( 6, exmodel.schema({ $type: type, $allowed: [0, 1, 5] }));
+      fail(-1, xschema.schema({ $type: type, $allowed: [0, 1, 2] }));
+      fail( 6, xschema.schema({ $type: type, $allowed: [0, 1, 5] }));
     });
   });
 
@@ -605,40 +601,40 @@ describe("exmodel", function() {
     ];
 
     types.forEach(function(type) {
-      pass( 0, exmodel.schema({ $type: type, $min: 0, $max: 5 }));
-      pass( 5, exmodel.schema({ $type: type, $min: 0, $max: 5 }));
+      pass( 0, xschema.schema({ $type: type, $min: 0, $max: 5 }));
+      pass( 5, xschema.schema({ $type: type, $min: 0, $max: 5 }));
 
-      pass( 1, exmodel.schema({ $type: type, $min: 0, $minExclusive: true }));
-      pass( 4, exmodel.schema({ $type: type, $max: 5, $maxExclusive: true }));
+      pass( 1, xschema.schema({ $type: type, $min: 0, $minExclusive: true }));
+      pass( 4, xschema.schema({ $type: type, $max: 5, $maxExclusive: true }));
 
-      fail(-1, exmodel.schema({ $type: type, $min: 0, $max: 5 }));
-      fail( 6, exmodel.schema({ $type: type, $min: 0, $max: 5 }));
+      fail(-1, xschema.schema({ $type: type, $min: 0, $max: 5 }));
+      fail( 6, xschema.schema({ $type: type, $min: 0, $max: 5 }));
 
-      fail( 0, exmodel.schema({ $type: type, $min: 0, $minExclusive: true }));
-      fail( 5, exmodel.schema({ $type: type, $max: 0, $maxExclusive: true }));
+      fail( 0, xschema.schema({ $type: type, $min: 0, $minExclusive: true }));
+      fail( 5, xschema.schema({ $type: type, $max: 0, $maxExclusive: true }));
     });
   });
 
   it("should validate number - $divisibleBy", function() {
     ["int", "number"].forEach(function(type) {
-      pass(-9, exmodel.schema({ $type: type, $divisibleBy: 9 }));
-      pass( 0, exmodel.schema({ $type: type, $divisibleBy: 1 }));
-      pass( 1, exmodel.schema({ $type: type, $divisibleBy: 1 }));
-      pass( 2, exmodel.schema({ $type: type, $divisibleBy: 1 }));
-      pass( 4, exmodel.schema({ $type: type, $divisibleBy: 2 }));
-      pass(10, exmodel.schema({ $type: type, $divisibleBy: 5 }));
+      pass(-9, xschema.schema({ $type: type, $divisibleBy: 9 }));
+      pass( 0, xschema.schema({ $type: type, $divisibleBy: 1 }));
+      pass( 1, xschema.schema({ $type: type, $divisibleBy: 1 }));
+      pass( 2, xschema.schema({ $type: type, $divisibleBy: 1 }));
+      pass( 4, xschema.schema({ $type: type, $divisibleBy: 2 }));
+      pass(10, xschema.schema({ $type: type, $divisibleBy: 5 }));
 
-      fail(-3, exmodel.schema({ $type: type, $divisibleBy: 2 }));
-      fail( 3, exmodel.schema({ $type: type, $divisibleBy: 6 }));
+      fail(-3, xschema.schema({ $type: type, $divisibleBy: 2 }));
+      fail( 3, xschema.schema({ $type: type, $divisibleBy: 6 }));
     });
   });
 
   it("should validate numeric - precision and scale", function() {
-    var defWithType = exmodel.schema({
+    var defWithType = xschema.schema({
       $type: "numeric(6, 2)"
     });
 
-    var defExplicit = exmodel.schema({
+    var defExplicit = xschema.schema({
       $type: "numeric",
       $precision: 6,
       $scale: 2
@@ -665,12 +661,12 @@ describe("exmodel", function() {
   });
 
   it("should validate numeric - invalid precision / scale", function() {
-    assertThrow(function() { exmodel.schema({ $type: "numeric(-2)"      }); });
-    assertThrow(function() { exmodel.schema({ $type: "numeric(2,-2)"    }); });
-    assertThrow(function() { exmodel.schema({ $type: "numeric(2,-2)"    }); });
-    assertThrow(function() { exmodel.schema({ $type: "numeric(2, 2)"    }); });
-    assertThrow(function() { exmodel.schema({ $type: "numeric(2, 4)"    }); });
-    assertThrow(function() { exmodel.schema({ $type: "numeric(invalid)" }); });
+    assertThrow(function() { xschema.schema({ $type: "numeric(-2)"      }); });
+    assertThrow(function() { xschema.schema({ $type: "numeric(2,-2)"    }); });
+    assertThrow(function() { xschema.schema({ $type: "numeric(2,-2)"    }); });
+    assertThrow(function() { xschema.schema({ $type: "numeric(2, 2)"    }); });
+    assertThrow(function() { xschema.schema({ $type: "numeric(2, 4)"    }); });
+    assertThrow(function() { xschema.schema({ $type: "numeric(invalid)" }); });
   });
 
   // --------------------------------------------------------------------------
@@ -678,21 +674,21 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate char", function() {
-    pass(""  , exmodel.schema({ $type: "char", $empty: true }));
-    pass("a" , exmodel.schema({ $type: "char" }));
-    pass("b" , exmodel.schema({ $type: "char" }));
+    pass(""  , xschema.schema({ $type: "char", $empty: true }));
+    pass("a" , xschema.schema({ $type: "char" }));
+    pass("b" , xschema.schema({ $type: "char" }));
 
-    pass("a" , exmodel.schema({ $type: "char", $allowed: "abc" }));
-    pass("c" , exmodel.schema({ $type: "char", $allowed: "abc" }));
+    pass("a" , xschema.schema({ $type: "char", $allowed: "abc" }));
+    pass("c" , xschema.schema({ $type: "char", $allowed: "abc" }));
 
-    fail(""  , exmodel.schema({ $type: "char" }));
-    fail(""  , exmodel.schema({ $type: "char", $empty: false }));
+    fail(""  , xschema.schema({ $type: "char" }));
+    fail(""  , xschema.schema({ $type: "char", $empty: false }));
 
-    fail("A" , exmodel.schema({ $type: "char", $allowed: "abc" }));
-    fail("z" , exmodel.schema({ $type: "char", $allowed: "abc" }));
+    fail("A" , xschema.schema({ $type: "char", $allowed: "abc" }));
+    fail("z" , xschema.schema({ $type: "char", $allowed: "abc" }));
 
-    fail("ab", exmodel.schema({ $type: "char" }));
-    fail("bc", exmodel.schema({ $type: "char" }));
+    fail("ab", xschema.schema({ $type: "char" }));
+    fail("bc", xschema.schema({ $type: "char" }));
   });
 
   // --------------------------------------------------------------------------
@@ -700,25 +696,25 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate string", function() {
-    pass("\x00"  , exmodel.schema({ $type: "string" }));
-    pass("xxxx"  , exmodel.schema({ $type: "string" }));
+    pass("\x00"  , xschema.schema({ $type: "string" }));
+    pass("xxxx"  , xschema.schema({ $type: "string" }));
 
-    pass("abc"   , exmodel.schema({ $type: "string", $length   : 3 }));
+    pass("abc"   , xschema.schema({ $type: "string", $length   : 3 }));
 
-    pass("abc"   , exmodel.schema({ $type: "string", $minLength: 3 }));
-    pass("abcdef", exmodel.schema({ $type: "string", $minLength: 3 }));
+    pass("abc"   , xschema.schema({ $type: "string", $minLength: 3 }));
+    pass("abcdef", xschema.schema({ $type: "string", $minLength: 3 }));
 
-    pass("abc"   , exmodel.schema({ $type: "string", $maxLength: 6 }));
-    pass("abcdef", exmodel.schema({ $type: "string", $maxLength: 6 }));
+    pass("abc"   , xschema.schema({ $type: "string", $maxLength: 6 }));
+    pass("abcdef", xschema.schema({ $type: "string", $maxLength: 6 }));
 
-    fail("abc", exmodel.schema({ $type: "string", $length   : 2 }));
-    fail("abc", exmodel.schema({ $type: "string", $minLength: 4 }));
-    fail("abc", exmodel.schema({ $type: "string", $maxLength: 2 }));
+    fail("abc", xschema.schema({ $type: "string", $length   : 2 }));
+    fail("abc", xschema.schema({ $type: "string", $minLength: 4 }));
+    fail("abc", xschema.schema({ $type: "string", $maxLength: 2 }));
   });
 
   it("should validate string - allowed", function() {
     var allowed = ["yes", "no", "maybe"];
-    var def = exmodel.schema({ $type: "text", $empty: true, $allowed: allowed });
+    var def = xschema.schema({ $type: "text", $empty: true, $allowed: allowed });
 
     var passData = allowed.concat([""]);
     var failData = [null, "never", " yes", "no ", " maybe "];
@@ -735,7 +731,7 @@ describe("exmodel", function() {
   it("should validate string - text (lo)", function() {
     // Text goes through the same validator as "string", so test only parts
     // where "string" vs "text" differ.
-    var def = exmodel.schema({ $type: "text" });
+    var def = xschema.schema({ $type: "text" });
 
     // Should accept some characters below 32.
     var passData = [
@@ -763,7 +759,7 @@ describe("exmodel", function() {
   });
 
   it("should validate string - text (lo+hi)", function() {
-    var def = exmodel.schema({ $type: "textline" });
+    var def = xschema.schema({ $type: "textline" });
 
     var passData = [
       "",
@@ -792,7 +788,7 @@ describe("exmodel", function() {
   });
 
   it("should validate string - text (surrogate pairs)", function() {
-    var def = exmodel.schema({ $type: "text" });
+    var def = xschema.schema({ $type: "text" });
 
     var passData = [
       "\uD834\uDF06",
@@ -834,7 +830,7 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate bigint", function() {
-    var def = exmodel.schema({ $type: "bigint" });
+    var def = xschema.schema({ $type: "bigint" });
 
     var passData = [
       "0",
@@ -917,13 +913,13 @@ describe("exmodel", function() {
   });
 
   it("should validate bigint - $allowed", function() {
-    pass(""    , exmodel.schema({ $type: "bigint", $allowed: ["1234", "2345"], $empty: true }));
-    pass("1234", exmodel.schema({ $type: "bigint", $allowed: ["1234", "2345"] }));
-    pass("1234", exmodel.schema({ $type: "bigint", $allowed: ["2345", "1234"] }));
+    pass(""    , xschema.schema({ $type: "bigint", $allowed: ["1234", "2345"], $empty: true }));
+    pass("1234", xschema.schema({ $type: "bigint", $allowed: ["1234", "2345"] }));
+    pass("1234", xschema.schema({ $type: "bigint", $allowed: ["2345", "1234"] }));
 
-    fail(""    , exmodel.schema({ $type: "bigint", $allowed: ["2345", "3456"] }));
-    fail("1234", exmodel.schema({ $type: "bigint", $allowed: ["2345", "3456"] }));
-    fail("1234", exmodel.schema({ $type: "bigint", $allowed: [] }));
+    fail(""    , xschema.schema({ $type: "bigint", $allowed: ["2345", "3456"] }));
+    fail("1234", xschema.schema({ $type: "bigint", $allowed: ["2345", "3456"] }));
+    fail("1234", xschema.schema({ $type: "bigint", $allowed: [] }));
   });
 
   // --------------------------------------------------------------------------
@@ -931,7 +927,7 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate color - #XXX and #XXXXXX", function() {
-    var def = exmodel.schema({ $type: "color" });
+    var def = xschema.schema({ $type: "color" });
 
     pass("#000", def);
     pass("#123", def);
@@ -965,11 +961,11 @@ describe("exmodel", function() {
   });
 
   it("should validate color - color names", function() {
-    var defDefault          = exmodel.schema({ $type: "color" });
-    var defAllowCssNames    = exmodel.schema({ $type: "color", $cssNames: true  });
-    var defDisallowCssNames = exmodel.schema({ $type: "color", $cssNames: false });
+    var defDefault          = xschema.schema({ $type: "color" });
+    var defAllowCssNames    = xschema.schema({ $type: "color", $cssNames: true  });
+    var defDisallowCssNames = xschema.schema({ $type: "color", $cssNames: false });
 
-    for (var k in exmodel.util.colorNames) {
+    for (var k in xschema.misc.colorNames) {
       var K = k.toUpperCase();
 
       pass(k, defDefault);
@@ -992,7 +988,7 @@ describe("exmodel", function() {
       "currentcolor": true
     };
 
-    var def = exmodel.schema({
+    var def = xschema.schema({
       $type         : "color",
       $cssNames     : true,
       $extraNames   : ExtraNames
@@ -1016,7 +1012,7 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate creditcard", function() {
-    var def = exmodel.schema({ $type: "creditcard" });
+    var def = xschema.schema({ $type: "creditcard" });
 
     // Randomly generated from:
     // http://www.freeformatter.com/credit-card-number-generator-validator.html
@@ -1166,17 +1162,17 @@ describe("exmodel", function() {
       var correctFormat = String(data.length);
       var invalidFormat = correctFormat === "10" ? "13" : "10";
 
-      pass(data, exmodel.schema({ $type: "isbn" }));
-      pass(data, exmodel.schema({ $type: "isbn" }));
+      pass(data, xschema.schema({ $type: "isbn" }));
+      pass(data, xschema.schema({ $type: "isbn" }));
 
-      pass(data, exmodel.schema({ $type: "isbn", $format: correctFormat }));
-      fail(data, exmodel.schema({ $type: "isbn", $format: invalidFormat }));
+      pass(data, xschema.schema({ $type: "isbn", $format: correctFormat }));
+      fail(data, xschema.schema({ $type: "isbn", $format: invalidFormat }));
     });
 
     failData.forEach(function(data) {
-      fail(data, exmodel.schema({ $type: "isbn" }));
-      fail(data, exmodel.schema({ $type: "isbn", $format: "10" }));
-      fail(data, exmodel.schema({ $type: "isbn", $format: "13" }));
+      fail(data, xschema.schema({ $type: "isbn" }));
+      fail(data, xschema.schema({ $type: "isbn", $format: "10" }));
+      fail(data, xschema.schema({ $type: "isbn", $format: "13" }));
     });
   });
 
@@ -1185,8 +1181,8 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate mac", function() {
-    var MAC  = exmodel.schema({ $type: "mac" });
-    var MACd = exmodel.schema({ $type: "mac", $separator: "-" });
+    var MAC  = xschema.schema({ $type: "mac" });
+    var MACd = xschema.schema({ $type: "mac", $separator: "-" });
 
     pass("00:00:00:00:00:00", MAC);
     pass("01:02:03:04:05:06", MAC);
@@ -1239,11 +1235,11 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate ip - ipv4", function() {
-    var IPV4 = exmodel.schema({
+    var IPV4 = xschema.schema({
       $type: "ipv4"
     });
 
-    var IPV4AllowPort = exmodel.schema({
+    var IPV4AllowPort = xschema.schema({
       $type: "ipv4",
       $allowPort: true
     });
@@ -1311,11 +1307,11 @@ describe("exmodel", function() {
   });
 
   it("should validate ip - ipv6", function() {
-    var IPV6 = exmodel.schema({
+    var IPV6 = xschema.schema({
       $type: "ipv6"
     });
 
-    var IPV6AllowPort = exmodel.schema({
+    var IPV6AllowPort = xschema.schema({
       $type: "ipv6",
       $allowPort: true
     });
@@ -1476,22 +1472,22 @@ describe("exmodel", function() {
     passData.forEach(function(value) {
       var version = value.charAt(14);
 
-      pass(value, exmodel.schema({ $type: "uuid" }));
-      pass(value, exmodel.schema({ $type: "uuid", $version: version       }));
-      pass(value, exmodel.schema({ $type: "uuid", $version: version + "+" }));
+      pass(value, xschema.schema({ $type: "uuid" }));
+      pass(value, xschema.schema({ $type: "uuid", $version: version       }));
+      pass(value, xschema.schema({ $type: "uuid", $version: version + "+" }));
 
-      pass("{" + value + "}", exmodel.schema({ $type: "uuid", $format: "any"      }));
-      pass("{" + value + "}", exmodel.schema({ $type: "uuid", $format: "windows"  }));
+      pass("{" + value + "}", xschema.schema({ $type: "uuid", $format: "any"      }));
+      pass("{" + value + "}", xschema.schema({ $type: "uuid", $format: "windows"  }));
 
-      fail("{" + value + "}", exmodel.schema({ $type: "uuid", $format: null       }));
-      fail("{" + value + "}", exmodel.schema({ $type: "uuid", $format: "rfc"      }));
+      fail("{" + value + "}", xschema.schema({ $type: "uuid", $format: null       }));
+      fail("{" + value + "}", xschema.schema({ $type: "uuid", $format: "rfc"      }));
     });
 
     failData.forEach(function(value) {
-      fail(value, exmodel.schema({ $type: "uuid" }));
-      fail(value, exmodel.schema({ $type: "uuid", $format: "any"     }));
-      fail(value, exmodel.schema({ $type: "uuid", $format: "rfc"     }));
-      fail(value, exmodel.schema({ $type: "uuid", $format: "windows" }));
+      fail(value, xschema.schema({ $type: "uuid" }));
+      fail(value, xschema.schema({ $type: "uuid", $format: "any"     }));
+      fail(value, xschema.schema({ $type: "uuid", $format: "rfc"     }));
+      fail(value, xschema.schema({ $type: "uuid", $format: "windows" }));
     });
   });
 
@@ -1500,8 +1496,8 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate datetime - date", function() {
-    var YYYY_MM    = exmodel.schema({ $type: "date", $format: "YYYY-MM" });
-    var YYYY_MM_DD = exmodel.schema({ $type: "date" });
+    var YYYY_MM    = xschema.schema({ $type: "date", $format: "YYYY-MM" });
+    var YYYY_MM_DD = xschema.schema({ $type: "date" });
 
     pass("1968-08"   , YYYY_MM);
     pass("1968-08-20", YYYY_MM_DD);
@@ -1527,8 +1523,8 @@ describe("exmodel", function() {
   });
 
   it("should validate datetime - time", function() {
-    var HH_mm       = exmodel.schema({ $type: "time", $format: "HH:mm" });
-    var HH_mm_ss    = exmodel.schema({ $type: "time" });
+    var HH_mm       = xschema.schema({ $type: "time", $format: "HH:mm" });
+    var HH_mm_ss    = xschema.schema({ $type: "time" });
 
     pass("14:53"   , HH_mm);
     pass("14:53:59", HH_mm_ss);
@@ -1543,9 +1539,9 @@ describe("exmodel", function() {
   });
 
   it("should validate datetime - datetime", function() {
-    var YYYY_MM_DD_HH_mm_ss = exmodel.schema({ $type: "datetime"    });
-    var YYYY_MM_DD_HH_mm_ms = exmodel.schema({ $type: "datetime-ms" });
-    var YYYY_MM_DD_HH_mm_us = exmodel.schema({ $type: "datetime-us" });
+    var YYYY_MM_DD_HH_mm_ss = xschema.schema({ $type: "datetime"    });
+    var YYYY_MM_DD_HH_mm_ms = xschema.schema({ $type: "datetime-ms" });
+    var YYYY_MM_DD_HH_mm_us = xschema.schema({ $type: "datetime-us" });
 
     pass("1968-08-20 12:00:59"       , YYYY_MM_DD_HH_mm_ss);
     pass("1968-08-20 12:00:59.999"   , YYYY_MM_DD_HH_mm_ms);
@@ -1565,11 +1561,11 @@ describe("exmodel", function() {
   });
 
   it("should validate datetime - leap year handling", function() {
-    var YYYY_MM_DD = exmodel.schema({
+    var YYYY_MM_DD = xschema.schema({
       $type: "date"
     });
 
-    var YYYY_MM_DD_no29thFeb = exmodel.schema({
+    var YYYY_MM_DD_no29thFeb = xschema.schema({
       $type: "date",
       $leapYear: false
     });
@@ -1596,18 +1592,18 @@ describe("exmodel", function() {
   });
 
   it("should validate datetime - leap second handling", function() {
-    var YYYY_MM_DD_HH_mm_ss = exmodel.schema({
+    var YYYY_MM_DD_HH_mm_ss = xschema.schema({
       $type: "datetime",
       $leapSecond: true
     });
 
-    var MM_DD_HH_mm_ss = exmodel.schema({
+    var MM_DD_HH_mm_ss = xschema.schema({
       $type: "datetime",
       $format: "MM-DD HH:mm:ss",
       $leapSecond: true
     });
 
-    var HH_mm_ss = exmodel.schema({
+    var HH_mm_ss = xschema.schema({
       $type: "time",
       $leapSecond: true
     });
@@ -1655,7 +1651,7 @@ describe("exmodel", function() {
   });
 
   it("should validate datetime - valid custom format YYYYMMDD", function() {
-    var def = exmodel.schema({ $type: "date", $format: "YYYYMMDD" });
+    var def = xschema.schema({ $type: "date", $format: "YYYYMMDD" });
 
     pass("19990101", def);
     pass("20041213", def);
@@ -1668,7 +1664,7 @@ describe("exmodel", function() {
   });
 
   it("should validate datetime - valid custom format YYYYMMDD HHmmss", function() {
-    var def = exmodel.schema({ $type: "date", $format: "YYYYMMDD HHmmss" });
+    var def = xschema.schema({ $type: "date", $format: "YYYYMMDD HHmmss" });
 
     pass("19990101 013030" , def);
     pass("20041213 013030" , def);
@@ -1684,7 +1680,7 @@ describe("exmodel", function() {
   });
 
   it("should validate datetime - valid custom format D.M.Y", function() {
-    var def = exmodel.schema({ $type: "date", $format: "D.M.Y" });
+    var def = xschema.schema({ $type: "date", $format: "D.M.Y" });
 
     pass("1.1.455"    , def);
     pass("2.8.2004"   , def);
@@ -1696,7 +1692,7 @@ describe("exmodel", function() {
   });
 
   it("should validate datetime - valid custom format D.M.Y H:m:s", function() {
-    var def = exmodel.schema({ $type: "date", $format: "D.M.Y H:m:s" });
+    var def = xschema.schema({ $type: "date", $format: "D.M.Y H:m:s" });
 
     pass("1.1.455 1:30:30"    , def);
     pass("2.8.2004 1:30:30"   , def);
@@ -1715,13 +1711,13 @@ describe("exmodel", function() {
   });
 
   it("should validate datetime - invalid custom format", function() {
-    assertThrow(function() { exmodel.schema({ $type: "date", $format: "YD"            }); });
-    assertThrow(function() { exmodel.schema({ $type: "date", $format: "YM"            }); });
-    assertThrow(function() { exmodel.schema({ $type: "date", $format: "YMD"           }); });
-    assertThrow(function() { exmodel.schema({ $type: "date", $format: "DMY"           }); });
-    assertThrow(function() { exmodel.schema({ $type: "date", $format: "YYYY-DD"       }); });
-    assertThrow(function() { exmodel.schema({ $type: "date", $format: "YYYY-MM-DD mm" }); });
-    assertThrow(function() { exmodel.schema({ $type: "date", $format: "YYYY-MM-DD ss" }); });
+    assertThrow(function() { xschema.schema({ $type: "date", $format: "YD"            }); });
+    assertThrow(function() { xschema.schema({ $type: "date", $format: "YM"            }); });
+    assertThrow(function() { xschema.schema({ $type: "date", $format: "YMD"           }); });
+    assertThrow(function() { xschema.schema({ $type: "date", $format: "DMY"           }); });
+    assertThrow(function() { xschema.schema({ $type: "date", $format: "YYYY-DD"       }); });
+    assertThrow(function() { xschema.schema({ $type: "date", $format: "YYYY-MM-DD mm" }); });
+    assertThrow(function() { xschema.schema({ $type: "date", $format: "YYYY-MM-DD ss" }); });
   });
 
   // --------------------------------------------------------------------------
@@ -1729,14 +1725,14 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate object - empty object", function() {
-    var def = exmodel.schema({});
+    var def = xschema.schema({});
 
     pass({}, def);
     fail({ a: true }, def);
   });
 
   it("should validate object - mandatory fields", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       a: { $type: "bool"   },
       b: { $type: "int"    },
       c: { $type: "double" },
@@ -1760,7 +1756,7 @@ describe("exmodel", function() {
   });
 
   it("should validate object - optional fields", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       a: { $type: "bool"  , $optional: true },
       b: { $type: "int"   , $optional: true },
       c: { $type: "double", $optional: true },
@@ -1775,7 +1771,7 @@ describe("exmodel", function() {
   });
 
   it("should validate object - special fields", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       constructor         : { $type: "string", $optional: true },
       hasOwnProperty      : { $type: "string", $optional: true },
       toString            : { $type: "string", $optional: true },
@@ -1797,7 +1793,7 @@ describe("exmodel", function() {
   });
 
   it("should validate object - unicode fields", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       "\u0909": { $type: "string" },
       "\u0910": { $type: "string" }
     });
@@ -1806,7 +1802,7 @@ describe("exmodel", function() {
   });
 
   it("should validate object - escaped fields", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       "\\$type"  : { $type: "string" },
       "\\\\value": { $type: "string" }
     });
@@ -1815,7 +1811,7 @@ describe("exmodel", function() {
   });
 
   it("should validate object - default fields", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       a: { $type: "bool"  , $default: true  },
       b: { $type: "int"   , $default: 42    },
       c: { $type: "double", $default: 3.14  },
@@ -1832,12 +1828,12 @@ describe("exmodel", function() {
     });
 
     // exmodel.js should always copy all defaults.
-    assert(exmodel.process({}, def, 0, null).e !==
-           exmodel.process({}, def, 0, null).e);
+    assert(xschema.process({}, def, 0, null).e !==
+           xschema.process({}, def, 0, null).e);
   });
 
   it("should validate object - strict/extract", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       a: { $type: "bool" },
       nested: {
         b: { $type: "int" }
@@ -1857,18 +1853,18 @@ describe("exmodel", function() {
     var noise2 = cloneDeep(noise1);
     noise2.nested.anotherNoise = true;
 
-    pass(noise1, def, exmodel.kExtractTop, null, data);
-    pass(noise2, def, exmodel.kExtractAll, null, data);
+    pass(noise1, def, xschema.kExtractTop, null, data);
+    pass(noise2, def, xschema.kExtractAll, null, data);
 
-    fail(noise1, def, exmodel.kNoOptions);
-    fail(noise1, def, exmodel.kExtractNested);
+    fail(noise1, def, xschema.kNoOptions);
+    fail(noise1, def, xschema.kExtractNested);
 
-    fail(noise2, def, exmodel.kNoOptions);
-    fail(noise2, def, exmodel.kExtractTop);
+    fail(noise2, def, xschema.kNoOptions);
+    fail(noise2, def, xschema.kExtractTop);
   });
 
   it("should validate object - delta mode", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       a: { $type: "bool" },
       b: { $type: "int"  },
       nested: {
@@ -1877,14 +1873,14 @@ describe("exmodel", function() {
       }
     });
 
-    pass({ a: true }, def, exmodel.kDeltaMode);
-    pass({ b: 1234 }, def, exmodel.kDeltaMode);
+    pass({ a: true }, def, xschema.kDeltaMode);
+    pass({ b: 1234 }, def, xschema.kDeltaMode);
 
-    pass({ a: true, nested: {} }, def, exmodel.kDeltaMode);
-    pass({ b: 1234, nested: {} }, def, exmodel.kDeltaMode);
+    pass({ a: true, nested: {} }, def, xschema.kDeltaMode);
+    pass({ b: 1234, nested: {} }, def, xschema.kDeltaMode);
 
-    pass({ a: true, nested: { c: "exm"   } }, def, exmodel.kDeltaMode);
-    pass({ b: 1234, nested: { d: ["qqq"] } }, def, exmodel.kDeltaMode);
+    pass({ a: true, nested: { c: "exm"   } }, def, xschema.kDeltaMode);
+    pass({ b: 1234, nested: { d: ["qqq"] } }, def, xschema.kDeltaMode);
 
     // This is just a delta mode, invalid properties shouldn't be allowed.
     fail({ invalid: true }, def);
@@ -1892,7 +1888,7 @@ describe("exmodel", function() {
   });
 
   it("should validate object - delta mode with $delta", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       a: { $type: "bool" },
       b: { $type: "int"  },
       nested: {
@@ -1902,17 +1898,17 @@ describe("exmodel", function() {
       }
     });
 
-    pass({ a: true }, def, exmodel.kDeltaMode);
-    pass({ b: 1234 }, def, exmodel.kDeltaMode);
+    pass({ a: true }, def, xschema.kDeltaMode);
+    pass({ b: 1234 }, def, xschema.kDeltaMode);
 
-    pass({ a: true, nested: { c: "exm", d: ["qqq" ] } }, def, exmodel.kDeltaMode);
-    pass({ b: 1234, nested: { c: "exm", d: ["qqq" ] } }, def, exmodel.kDeltaMode);
+    pass({ a: true, nested: { c: "exm", d: ["qqq" ] } }, def, xschema.kDeltaMode);
+    pass({ b: 1234, nested: { c: "exm", d: ["qqq" ] } }, def, xschema.kDeltaMode);
 
-    fail({ a: true, nested: {} }, def, exmodel.kDeltaMode);
-    fail({ b: 1234, nested: {} }, def, exmodel.kDeltaMode);
+    fail({ a: true, nested: {} }, def, xschema.kDeltaMode);
+    fail({ b: 1234, nested: {} }, def, xschema.kDeltaMode);
 
-    fail({ a: true, nested: { c: "exm"   } }, def, exmodel.kDeltaMode);
-    fail({ b: 1234, nested: { d: ["qqq"] } }, def, exmodel.kDeltaMode);
+    fail({ a: true, nested: { c: "exm"   } }, def, xschema.kDeltaMode);
+    fail({ b: 1234, nested: { d: ["qqq"] } }, def, xschema.kDeltaMode);
   });
 
   // --------------------------------------------------------------------------
@@ -1920,7 +1916,7 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate map - any", function() {
-    var def0 = exmodel.schema({
+    var def0 = xschema.schema({
       $type: "map",
       $data: {
         $type: "any"
@@ -1931,7 +1927,7 @@ describe("exmodel", function() {
     fail(null, def0);
     fail({ a: null }, def0);
 
-    var def1 = exmodel.schema({
+    var def1 = xschema.schema({
       $type: "map",
       $null: true,
       $data: {
@@ -1943,7 +1939,7 @@ describe("exmodel", function() {
     pass(null, def1);
     fail({ a: null }, def1);
 
-    var def2 = exmodel.schema({
+    var def2 = xschema.schema({
       $type: "map",
       $null: true,
       $data: {
@@ -1958,7 +1954,7 @@ describe("exmodel", function() {
   });
 
   it("should validate map - types", function() {
-    var def0 = exmodel.schema({
+    var def0 = xschema.schema({
       $type: "map",
       $data: {
         $type: "int",
@@ -1969,7 +1965,7 @@ describe("exmodel", function() {
     pass({ a: 0, b: 49 }, def0);
     fail({ a: 0, b: 51 }, def0);
 
-    var def1 = exmodel.schema({
+    var def1 = xschema.schema({
       $type: "map",
       $data: {
         $type: "string"
@@ -2000,7 +1996,7 @@ describe("exmodel", function() {
         var passData = spec.pass;
         var failData = spec.fail.concat([undefined]);
 
-        var def = exmodel.schema({
+        var def = xschema.schema({
           $type: "array",
           $data: {
             $type: type,
@@ -2020,7 +2016,7 @@ describe("exmodel", function() {
   });
 
   it("should validate array - nested objects", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       $type: "array",
       $data: {
         active: { $type: "bool", $null: true },
@@ -2044,7 +2040,7 @@ describe("exmodel", function() {
   });
 
   it("should validate array - length", function() {
-    var defLen2 = exmodel.schema({
+    var defLen2 = xschema.schema({
       $type: "array",
       $data: {
         $type: "int"
@@ -2052,7 +2048,7 @@ describe("exmodel", function() {
       $length: 2
     });
 
-    var defMin2 = exmodel.schema({
+    var defMin2 = xschema.schema({
       $type: "array",
       $data: {
         $type: "int"
@@ -2060,7 +2056,7 @@ describe("exmodel", function() {
       $minLength: 2
     });
 
-    var defMax2 = exmodel.schema({
+    var defMax2 = xschema.schema({
       $type: "array",
       $data: {
         $type: "int"
@@ -2082,7 +2078,7 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should handle shortcut '?'", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       a: { $type: "int"  },
       b: { $type: "int?" }
     });
@@ -2097,7 +2093,7 @@ describe("exmodel", function() {
   });
 
   it("should handle shortcut '[]'", function() {
-    var def0 = exmodel.schema({
+    var def0 = xschema.schema({
       a: { $type: "int"   },
       b: { $type: "int[]" }
     });
@@ -2109,7 +2105,7 @@ describe("exmodel", function() {
     fail({ a: 0, b: "s"   }, def0);
     fail({ a: 0, b: ["s"] }, def0);
 
-    var def1 = exmodel.schema({
+    var def1 = xschema.schema({
       a: { $type: "int[]", $optional: true }
     });
 
@@ -2118,10 +2114,10 @@ describe("exmodel", function() {
   });
 
   it("should handle shortcut '[x..y]'", function() {
-    var Exact  = exmodel.schema({ $type: "int[2]"    });
-    var Min    = exmodel.schema({ $type: "int[2..]"  });
-    var Max    = exmodel.schema({ $type: "int[..2]"  });
-    var MinMax = exmodel.schema({ $type: "int[2..4]" });
+    var Exact  = xschema.schema({ $type: "int[2]"    });
+    var Min    = xschema.schema({ $type: "int[2..]"  });
+    var Max    = xschema.schema({ $type: "int[..2]"  });
+    var MinMax = xschema.schema({ $type: "int[2..4]" });
 
     fail([]             , Exact);
     fail([0]            , Exact);
@@ -2149,7 +2145,7 @@ describe("exmodel", function() {
   });
 
   it("should handle shortcut '[]?'", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       a: { $type: "int"    },
       b: { $type: "int[]?" }
     });
@@ -2166,7 +2162,7 @@ describe("exmodel", function() {
   });
 
   it("should handle shortcut '?[]?'", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       a: { $type: "int"     },
       b: { $type: "int?[]?" }
     });
@@ -2184,11 +2180,11 @@ describe("exmodel", function() {
   });
 
   it("should handle shortcut (invalid)", function() {
-    assertThrow(function() { exmodel.schema({ $type: "int??"    }); });
-    assertThrow(function() { exmodel.schema({ $type: "int??[]"  }); });
-    assertThrow(function() { exmodel.schema({ $type: "int[]??"  }); });
-    assertThrow(function() { exmodel.schema({ $type: "int?[]??" }); });
-    assertThrow(function() { exmodel.schema({ $type: "int??[]?" }); });
+    assertThrow(function() { xschema.schema({ $type: "int??"    }); });
+    assertThrow(function() { xschema.schema({ $type: "int??[]"  }); });
+    assertThrow(function() { xschema.schema({ $type: "int[]??"  }); });
+    assertThrow(function() { xschema.schema({ $type: "int?[]??" }); });
+    assertThrow(function() { xschema.schema({ $type: "int??[]?" }); });
   });
 
   // --------------------------------------------------------------------------
@@ -2202,17 +2198,17 @@ describe("exmodel", function() {
     function fnStringBin(value) { return value === "aaa"; }
     function fnStringMsg(value) { return value === "aaa" ? true : "This has to be 'aaa'"; }
 
-    pass(42, exmodel.schema({ $type: "int"   , $fn: fnIntBin }));
-    fail(43, exmodel.schema({ $type: "int"   , $fn: fnIntBin }));
+    pass(42, xschema.schema({ $type: "int"   , $fn: fnIntBin }));
+    fail(43, xschema.schema({ $type: "int"   , $fn: fnIntBin }));
 
-    pass(42, exmodel.schema({ $type: "int"   , $fn: fnIntMsg }));
-    fail(43, exmodel.schema({ $type: "int"   , $fn: fnIntMsg }));
+    pass(42, xschema.schema({ $type: "int"   , $fn: fnIntMsg }));
+    fail(43, xschema.schema({ $type: "int"   , $fn: fnIntMsg }));
 
-    pass("aaa", exmodel.schema({ $type: "string", $fn: fnStringBin }));
-    fail("aa" , exmodel.schema({ $type: "string", $fn: fnStringBin }));
+    pass("aaa", xschema.schema({ $type: "string", $fn: fnStringBin }));
+    fail("aa" , xschema.schema({ $type: "string", $fn: fnStringBin }));
 
-    pass("aaa", exmodel.schema({ $type: "string", $fn: fnStringMsg }));
-    fail("aa" , exmodel.schema({ $type: "string", $fn: fnStringMsg }));
+    pass("aaa", xschema.schema({ $type: "string", $fn: fnStringMsg }));
+    fail("aa" , xschema.schema({ $type: "string", $fn: fnStringMsg }));
   });
 
   // --------------------------------------------------------------------------
@@ -2220,7 +2216,7 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should enrich object - properties having $g", function() {
-    var def0 = exmodel.schema({
+    var def0 = xschema.schema({
       id         : { $type: "int" },
       type       : { $type: "int" },
       flags      : { $type: "int" },
@@ -2235,7 +2231,7 @@ describe("exmodel", function() {
       "@default": ["id", "type", "flags", "title", "description", "metadata"]
     });
 
-    var def1 = exmodel.schema({
+    var def1 = xschema.schema({
       id         : { $type: "int" , $g: "@info" },
       type       : { $type: "int" , $g: "@info" },
       flags      : { $type: "int" , $g: "@info" },
@@ -2257,7 +2253,7 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should enrich object - properties having $pk and $fk", function() {
-    var def0 = exmodel.schema({
+    var def0 = xschema.schema({
       id         : { $type: "int", $pk: true            },
       userId     : { $type: "int", $fk: "users.userId"  },
       tagId      : { $type: "int", $fk: "tags.tagId"    }
@@ -2274,7 +2270,7 @@ describe("exmodel", function() {
   });
 
   it("should enrich object - properties having $unique", function() {
-    var def0 = exmodel.schema({
+    var def0 = xschema.schema({
       id         : { $type: "int", $pk: true     },
       name       : { $type: "int", $unique: true },
       taxId      : { $type: "int", $unique: true }
@@ -2284,7 +2280,7 @@ describe("exmodel", function() {
       sortedArrayOfArrays(def0.$uniqueArray),
       sortedArrayOfArrays([["id"], ["name"], ["taxId"]]));
 
-    var def1 = exmodel.schema({
+    var def1 = xschema.schema({
       id         : { $type: "int", $pk: true    },
       name       : { $type: "int", $unique: "nameAndTax" },
       taxId      : { $type: "int", $unique: "nameAndTax" }
@@ -2294,7 +2290,7 @@ describe("exmodel", function() {
       sortedArrayOfArrays(def1.$uniqueArray),
       sortedArrayOfArrays([["id"], ["name", "taxId"]]));
 
-    var def2 = exmodel.schema({
+    var def2 = xschema.schema({
       userId     : { $type: "int"   , $pk: true, $unique: "name|id" },
       tagId      : { $type: "int"   , $pk: true, $unique: "id"      },
       tagName    : { $type: "string"           , $unique: "name"    }
@@ -2304,7 +2300,7 @@ describe("exmodel", function() {
       sortedArrayOfArrays(def2.$uniqueArray),
       sortedArrayOfArrays([["tagId", "userId"], ["tagName", "userId"]]));
 
-    var def3 = exmodel.schema({
+    var def3 = xschema.schema({
       a: { $type: "int", $unique: "ac|ad" },
       b: { $type: "int", $unique: true    },
       c: { $type: "int", $unique: "ac"    },
@@ -2321,12 +2317,12 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should extend schema - use as nested (directly)", function() {
-    var nestedDef = exmodel.schema({
+    var nestedDef = xschema.schema({
       a: { $type: "bool" },
       b: { $type: "int"  }
     });
 
-    var rootDef = exmodel.schema({
+    var rootDef = xschema.schema({
       nested: nestedDef
     });
 
@@ -2334,12 +2330,12 @@ describe("exmodel", function() {
   });
 
   it("should extend schema - use as nested ($extend)", function() {
-    var nestedDef = exmodel.schema({
+    var nestedDef = xschema.schema({
       a: { $type: "bool" },
       b: { $type: "int"  }
     });
 
-    var rootDef = exmodel.schema({
+    var rootDef = xschema.schema({
       nested: {
         $extend: nestedDef
       }
@@ -2349,17 +2345,17 @@ describe("exmodel", function() {
   });
 
   it("should extend schema - add field", function() {
-    var def0 = exmodel.schema({
+    var def0 = xschema.schema({
       a: { $type: "bool" },
       b: { $type: "int"  }
     });
 
-    var def1 = exmodel.schema({
+    var def1 = xschema.schema({
       $extend: def0,
       c: { $type: "string" }
     });
 
-    var def2 = exmodel.schema({
+    var def2 = xschema.schema({
       $extend: def1,
       d: { $type: "string[]" }
     });
@@ -2370,19 +2366,19 @@ describe("exmodel", function() {
   });
 
   it("should extend schema - delete field", function() {
-    var def0 = exmodel.schema({
+    var def0 = xschema.schema({
       a: { $type: "bool"     },
       b: { $type: "int"      },
       c: { $type: "string"   },
       d: { $type: "string[]" }
     });
 
-    var def1 = exmodel.schema({
+    var def1 = xschema.schema({
       $extend: def0,
       d: undefined
     });
 
-    var def2 = exmodel.schema({
+    var def2 = xschema.schema({
       $extend: def1,
       c: undefined
     });
@@ -2396,12 +2392,12 @@ describe("exmodel", function() {
   });
 
   it("should extend schema - delete nonexisting field", function() {
-    var def0 = exmodel.schema({
+    var def0 = xschema.schema({
       a: { $type: "bool" },
       b: { $type: "int"  }
     });
 
-    var def1 = exmodel.schema({
+    var def1 = xschema.schema({
       $extend: def0,
       nonExisting: undefined
     });
@@ -2410,13 +2406,13 @@ describe("exmodel", function() {
   });
 
   it("should extend schema - modify field (optional)", function() {
-    var def0 = exmodel.schema({
+    var def0 = xschema.schema({
       a: { $type: "bool"   },
       b: { $type: "int"    },
       c: { $type: "string", $optional: true }
     });
 
-    var def1 = exmodel.schema({
+    var def1 = xschema.schema({
       $extend: def0,
       a: { $optional: true  },
       b: { $optional: undefined },
@@ -2446,7 +2442,7 @@ describe("exmodel", function() {
     var MData2 = { c: { $type: "bool" } };
     var MData3 = { d: { $type: "int"  } };
 
-    var def = exmodel.schema({
+    var def = xschema.schema({
       some: { $type: "string" },
       $include0: MData1,
       $include1: [MData2, MData3]
@@ -2455,11 +2451,11 @@ describe("exmodel", function() {
     pass({ some: "some", a: false, b: 42, c: true, d: 42 }, def);
 
     // Prevent inclusion of property that already exists.
-    assertThrow(function() { exmodel.schema({ a: { $type: "bool" }, $include: MData1 }); });
-    assertThrow(function() { exmodel.schema({ $include: MData1, a: { $type: "bool" } }); });
+    assertThrow(function() { xschema.schema({ a: { $type: "bool" }, $include: MData1 }); });
+    assertThrow(function() { xschema.schema({ $include: MData1, a: { $type: "bool" } }); });
 
-    assertThrow(function() { exmodel.schema({ $include: [MData1, MData1] }); });
-    assertThrow(function() { exmodel.schema({ $include0: MData1, $include1: MData1 }); });
+    assertThrow(function() { xschema.schema({ $include: [MData1, MData1] }); });
+    assertThrow(function() { xschema.schema({ $include0: MData1, $include1: MData1 }); });
   });
 
   // --------------------------------------------------------------------------
@@ -2467,7 +2463,7 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate access rights - write one", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       a: { $type: "bool"     , $r: "*", $w: "basic" },
       b: { $type: "int"      , $r: "*", $w: "basic" },
       c: { $type: "string"   , $r: "*", $w: "basic" },
@@ -2484,35 +2480,35 @@ describe("exmodel", function() {
     };
 
     // `null` disables access rights checking (the default).
-    pass(data, def, exmodel.kNoOptions, null, data);
-    pass(data, def, exmodel.kNoOptions, { basic: true, extra: true }, data);
+    pass(data, def, xschema.kNoOptions, null, data);
+    pass(data, def, xschema.kNoOptions, { basic: true, extra: true }, data);
 
     // Empty object means enabled access rights checks, but no access rights.
-    fail(data, def, exmodel.kNoOptions, {});
+    fail(data, def, xschema.kNoOptions, {});
 
     // Incomplete access rights.
-    fail(data, def, exmodel.kNoOptions, { basic: true });
-    fail(data, def, exmodel.kNoOptions, { extra: true });
+    fail(data, def, xschema.kNoOptions, { basic: true });
+    fail(data, def, xschema.kNoOptions, { extra: true });
 
     // Delta mode cares only about access rights required by the fields specified.
-    pass({ a: true                        }, def, exmodel.kDeltaMode, { basic: true });
-    pass({ a: true, b: 0                  }, def, exmodel.kDeltaMode, { basic: true });
-    pass({ a: true, b: 0, c: "s"          }, def, exmodel.kDeltaMode, { basic: true });
-    pass({ d: {}                          }, def, exmodel.kDeltaMode, { extra: true });
-    pass({ e: []                          }, def, exmodel.kDeltaMode, { extra: true });
+    pass({ a: true                        }, def, xschema.kDeltaMode, { basic: true });
+    pass({ a: true, b: 0                  }, def, xschema.kDeltaMode, { basic: true });
+    pass({ a: true, b: 0, c: "s"          }, def, xschema.kDeltaMode, { basic: true });
+    pass({ d: {}                          }, def, xschema.kDeltaMode, { extra: true });
+    pass({ e: []                          }, def, xschema.kDeltaMode, { extra: true });
 
     // No access.
-    fail({ a: true, b: 0, c: "s", d: null }, def, exmodel.kDeltaMode, { basic: true });
-    fail({ a: true, b: 0, c: "s", d: {}   }, def, exmodel.kDeltaMode, { basic: true });
-    fail({ a: true, b: 0, c: "s", e: null }, def, exmodel.kDeltaMode, { basic: true });
-    fail({ a: true, b: 0, c: "s", e: []   }, def, exmodel.kDeltaMode, { basic: true });
-    fail({ a: true                        }, def, exmodel.kDeltaMode, { extra: true });
-    fail({ a: true, b: 0                  }, def, exmodel.kDeltaMode, { extra: true });
-    fail({ a: true, b: 0, c: "s"          }, def, exmodel.kDeltaMode, { extra: true });
+    fail({ a: true, b: 0, c: "s", d: null }, def, xschema.kDeltaMode, { basic: true });
+    fail({ a: true, b: 0, c: "s", d: {}   }, def, xschema.kDeltaMode, { basic: true });
+    fail({ a: true, b: 0, c: "s", e: null }, def, xschema.kDeltaMode, { basic: true });
+    fail({ a: true, b: 0, c: "s", e: []   }, def, xschema.kDeltaMode, { basic: true });
+    fail({ a: true                        }, def, xschema.kDeltaMode, { extra: true });
+    fail({ a: true, b: 0                  }, def, xschema.kDeltaMode, { extra: true });
+    fail({ a: true, b: 0, c: "s"          }, def, xschema.kDeltaMode, { extra: true });
   });
 
   it("should validate access rights - write a|b", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       a: { $type: "int", $r: "*", $w: "a"   },
       b: { $type: "int", $r: "*", $w: "a|b" },
       c: { $type: "int", $r: "*", $w: "a|c" },
@@ -2527,27 +2523,27 @@ describe("exmodel", function() {
     };
 
     // `null` disables access rights checking (the default).
-    pass(data, def, exmodel.kNoOptions, null);
-    pass(data, def, exmodel.kNoOptions, { a: true, b: true });
-    pass(data, def, exmodel.kNoOptions, { a: true, c: true });
-    fail(data, def, exmodel.kNoOptions, { b: true, c: true });
+    pass(data, def, xschema.kNoOptions, null);
+    pass(data, def, xschema.kNoOptions, { a: true, b: true });
+    pass(data, def, xschema.kNoOptions, { a: true, c: true });
+    fail(data, def, xschema.kNoOptions, { b: true, c: true });
 
-    pass({ a: 0 }, def, exmodel.kDeltaMode, { a: true });
-    pass({ b: 0 }, def, exmodel.kDeltaMode, { a: true });
-    pass({ b: 0 }, def, exmodel.kDeltaMode, { b: true });
-    pass({ c: 0 }, def, exmodel.kDeltaMode, { a: true });
-    pass({ c: 0 }, def, exmodel.kDeltaMode, { c: true });
-    pass({ d: 0 }, def, exmodel.kDeltaMode, { b: true });
-    pass({ d: 0 }, def, exmodel.kDeltaMode, { c: true });
+    pass({ a: 0 }, def, xschema.kDeltaMode, { a: true });
+    pass({ b: 0 }, def, xschema.kDeltaMode, { a: true });
+    pass({ b: 0 }, def, xschema.kDeltaMode, { b: true });
+    pass({ c: 0 }, def, xschema.kDeltaMode, { a: true });
+    pass({ c: 0 }, def, xschema.kDeltaMode, { c: true });
+    pass({ d: 0 }, def, xschema.kDeltaMode, { b: true });
+    pass({ d: 0 }, def, xschema.kDeltaMode, { c: true });
 
-    fail({ a: 0 }, def, exmodel.kDeltaMode, { b: true });
-    fail({ b: 0 }, def, exmodel.kDeltaMode, { c: true });
-    fail({ c: 0 }, def, exmodel.kDeltaMode, { b: true });
-    fail({ d: 0 }, def, exmodel.kDeltaMode, { a: true });
+    fail({ a: 0 }, def, xschema.kDeltaMode, { b: true });
+    fail({ b: 0 }, def, xschema.kDeltaMode, { c: true });
+    fail({ c: 0 }, def, xschema.kDeltaMode, { b: true });
+    fail({ d: 0 }, def, xschema.kDeltaMode, { a: true });
   });
 
  it("should validate access rights - write inherit", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       $r: "*", $w: "user|admin",
       nested: {
         a           : { $type: "int", $r: "*"                      }, // Inherit.
@@ -2567,10 +2563,10 @@ describe("exmodel", function() {
       }
     };
 
-    pass(data0, def, exmodel.kDeltaMode, null);
-    pass(data0, def, exmodel.kDeltaMode, { user: true });
-    pass(data0, def, exmodel.kDeltaMode, { admin: true });
-    fail(data0, def, exmodel.kDeltaMode, {});
+    pass(data0, def, xschema.kDeltaMode, null);
+    pass(data0, def, xschema.kDeltaMode, { user: true });
+    pass(data0, def, xschema.kDeltaMode, { admin: true });
+    fail(data0, def, xschema.kDeltaMode, {});
 
     var data1 = {
       nested: {
@@ -2581,10 +2577,10 @@ describe("exmodel", function() {
       }
     };
 
-    pass(data1, def, exmodel.kDeltaMode, null);
-    pass(data1, def, exmodel.kDeltaMode, { user: true });
-    fail(data1, def, exmodel.kDeltaMode, {});
-    fail(data1, def, exmodel.kDeltaMode, { admin: true });
+    pass(data1, def, xschema.kDeltaMode, null);
+    pass(data1, def, xschema.kDeltaMode, { user: true });
+    fail(data1, def, xschema.kDeltaMode, {});
+    fail(data1, def, xschema.kDeltaMode, { admin: true });
 
     var data2 = {
       nested: {
@@ -2595,10 +2591,10 @@ describe("exmodel", function() {
       }
     };
 
-    pass(data2, def, exmodel.kDeltaMode, null);
-    pass(data2, def, exmodel.kDeltaMode, { admin: true });
-    fail(data2, def, exmodel.kDeltaMode, {});
-    fail(data2, def, exmodel.kDeltaMode, { user: true });
+    pass(data2, def, xschema.kDeltaMode, null);
+    pass(data2, def, xschema.kDeltaMode, { admin: true });
+    fail(data2, def, xschema.kDeltaMode, {});
+    fail(data2, def, xschema.kDeltaMode, { user: true });
 
     var data3 = {
       nested: {
@@ -2609,11 +2605,11 @@ describe("exmodel", function() {
       }
     };
 
-    pass(data3, def, exmodel.kDeltaMode, null);
-    pass(data3, def, exmodel.kDeltaMode, { admin: true, user: true });
-    fail(data3, def, exmodel.kDeltaMode, {});
-    fail(data3, def, exmodel.kDeltaMode, { user: true });
-    fail(data3, def, exmodel.kDeltaMode, { admin: true });
+    pass(data3, def, xschema.kDeltaMode, null);
+    pass(data3, def, xschema.kDeltaMode, { admin: true, user: true });
+    fail(data3, def, xschema.kDeltaMode, {});
+    fail(data3, def, xschema.kDeltaMode, { user: true });
+    fail(data3, def, xschema.kDeltaMode, { admin: true });
 
     var data4 = {
       nested: {
@@ -2621,11 +2617,11 @@ describe("exmodel", function() {
       }
     };
 
-    pass(data4, def, exmodel.kDeltaMode, null);
-    fail(data4, def, exmodel.kDeltaMode, {});
-    fail(data4, def, exmodel.kDeltaMode, { user: true });
-    fail(data4, def, exmodel.kDeltaMode, { admin: true });
-    fail(data4, def, exmodel.kDeltaMode, { admin: true, user: true });
+    pass(data4, def, xschema.kDeltaMode, null);
+    fail(data4, def, xschema.kDeltaMode, {});
+    fail(data4, def, xschema.kDeltaMode, { user: true });
+    fail(data4, def, xschema.kDeltaMode, { admin: true });
+    fail(data4, def, xschema.kDeltaMode, { admin: true, user: true });
   });
 
   it("should validate access rights - invalid expression ($r / $w)", function() {
@@ -2638,9 +2634,9 @@ describe("exmodel", function() {
     ];
 
     invalid.forEach(function(access) {
-      assertThrow(function() { exmodel.schema({ field: { $type: "int", $a: access } }); });
-      assertThrow(function() { exmodel.schema({ field: { $type: "int", $r: access } }); });
-      assertThrow(function() { exmodel.schema({ field: { $type: "int", $w: access } }); });
+      assertThrow(function() { xschema.schema({ field: { $type: "int", $a: access } }); });
+      assertThrow(function() { xschema.schema({ field: { $type: "int", $r: access } }); });
+      assertThrow(function() { xschema.schema({ field: { $type: "int", $w: access } }); });
     });
   });
 
@@ -2649,7 +2645,7 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should accumulate errors", function() {
-    var def = exmodel.schema({
+    var def = xschema.schema({
       a: { $type: "bool"   },
       b: { $type: "int"    },
       c: { $type: "double" },
@@ -2675,10 +2671,10 @@ describe("exmodel", function() {
     var err;
 
     try {
-      out = exmodel.process(data, def, exmodel.kAccumulateErrors);
+      out = xschema.process(data, def, xschema.kAccumulateErrors);
     }
     catch (err) {
-      assert(err instanceof exmodel.SchemaError, "Error thrown 'SchemaError' instance.");
+      assert(err instanceof xschema.SchemaError, "Error thrown 'SchemaError' instance.");
       assert.deepEqual(err.errors, [
         { code: "ExpectedBoolean", path: "a" },
         { code: "ExpectedNumber" , path: "b" },
@@ -2694,7 +2690,7 @@ describe("exmodel", function() {
   });
 
   it("should refuse schema with some semantic errors", function() {
-    assertThrow(function() { exmodel.schema({ $type: "invalid"               }); });
-    assertThrow(function() { exmodel.schema({ $type: "object", $null: 55     }); });
+    assertThrow(function() { xschema.schema({ $type: "invalid"               }); });
+    assertThrow(function() { xschema.schema({ $type: "object", $null: 55     }); });
   });
 });

@@ -1,263 +1,311 @@
-// exmodel.js <https://github.com/exjs/exmodel>
-(function(exclass, $export, $as) {
+// xschema.js <https://github.com/exjs/xschema>
+(function($export, $as) {
 "use strict";
 
+const freeze = Object.freeze;
+const hasOwn = Object.prototype.hasOwnProperty;
+const isArray = Array.isArray;
+
+/**
+ * The xschema namespace.
+ *
+ * @namespace
+ * @alias xschema
+ */
+const xschema = {};
+
+/**
+ * Version information in a "major.minor.patch" form.
+ *
+ * @alias xmodel.VERSION
+ */
+xschema.VERSION = "1.0.0";
+
+/**
+ * Private object that is used to check whether an object is an xschema's
+ * environment (xschema namespace, possibly extended).
+ *
+ * @alias xschema.SENTINEL
+ */
+const SENTINEL = xschema.SENTINEL = freeze({});
+
 // ============================================================================
-// [Config]
+// [Configuration]
 // ============================================================================
 
-var SANITY = false;
+/**
+ * Check normalized schemas for correctness.
+ *
+ * @private
+ */
+const kCheckNormalizedSchemas = false;
 
-// ============================================================================
-// [Shortcuts]
-// ============================================================================
-
-var freeze = Object.freeze;
-var hasOwn = Object.prototype.hasOwnProperty;
-var isArray = Array.isArray;
-
-// ============================================================================
-// [exmodel.js]
-// ============================================================================
-
-// \namespace exmodel
-var exmodel = {};
-
-// `exmodel.VERSION`
-//
-// Version information in a "major.minor.patch" form.
-exmodel.VERSION = "1.0.0";
-
-// `exmodel.SENTINEL`
-//
-// Private object that is used to check whether an object is a exmodel.js instance.
-var SENTINEL = freeze({});
-exmodel.SENTINEL = SENTINEL;
-
-// `exmodel.qclass`
-//
-// Link to the `qclass` library used by exmodel.js (useful mostly in NPM based
-// environment).
-exmodel.exclass = exclass;
+/**
+ * Tuning option - Turn on/off `Object.keys().length` optimization.
+ *
+ * If set to true the code generator will use `Object.keys(obj).length` to get
+ * the total number of properties `obj` has. This is turned off by default as it
+ * has been observed that simple `for (k in obj) props++` is much faster than
+ * calling `Object.keys().length`.
+ *
+ * @private
+ */
+const kOptimizeObjectKeysAsCount = false;
 
 // ============================================================================
 // [Constants]
 // ============================================================================
 
-// `exmodel.kNoOptions`
-//
-// No data processing options. This constant has been added so the code that
-// is using data processing can be more clear in cases where no options are
-// used.
-var kNoOptions = exmodel.kNoOptions = 0;
+/**
+ * Processing option - none.
+ *
+ * This constant has been added so the code that is using data processing can
+ * be more clear in cases where no options are used.
+ *
+ * @alias xschema.kNoOptions
+ */
+const kNoOptions = xschema.kNoOptions = 0;
 
-// `exmodel.kExtractTop`
-//
-// Extract top fields from the source object.
-//
-// This option is used in case that you have a top level object that contains
-// keys/values and you want to extract everything matching your schema out of
-// it. Only keys defined in the schema are considered, others ignored silently.
-//
-// It's an error if user access control is enabled and the source object
-// contains a property that the user doesn't have access to. In such case
-// a "PermissionDenied" error will be generated.
-//
-// NOTE: This option can be combined with `kExtractAll`, in such case the
-// latter has priority.
-var kExtractTop = exmodel.kExtractTop = 0x0001;
+/**
+ * Processing option - extract top fields from the source object.
+ *
+ * This option is used in case that you have a top level object that contains
+ * keys/values and you want to extract everything matching your schema out of
+ * it. Only keys defined in the schema are considered, others ignored silently.
+ *
+ * It's an error if user access control is enabled and the source object
+ * contains a property that the user doesn't have access to. In such case
+ * a "PermissionDenied" error will be generated.
+ *
+ * NOTE: This option can be combined with `kExtractAll`, in such case the
+ * latter has priority.
+ *
+ * @alias xschema.kExtractTop
+ */
+const kExtractTop = xschema.kExtractTop = 0x0001;
 
-// `exmodel.kExtractNested`
-//
-// Extract nested fields from the source object.
-//
-// This option is used in case you have a top level object that doesn't contain
-// any other properties than defined by the schema, but nested objects can. When
-// combined with `exmodel.kExtractTop` it efficiently forms `exmodel.kExtractAll`.
-//
-// Extraction from nested objects follows the same rules as extraction from top
-// level object. See `exmodel.kExtractTop` for more detailed information.
-var kExtractNested = exmodel.kExtractNested = 0x0002;
+/**
+ * Processing option - extract nested fields from the source object.
+ *
+ * This option is used in case you have a top level object that doesn't contain
+ * any other properties than defined by the schema, but nested objects can. When
+ * combined with `xschema.kExtractTop` it efficiently forms `xschema.kExtractAll`.
+ *
+ * Extraction from nested objects follows the same rules as extraction from top
+ * level object. See `xschema.kExtractTop` for more detailed information.
+ *
+ * @alias xschema.kExtractNested
+ */
+const kExtractNested = xschema.kExtractNested = 0x0002;
 
-// `exmodel.kExtractAll`
-//
-// Extract all fields from the source object and all nested objects.
-//
-// This is like `kExtractTop`, but it takes effect for any object, top level or
-// nested. This option can be efficiently used to filter properties from source
-// objects into properties defined by the schema.
-//
-// NOTE: This is a combination of both `exmodel.kExtractTop` and `exmodel.kExtractNested`.
-var kExtractAll = exmodel.kExtractAll = 0x0003;
+/**
+ * Processing option - extract all fields from the source object and all nested
+ * objects.
+ *
+ * This is like `kExtractTop`, but it takes effect for any object, top level or
+ * nested. This option can be efficiently used to filter properties from source
+ * objects into properties defined by the schema.
+ *
+ * NOTE: This is a combination of `xschema.kExtractTop` and `xschema.kExtractNested`.
+ *
+ * @alias xschema.kExtractAll
+ */
+const kExtractAll = xschema.kExtractAll = 0x0003;
 
-// `exmodel.kDeltaMode`
-//
-// Delta mode allows to validate a data that contains only changes (deltas).
-// When used all required fields become optional and default values won't
-// be used to substitute data that is not present.
-//
-// NOTE: Delta updating makes sense when updating something that already exists,
-// but it doesn't make sense for data insertion, where you probably don't want
-// to omit what is 'required'. If your stack doesn't use delta updates or you
-// use exmodel.js for an input validation only, this feature can be completely
-// ignored.
-var kDeltaMode = exmodel.kDeltaMode = 0x0004;
+/**
+ * Processing option - delta mode.
+ *
+ * Delta mode allows to validate a data that contains only changes (deltas).
+ * When used all required fields become optional and default values won't
+ * be used to substitute data that is not present.
+ *
+ * NOTE: Delta updating makes sense when updating something that already exists,
+ * but it doesn't make sense for data insertion, where you probably don't want
+ * to omit what is 'required'. If your stack doesn't use delta updates or you
+ * use xschema for an input validation only, this feature can be completely
+ * ignored.
+ *
+ * @alias xschema.kDeltaMode
+ */
+const kDeltaMode = xschema.kDeltaMode = 0x0004;
 
-// \internal
-//
-// Flag used internally to generate code for `exmodel.test()` like validation.
-var kTestOnly = 0x0008;
+/**
+ * Processing option - test-mode.
+ *
+ * Flag used internally to generate code for `xschema.test()` like validation.
+ *
+ * @private
+ */
+const kTestOnly = 0x0008;
 
-// \internal
-//
-// Flag used internally to force code generator to emit access rights checks.
-var kTestAccess = 0x0010;
+/**
+ * Procession option - Flag used internally to force code generator to emit
+ * access rights checks.
+ *
+ * @private
+ */
+const kTestAccess = 0x0010;
 
-// `exmodel.kAccumulateErrors`
-//
-// Accumulate all errors instead of bailing out on the first failure.
-//
-// When this option is used the error object thrown in case of one or more
-// error will always contain `errors` array that is populated by all errors
-// found. This option is useful in cases that you want to see all problems
-// of the input data - for example you want to highlight fields that are
-// wrong on the client or perform an additional processing/fixing.
-var kAccumulateErrors = exmodel.kAccumulateErrors = 0x1000;
+/**
+ * Procession option - Accumulate all errors instead of bailing out on the
+ * first failure.
+ *
+ * When this option is used the error object thrown in case of one or more
+ * error will always contain `errors` array that is populated by all errors
+ * found. This option is useful in cases that you want to see all problems
+ * of the input data - for example you want to highlight fields that are
+ * wrong on the client or perform an additional processing/fixing.
+ *
+ * @alias xschema.kAccumulateErrors
+ */
+const kAccumulateErrors = xschema.kAccumulateErrors = 0x1000;
 
-// \internal
-//
-// Mask of all options that take effect in cache lookup. These options that are
-// not here are always checked in the validator function itself and won't cause
-// a new function to be generated when one is already present (even if it was
-// generated with some different options)
-var kFuncCacheMask = kExtractAll | kDeltaMode | kTestOnly | kTestAccess;
+/**
+ * Minimum value of a 53-bit safe integer.
+ *
+ * Should be fully compliant with ES6's `Number.isSafeInteger()`.
+ *
+ * @alias xschema.kSafeIntMin
+ */
+const kSafeIntMin = xschema.kSafeIntMin = -9007199254740991;
 
-// \internal
-//
-// Maximum number of functions that can be generated per one final schema. This
-// is basically a last flag shifted one bit left. For example if the last bit is
-// 0x8 the total number of functions generated per schema to cover all possible
-// combinations would be 16 (indexes 0...15).
-var kFuncCacheCount = kFuncCacheMask + 1;
+/**
+ * Maximum value of a 53-bit safe integer.
+ *
+ * Should be fully compliant with ES6's `Number.isSafeInteger()`.
+ *
+ * @alias xschema.kSafeIntMax
+ */
+const kSafeIntMax = xschema.kSafeIntMax =  9007199254740991;
 
-// Min/Max safe integer limits - 53 bits.
-//
-// NOTE: These should be fully compliant with ES6 `Number.isSafeInteger()`.
-var kSafeIntMin = exmodel.kSafeIntMin = -9007199254740991;
-var kSafeIntMax = exmodel.kSafeIntMax =  9007199254740991;
+/**
+ * Minimum value of big integer (64-bit signed integer), as string.
+ *
+ * @alias xschema.kBigIntMin
+ */
+const kBigIntMin = xschema.kBigIntMin = "-9223372036854775808";
 
-// Minimum year that can be used in date/datetime.
-var kYearMin = 1;
+/**
+ * Maximum value of big integer (64-bit signed integer), as string.
+ *
+ * @alias xschema.kBigIntMax
+ */
+const kBigIntMax = xschema.kBigIntMax = "9223372036854775807";
 
-// ============================================================================
-// [Tuning]
-// ============================================================================
-
-// \internal
-//
-// If set to true the code generator will use `Object.keys(obj).length` to get
-// the total count of properties `obj` has. This is turned off by default as it
-// has been observed that simple `for (k in obj) props++` is much faster than
-// calling `Object.keys()`.
-var kTuneUseObjectKeysAsCount = false;
+/**
+ * Minimum year that is handled by xschema library.
+ *
+ * @alias xschema.kYearMin
+ */
+const kYearMin = xschema.kYearMin = 1;
 
 // ============================================================================
 // [Internals]
 // ============================================================================
 
-// \internal
-//
+/**
+ * Mask of all options that take effect in cache lookup. These options that are
+ * not here are always checked in the validator function itself and won't cause
+ * a new function to be generated when one is already present (even if it was
+ * generated with some different options).
+ *
+ * @private
+ */
+const kFuncCacheMask = kExtractAll | kDeltaMode | kTestOnly | kTestAccess;
+
+/**
+ * Maximum number of functions that can be generated per one final schema. This
+ * is basically a last flag shifted one bit left. For example if the last bit is
+ * 0x8 the total number of functions generated per schema to cover all possible
+ * combinations would be 16 (indexes 0...15).
+ *
+ * @private
+ */
+const kFuncCacheCount = kFuncCacheMask + 1;
+
 // Unsafe properties are properties that collide with `Object.prototype`. These
 // are always checked by using hasOwnProperty() even if the field can't contain
 // `undefined` value.
 //
 // `UnsafeProperties` is a list, not object!
-var UnsafeProperties = Object.getOwnPropertyNames(Object.prototype);
+const UnsafeProperties = Object.getOwnPropertyNames(Object.prototype);
 
-// \internal
-//
 // Mapping of JS types into a character that describes the type. This mapping
 // is used by `SchemaCompiler` to reduce the length of variable names and to map
 // distinct JS types to different variable names in case of the same property
 // name. This is good for JS engines as each variable will always contain values
 // of a specific JS type and the engine will never deoptimize the function in
 // case of type misprediction.
-var MangledType = {
+const MangledType = freeze({
   any    : "x",
   array  : "a",
   boolean: "b",
   number : "n",
   object : "o",
   string : "s"
-};
+});
 
 // Dummy frozen objects.
-var NoObject = freeze({});
-var NoArray = freeze([]);
+const NoObject = freeze({});
+const NoArray = freeze([]);
 
 // Some useful regexps.
-var reNewLine = /\n/g;                        // Newline (test).
-var reUnescapeFieldName = /\\(.)/g;           // Unescape field name (replace).
-var reInvalidIdentifier = /[^\w\$]/;          // Invalid identifier (test).
+const reNewLine = /\n/g;                       // Newline (test).
+const reUnescapeFieldName = /\\(.)/g;          // Unescape field name (replace).
+const reInvalidIdentifier = /[^\w\$]/;         // Invalid identifier (test).
 
-var reTypeArgs = /^(\w+)\(([^\(]+)\)/;        // Type arguments "(...)" (match).
-var reTypeArray = /\[(\d+)?(\.\.)?(\d+)?]$/;  // Array type suffix "...[xxx]" (match).
-var reTypeOptional = /\?$/;                   // Optional type suffix "...?" (match).
-var reInclude = /^\$include/;                 // Test for $include directive.
+const reTypeArgs = /^(\w+)\(([^\(]+)\)/;       // Type arguments "(...)" (match).
+const reTypeArray = /\[(\d+)?(\.\.)?(\d+)?]$/; // Array type suffix "...[xxx]" (match).
+const reTypeOptional = /\?$/;                  // Optional type suffix "...?" (match).
+const reInclude = /^\$include/;                // Test for $include directive.
 
 // Test if the given access right is valid (forbid some characters that can
 // violate with future boolean algebra that can be applied to UAC system).
-var reInvalidAccessName = /[\x00-\x1F\s\(\)\[\]\{\}\&\|\*\^\!%]/;
+const reInvalidAccessName = /[\x00-\x1F\s\(\)\[\]\{\}\&\|\*\^\!%]/;
 
 // ============================================================================
 // [Errors]
 // ============================================================================
 
-// \class RuntimeError
-//
-// Error thrown in case that exmodel.js has been misused.
-function RuntimeError(message) {
-  var e = Error.call(this, message);
+/**
+ * Error thrown if xschema has been misused.
+ *
+ * @alias xschema.RuntimeError
+ */
+class RuntimeError extends Error {
+  constructor(message) {
+    super(message);
 
-  this.name = "RuntimeError";
-  this.message = message;
-  this.stack = e.stack || "";
-
-  if (this.stack)
-    this.stack = "Runtime" + this.stack;
+    this.name = "RuntimeError";
+    this.message = message;
+  }
 }
-exmodel.RuntimeError = exclass({
-  $extend: Error,
-  $construct: RuntimeError
-});
+xschema.RuntimeError = RuntimeError;
 
-// \class SchemaError
-//
-// Error thrown in case of validation failure. The `SchemaError` constructor
-// always accepts an array of errors, where a single element is an object
-// containing the following mandatory properties:
-//
-//   "code": String - Code of the error (not a message).
-//   "path": String - Path to the error (dot is used to separate nested fields).
-//
-// An error detail can also contain an optional properties that are specific to
-// the type and rule used, for example `InvalidDate` will contain the requested
-// date format, etc...
-function SchemaError(errors) {
-  var e = Error.call(this);
+/**
+ * Error thrown on validation failure. The `SchemaError` constructor
+ * always accepts an array of errors, where a single element is an object
+ * containing the following mandatory properties:
+ *
+ *   "code": String - Code of the error (not a message).
+ *   "path": String - Path to the error (dot is used to separate nested fields).
+ *
+ * An error detail can also contain an optional properties that are specific to
+ * the type and rule used, for example `InvalidDate` will contain the requested
+ * date format, etc...
+ *
+ * @alias xschema.SchemaError
+ */
+class SchemaError extends Error {
+  constructor(errors) {
+    super("Invalid data");
 
-  this.name = "SchemaError";
-  this.message = "Invalid data";
-  this.stack = e.stack || "";
-  this.errors = errors;
-
-  if (this.stack)
-    this.stack = "Schema" + this.stack;
+    this.name = "SchemaError";
+    this.message = "Invalid data";
+    this.errors = errors;
+  }
 }
-exmodel.SchemaError = exclass({
-  $extend: Error,
-  $construct: SchemaError
-});
+xschema.SchemaError = SchemaError;
 
 function throwRuntimeError(msg, params) {
   var ex = new RuntimeError(msg);
@@ -267,115 +315,142 @@ function throwRuntimeError(msg, params) {
   }
   throw ex;
 }
-exmodel.throwRuntimeError = throwRuntimeError;
 
 function throwSchemaError(errors) {
   throw new SchemaError(errors);
 }
-exmodel.throwSchemaError = throwSchemaError;
+
+function throwTypeError(msg) {
+  throw new TypeError(msg);
+}
 
 // ============================================================================
-// [Util]
+// [xschema.misc]
 // ============================================================================
 
-// \namespace `exmodel.util`
-//
-// exmodel.js utility functions.
-var qutil = exmodel.util = {};
+/**
+ * Miscellaneous utility functions.
+ *
+ * Many of the functions included in this namespace are used by xschema itself.
+ * They were made public to simplify testing and to allow users to use some of
+ * these functions without needing to create xschema schemas.
+ *
+ * @namespace
+ * @alias xschema.misc
+ */
+const misc = xschema.misc = {};
 
-// \function `exmodel.util.typeOf(arg)`
-//
-// Get extended type of the object.
-function typeOf(arg) {
-  var type = typeof arg;
-  return type !== "object" ? type : arg === null ? "null" : isArray(arg) ? "array" : "object";
+/**
+ * Returns an extended type of the variable `x`.
+ *
+ * Extended type makes a distinction between null, object, and array types. For
+ * example `typeOf([]) === "array"` and `typeOf(null) === "null"`.
+ *
+ * @param {*} x Variable to examine.
+ * @return {string} Extended type of the variable `x`.
+ *
+ * @alias xschema.misc.typeOf
+ */
+function typeOf(x) {
+  var type = typeof x;
+  return type !== "object" ? type : x === null ? "null" : isArray(x) ? "array" : "object";
 }
-qutil.typeOf = typeOf;
+misc.typeOf = typeOf;
 
-// \function `exmodel.util.stringSplice(s, from, to, content)`
-//
-// Replace `s` content `from:to` by `by.`.
-function stringSplice(s, from, to, by) {
-  return s.substr(0, from) + (by ? by : "") + s.substr(to);
-}
-qutil.stringSplice = stringSplice;
-
-// \function `exmodel.util.trimStringArray(arr)`
-//
-// Trim all strings in the array `arr` and return `arr`.
-function trimStringArray(arr) {
-  for (var i = 0, len = arr.length; i < len; i++)
-    arr[i] = String(arr[i]).trim();
-  return arr;
-}
-
-// \function `exmodel.util.isDirectiveName(s)`
-//
-// Get whether the string `s` is a exmodel's directive name (ie it starts with "$").
-function isDirectiveName(s) {
-  return s.charCodeAt(0) === 36;
-}
-qutil.isDirectiveName = isDirectiveName;
-
-// \function `exmodel.util.isVariableName(s)`
-//
-// Get whether the string `s` is a valid JS variable name:
-//
-//   - `s` is not an empty string.
-//   - `s` starts with ASCII letter [A-Za-z], underscore [_] or a dollar sign [$].
-//   - `s` may contain ASCII numeric characters, but not the first char.
-//
-// Please note that EcmaScript allows to use any unicode alphanumeric and
-// ideographic characters to be used in a variable name, but this function
-// doesn't allow these, only ASCII characters are considered. It basically
-// follows the same convention as C/C++, with dollar sign [$] included.
+/**
+ * Checks if the string `s` is a valid JS variable name:
+ *
+ *   - `s` is not an empty string.
+ *   - `s` starts with ASCII letter [A-Za-z], underscore [_] or a dollar sign [$].
+ *   - `s` may contain ASCII numeric characters, but cannot start with them.
+ *
+ * Please note that EcmaScript allows to use any unicode alphanumeric and
+ * ideographic characters to be used in a variable name, but this function
+ * doesn't allow these, only ASCII characters are considered. It basically
+ * follows the same convention as C/C++, with dollar sign [$] included.
+ *
+ * @param {string} s Input string to check.
+ * @return {boolean}
+ *
+ * @alias xschema.misc.isVariableName
+ */
 function isVariableName(s) {
-  if (!s)
-    return false;
-
+  if (!s) return false;
   var c;
   return !reInvalidIdentifier.test(s) && ((c = s.charCodeAt(0)) < 48 || c >= 58);
 }
-qutil.isVariableName = isVariableName;
+misc.isVariableName = isVariableName;
 
-// \function `exmodel.util.escapeRegExp(s)`
-//
-// Escape a string `s` so it can be used in regexp for exact matching. For
-// example a string "[]" will be escaped to "\\[\\]".
+/**
+ * Checks if the string `s` is a xschema's directive name (ie it starts with "$").
+ *
+ * @param {string} s Input string to check.
+ * @return {boolean}
+ *
+ * @alias xschema.misc.isDirectiveName
+ */
+function isDirectiveName(s) {
+  return s.charCodeAt(0) === 36;
+}
+misc.isDirectiveName = isDirectiveName;
+
+/**
+ * Escapes a string `s` so it can be used in a regular expression for exact
+ * matching. For example a string "[]" would be escaped to "\\[\\]".
+ *
+ * @param {string} s Input string to escape.
+ * @return {string} Escaped string.
+ *
+ * @alias xschema.misc.escapeRegExp
+ */
 function escapeRegExp(s) {
   return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
 }
-qutil.escapeRegExp = escapeRegExp;
+misc.escapeRegExp = escapeRegExp;
 
-// \function `exmodel.util.unescapeFieldName(s)`
-//
-// Unescape a given object's field name `s` to a real name (exmodel.js specific).
+/**
+ * Converts a string `s` which contains an escaped field name (xschema specific)
+ * into a real field name that can be used in JS to access an object's property.
+ *
+ * @param {string} s Input string.
+ * @return {string} Unescaped string.
+ *
+ * @alias xschema.misc.unescapeFieldName
+ */
 function unescapeFieldName(s) {
   return s.replace(reUnescapeFieldName, "$1");
 }
-qutil.unescapeFieldName = unescapeFieldName;
+misc.unescapeFieldName = unescapeFieldName;
 
-// \function `exmodel.util.toCamelCase(s)`
-//
-// Make a string camelcased.
-//
-// This version of `toCamelCase()` preserves words that start with an uppercased
-// character, so for example "CamelCased" string will be properly converted to
-// "camelCased".
-//
-// Examples:
-//
-//   toCamelCase("ThisIsString")   -> "thisIsString"
-//   toCamelCase("this-is-string") -> "thisIsString"
-//   toCamelCase("THIS_IS_STRING") -> "thisIsString"
-//   toCamelCase("this-isString")  -> "thisIsString"
-//   toCamelCase("THIS_IsSTRING")  -> "thisIsString"
-var toCamelCase = (function() {
-  var re1 = /[A-Z]+/g;
-  var fn1 = function(m) { return m[0] + m.substr(1).toLowerCase(); };
+/**
+ * Converts a string into camelCase.
+ *
+ * This version of `toCamelCase()` preserves words that start with an uppercased
+ * character, so for example "CamelCased" string will be properly converted to
+ * "camelCased".
+ *
+ * Examples:
+ *
+ * ```
+ * toCamelCase("ThisIsString")   -> "thisIsString"
+ * toCamelCase("this-is-string") -> "thisIsString"
+ * toCamelCase("THIS_IS_STRING") -> "thisIsString"
+ * toCamelCase("this-isString")  -> "thisIsString"
+ * toCamelCase("THIS_IsSTRING")  -> "thisIsString"
+ * ```
+ *
+ * @param {string} s Input string.
+ * @return {string} CamelCased string.
+ *
+ * @function
+ * @alias xschema.misc.toCamelCase
+ */
+const toCamelCase = (function() {
+  const re1 = /[A-Z]+/g;
+  const fn1 = function(m) { return m[0] + m.substr(1).toLowerCase(); };
 
-  var re2 = /[_-][A-Za-z]/g;
-  var fn2 = function(m) { return m.substr(1).toUpperCase(); };
+  const re2 = /[_-][A-Za-z]/g;
+  const fn2 = function(m) { return m.substr(1).toUpperCase(); };
 
   function toCamelCase(s) {
     s = s.replace(re1, fn1);
@@ -386,36 +461,78 @@ var toCamelCase = (function() {
 
   return toCamelCase;
 })();
-qutil.toCamelCase = toCamelCase;
+misc.toCamelCase = toCamelCase;
 
-// \internal
-//
-// Returns `"." + s` or `[s]` depending on the content of `s`. Basically used
-// to emit optimized Object's property accessor (the idea is just to make code
-// shorter, it doesn't matter for JavaScript VM in the end).
-function getObjectProperty(s) {
-  return isVariableName(s) ? "." + s : "[" + JSON.stringify(s) + "]";
+/**
+ * Replaces the content of the given string `s` starting at `from` and ending
+ * at `to` by `content`.
+ *
+ * @param {string} s Input string.
+ * @param {number} from Replace from here.
+ * @param {number} to Replace until here.
+ * @param {string} content Replacement string.
+ * @return {string} New string having the input portion replaced by `content`.
+ *
+ * @alias xschema.misc.stringSplice
+ */
+function stringSplice(s, from, to, content) {
+  return s.substr(0, from) + (content ? content : "") + s.substr(to);
 }
+misc.stringSplice = stringSplice;
 
-// \function `exmodel.util.isEmpty(obj)`
-//
-// Get whether the given object or array `obj` is empty, i.e. contains no keys
-// or no elements. The given parameter has to be an object or array instance,
-// otherwise the function may throw `TypeError`.
-function isEmpty(obj) {
-  if (isArray(obj)) {
-    return obj.length === 0;
+/**
+ * Checks whether the input object or array is empty (doesn't have members).
+ *
+ * @param {array|object} x Input object or array.
+ * @return {boolean} True if the input is empty
+ *
+ * @alias xschema.misc.isEmpty
+ */
+function isEmpty(x) {
+  if (isArray(x)) {
+    return x.length === 0;
   }
   else {
-    for (var k in obj)
+    for (var k in x)
       return false;
     return true;
   }
 }
-qutil.isEmpty = isEmpty;
+misc.isEmpty = isEmpty;
 
-// \function `exmodel.util.arrayToSet(arr)`
-//
+/**
+ * Checks if the given array `arr` is primitive, i.e. it contains only primitive
+ * values like boolean, number, string, null, or undefined.
+ *
+ * @param {array} arr Array to check.
+ * @return {boolean} True if the given array contains only primitive values.
+ *
+ * @alias xschema.misc.isPrimitiveArray
+ */
+function isPrimitiveArray(arr) {
+  for (var i = 0, len = arr.length; i < len; i++) {
+    var value = arr[i];
+    if (value !== null && typeof value === "object")
+      return false;
+  }
+  return true;
+}
+misc.isPrimitiveArray = isPrimitiveArray;
+
+/**
+ * Trims all strings in the given array `arr` and returns it.
+ *
+ * @param {string[]} arr Array of strings.
+ * @return {string[]} Returns the given `arr`.
+ *
+ * @alias xschema.misc.trimStringArray
+ */
+function trimStringArray(arr) {
+  for (var i = 0, len = arr.length; i < len; i++)
+    arr[i] = String(arr[i]).trim();
+  return arr;
+}
+
 // Convert an array to a set (i.e. object having array values as key/true pairs).
 function arrayToSet(arr) {
   var obj = {};
@@ -423,18 +540,14 @@ function arrayToSet(arr) {
     obj[arr[i]] = true;
   return obj;
 }
-qutil.arrayToSet = arrayToSet;
+misc.arrayToSet = arrayToSet;
 
-// \function `exmodel.util.setToArray(arr)`
-//
 // Convert an object into a set (i.e. return an array containing all object keys).
 function setToArray(set) {
   return Object.keys(set).slice();
 }
-qutil.setToArray = setToArray;
+misc.setToArray = setToArray;
 
-// \function `exmodel.util.mergeSets(a, b)`
-//
 // Merge a set `a` with another set or array `b`.
 function mergeSets(a, b) {
   if (b != null) {
@@ -444,17 +557,13 @@ function mergeSets(a, b) {
         a[srcArr[i]] = true;
     }
     else {
-      var srcObj = b;
-      for (var k in srcObj)
-        a[k] = true;
+      Object.assign(a, b);
     }
   }
   return a;
 }
-qutil.mergeSets = mergeSets;
+misc.mergeSets = mergeSets;
 
-// \function `exmodel.util.joinSet(set, sep)`
-//
 // Join all keys in a set `set` separated by `sep`. The functionality is similar
 // to `Array.join()`, however, it's designed to join an object keys.
 function joinSet(set, sep) {
@@ -470,95 +579,29 @@ function joinSet(set, sep) {
   }
   return s;
 }
-qutil.joinSet = joinSet;
+misc.joinSet = joinSet;
 
-// \function `exmodel.util.mergeObject(a, b)`
-//
-// Merge content from object `b` into `a`, and return `a`.
-function mergeObject(a, b) {
-  if (b != null) {
-    for (var k in b)
-      a[k] = b[k];
-  }
-  return a;
-}
-qutil.mergeObject = mergeObject;
-
-function freezeOrNoArray(arr) { return !isEmpty(arr) ? freeze(arr) : NoArray; }
-function freezeOrNoObject(arr) { return !isEmpty(arr) ? freeze(arr) : NoObject; }
-
-// \function `exmodel.util.cloneWeak(v)`
-//
-// Perform a weak clone of variable `v`. If the variable is an array, a new
-// array is returned containing
-function cloneWeak(v) {
-  if (!v || typeof v !== "object")
-    return v;
-
-  if (isArray(v))
-    return v.slice();
-
-  var dstObj = {};
-  var srcObj = v;
-
-  for (var k in srcObj)
-    dstObj[k] = srcObj[k];
-
-  return dstObj;
-}
-qutil.cloneWeak = cloneWeak;
-
-// \function `exmodel.util.omit(obj, props)`
-//
-// Return a new object based on `obj` with omitted properties specified by `props`.
-function omit(obj, props) {
-  var dst = {};
-  for (var k in obj) {
-    if (hasOwn.call(props, k))
-      continue;
-    dst[k] = obj[k];
-  }
-  return dst;
-}
-qutil.omit = omit;
-
-function _cloneDeep(obj) {
-  if (isArray(obj)) {
-    var dstArr = [];
-    var srcArr = obj;
-
-    for (var i = 0, len = srcArr.length; i < len; i++) {
-      var child = srcArr[i];
-      dstArr.push((!child || typeof child !== "object") ? child : _cloneDeep(child));
-    }
-
-    return dstArr;
-  }
-  else {
-    // Never clone exmodel.js-like objects.
-    if (obj.SENTINEL === SENTINEL)
-      return obj;
-
-    var dstObj = {};
-    var srcObj = obj;
-
-    for (var k in srcObj) {
-      var element = srcObj[k];
-      dstObj[k] = (!element || typeof element !== "object") ? element : _cloneDeep(element);
-    }
-
-    return dstObj;
-  }
+function freezeOrEmpty(x) {
+  if (x === null || typeof x !== "object")
+    throwTypeError("Invalid argument, freezeOrEmpty requires object or array");
+  return isEmpty(x) ? (isArray(x) ? NoArray : NoObject) : freeze(x);
 }
 
-// \function `exmodel.util.cloneDeep(v)`
-function cloneDeep(v) {
-  return (!v || typeof v !== "object") ? v : _cloneDeep(v);
+/**
+ * Compares `a` and `b` for deep equality.
+ *
+ * @param {*} a Any variable.
+ * @param {*} b Any variable.
+ * @return {boolean} True if `a` and `b` are equal.
+ *
+ * @alias xschema.misc.equals
+ */
+function equals(a, b) {
+  return (a === b) ? true : _equals(a, b, []);
 }
-qutil.cloneDeep = cloneDeep;
+misc.equals = equals;
 
-// \internal
-function _isEqual(a, b, buffer) {
+function _equals(a, b, buffer) {
   var aType = typeof a;
   var bType = typeof b;
 
@@ -586,10 +629,9 @@ function _isEqual(a, b, buffer) {
       return false;
 
     // Detect cyclic references.
-    for (i = 0; i < buffer.length; i += 2) {
+    for (i = 0; i < buffer.length; i += 2)
       if (buffer[i] === a || buffer[i + 1] === b)
         throwRuntimeError("Detected cyclic references");
-    }
 
     buffer.push(a);
     buffer.push(b);
@@ -601,7 +643,7 @@ function _isEqual(a, b, buffer) {
       if (aValue === bValue)
         continue;
 
-      if (!_isEqual(aValue, bValue, buffer))
+      if (!_equals(aValue, bValue, buffer))
         return false;
     }
 
@@ -644,7 +686,7 @@ function _isEqual(a, b, buffer) {
       if (aValue === bValue)
         continue;
 
-      if (!_isEqual(aValue, bValue, buffer))
+      if (!_equals(aValue, bValue, buffer))
         return false;
     }
 
@@ -655,173 +697,406 @@ function _isEqual(a, b, buffer) {
   }
 }
 
-// \function `exmodel.util.isEqual(a, b)`
-//
-// Get whether the values `a` and `b` are deep equal.
-function isEqual(a, b) {
-  return (a === b) ? true : _isEqual(a, b, []);
+/**
+ * Returns a weak clone of `x`.
+ *
+ * Weak clone clones only `x`, but keeps all nested members weak referenced.
+ *
+ * @param {*} x Anything to clone.
+ *
+ * @alias xschema.misc.cloneWeak
+ */
+function cloneWeak(x) {
+  if (!x || typeof x !== "object")
+    return x;
+  return isArray(x) ? x.slice() : Object.assign({}, x);
 }
-qutil.isEqual = isEqual;
+misc.cloneWeak = cloneWeak;
 
-// ============================================================================
-// [Enum]
-// ============================================================================
+/**
+ * Returns a deep copy of `x`
+ *
+ * If `x` is a primitive type then it's returned without any overhead.
+ *
+ * @param {*} x Variable to clone (can be anything).
+ *
+ * @alias xschema.misc.cloneDeep
+ */
+function cloneDeep(x) {
+  return (!x || typeof x !== "object") ? x : _cloneDeep(x);
+}
+misc.cloneDeep = cloneDeep;
 
-var Enum$IllegalKeys = [
-  // exmodel.enum() members.
-  "$",
-  "hasKey",
-  "hasValue",
-  "keyToValue",
-  "valueToKey",
+function _cloneDeep(x) {
+  if (isArray(x)) {
+    var arr = x.slice();
+    for (var i = 0, len = arr.length; i < len; i++) {
+      var child = arr[i];
+      if (child && typeof child === "object")
+        arr[i] = _cloneDeep(child);
+    }
+    return arr;
+  }
+  else {
+    // Never clone xschema-like objects.
+    if (x.SENTINEL === SENTINEL)
+      return x;
 
-  // JS.
-  "prototype",
+    var obj = Object.assign({}, x);
+    for (var k in obj) {
+      var child = obj[k];
+      if (child && typeof child === "object")
+        obj[k] = _cloneDeep(child)
+    }
+    return obj;
+  }
+}
 
-  // This probably can't really be specified.
-  "__proto__"
-];
+/**
+ * Returns a new object based on `obj` having omitted properties specified by
+ * `props`. The function doesn't change the input `obj` object.
+ *
+ * @param {object} obj Object to process.
+ * @param {object} props Properties to omit.
+ * @return {object} Object having all specified properties omitted.
+ *
+ * @alias xschema.misc.omit
+ */
+function omit(obj, props) {
+  var dst = {};
+  for (var k in obj) {
+    if (hasOwn.call(props, k))
+      continue;
+    dst[k] = obj[k];
+  }
+  return dst;
+}
+misc.omit = omit;
 
-function Enum$sortIntFn(a, b) { return a - b; }
+/**
+ * Checks if the given `schema` has been created by `xschema.schema()`.
+ *
+ * @param {*} schema Schema to check.
+ * @return {boolean} True if `def` is a normalized schema.
+ *
+ * @alias xschema.misc.isSchema
+ */
+function isSchema(schema) {
+  return schema != null && typeof schema === "object" && hasOwn.call(schema, "$_xschemaData");
+}
+misc.isSchema = isSchema;
 
-// \function `exmodel.enum(def)`
-//
-// Create an enumeration, which is a mapping between a key (always string) and
-// value (always number).
-//
-// exmodel.js knows how to recognize common patterns in enums and adds some
-// metadata to the instance that can be used to improve and simplify data
-// validation.
-//
-// The instance returned is always immutable, if JS environment allows it. This
-// prevents from modifying an existing enumeration and thus breaking validators
-// that have already been compiled and are cached.
-function Enum(def) {
-  // Enum is designed to be instantiated without using `new` operator.
-  if (!(this instanceof Enum))
-    return new Enum(def);
+/**
+ * Checks whether the input string `s` can be considered a text.
+ *
+ * There is a difference between `string` and `text` in xschema terminology.
+ * String can, in general, hold any data, including invalid surrogate pairs
+ * and special characters. However, text should hold textual data, which
+ * should be well formed (no invalid surrogate pairs) and can have restricted
+ * some special characters like NULL terminator and control characters.
+ *
+ * This function checks whether the input string `s` is a valid unicode string
+ * by ensuring all possible surrogate pairs are correctly encoded, and that
+ * it doesn't contain characters not specified by the input masks.
+ *
+ * NOTE: Some characters that can be specified by `mask2000_201F` and
+ * `mask2020_203F` are not interesting, they can be specified just because
+ * they are within the range of these masks.
+ *
+ * List of special characters that can be specified by `mask0000_001F`:
+ *   - `\u0000 NUL` Null.
+ *   - `\u0001 SOH` Start of Heading.
+ *   - `\u0002 STX` Start of Text.
+ *   - `\u0003 ETX` End of Text.
+ *   - `\u0004 EOT` End of Transmission.
+ *   - `\u0005 ENQ` Enquiry.
+ *   - `\u0006 ACK` Acknowledge.
+ *   - `\u0007 BEL` Bell.
+ *   - `\u0008 BS ` Back Space.
+ *   - `\u0009 TAB` Tab.
+ *   - `\u000A LF ` Line feed.
+ *   - `\u000B VT ` Vertical Tab.
+ *   - `\u000C FF ` Form Feed.
+ *   - `\u000D CR ` Carriage return.
+ *   - `\u000E SO ` Shift Out.
+ *   - `\u000F SI ` Shift In.
+ *   - `\u0010 DLE` Data Line Escape.
+ *   - `\u0011 DC1` Device Control 1.
+ *   - `\u0012 DC2` Device Control 2.
+ *   - `\u0013 DC3` Device Control 3.
+ *   - `\u0014 DC4` Device Control 4.
+ *   - `\u0015 NAK` Negative Acknowledge.
+ *   - `\u0016 SYN` Synchronous Idle.
+ *   - `\u0017 ETB` End of Transmit Block.
+ *   - `\u0018 CAN` Cancel.
+ *   - `\u0019 EM ` End of Medium.
+ *   - `\u001A SUB` Substitute.
+ *   - `\u001B ESC` Escape.
+ *   - `\u001C FS ` File Separator.
+ *   - `\u001D GS ` Group Separator.
+ *   - `\u001E RS ` Record Separator.
+ *   - `\u001F US ` Unit Separator.
+ *
+ * List of special characters that can be specified by `mask2000_201F`:
+ *   - `\u2000` En Quad (NQSP).
+ *   - `\u2001` Em Quad (MQSP).
+ *   - `\u2002` En Space (ENSP).
+ *   - `\u2003` Em Space (EMSP).
+ *   - `\u2004` Three-Per-Em Space (3/MSP).
+ *   - `\u2005` Four-Per-Em Space (4/MSP).
+ *   - `\u2006` Six-Per-Em Space (6/MSP).
+ *   - `\u2007` Figure Space (FSP).
+ *   - `\u2008` Punctuation Space (PSP).
+ *   - `\u2009` Thin Space (THSP).
+ *   - `\u200A` Hair Space (HSP).
+ *   - `\u200B` Zero Width Space.
+ *   - `\u200C` Zero Width Non-Joiner.
+ *   - `\u200D` Zero Width Joiner.
+ *   - `\u200E` Left-To-Right Mark.
+ *   - `\u200F` Right-To-Left Mark.
+ *   - `\u2010` Hyphen (-).
+ *   - `\u2011` Non-Breaking Hyphen (NB-).
+ *   - `\u2012` Figure Dash.
+ *   - `\u2013` En Dash.
+ *   - `\u2014` Em Dash.
+ *   - `\u2015` Horizontal Bar.
+ *   - `\u2016` Double Vertical Line.
+ *   - `\u2017` Double Low Line.
+ *   - `\u2018` Left Single Quotation Mark.
+ *   - `\u2019` Right Single Quotation Mark.
+ *   - `\u201A` Single Low-9 Quotation Mark.
+ *   - `\u201B` Single High-Reversed-9 Quotation Mark.
+ *   - `\u201C` Left Double Quotation Mark.
+ *   - `\u201D` Right Double Quotation Mark.
+ *   - `\u201E` Double Low-9 Quotation Mark.
+ *   - `\u201F` Double High-Reversed-9 Quotation Mark.
+ *
+ * List of special characters that can be specified by `mask2020_203F`:
+ *   - `\u2020` Dagger.
+ *   - `\u2021` Double Dagger.
+ *   - `\u2022` Bullet.
+ *   - `\u2023` Triangular Bullet.
+ *   - `\u2024` One Dot Leader.
+ *   - `\u2025` Two Dot Leader.
+ *   - `\u2026` Horizontal Ellipsis.
+ *   - `\u2027` Hyphenation Point.
+ *   - `\u2028` Line Separator (L-SEP).
+ *   - `\u2029` Paragraph Separator (P-SEP).
+ *   - `\u202A` Left-To-Right Embedding.
+ *   - `\u202B` Right-To-Left Embedding.
+ *   - `\u202C` Pop Directional Formatting.
+ *   - `\u202D` Left-To-Right Override.
+ *   - `\u202E` Right-To-Left Override.
+ *   - `\u202F` Narrow No-Break Space.
+ *   - `\u2030` Per Mille Sign.
+ *   - `\u2031` Per Ten Thousand Sign.
+ *   - `\u2032` Prime.
+ *   - `\u2033` Double Prime.
+ *   - `\u2034` Triple Prime.
+ *   - `\u2035` Reversed Prime.
+ *   - `\u2036` Reversed Double Prime.
+ *   - `\u2037` Reversed Triple Prime.
+ *   - `\u2038` Caret.
+ *   - `\u2039` Single Left-Pointing Angle Quotation Mark.
+ *   - `\u203A` Single Right-Pointing Angle Quotation Mark.
+ *   - `\u203B` Reference Mark.
+ *   - `\u203C` Double Exclamation Mark.
+ *   - `\u203D` Interrobang.
+ *   - `\u203E` Overline.
+ *   - `\u203F` Undertie.
+ *
+ * @param {string} s Input string to check.
+ * @param {number} mask0000_001F Mask of allowed characters in \u0000-001F range.
+ * @param {number} mask2000_201F Mask of allowed characters in \u2000-201F range.
+ * @param {number} mask2020_203F Mask of allowed characters in \u2020-203F range.
+ * @return {boolean} Whether the input string `s` is a valid text according to
+ *   the xschema specification and the given masks.
+ *
+ * @alias xschema.misc.isText
+ */
+function isText(s, mask0000_001F, mask2000_201F, mask2020_203F) {
+  var i = 0;
+  var length = s.length;
 
-  if (!def || typeof def !== "object")
-    throwRuntimeError("exmodel.enum() - Invalid definition of type '" + typeOf(def) + "' passed");
+  if (length === 0)
+    return true;
 
-  var keyMap     = def;
-  var keyArray    = [];
-  var valueMap   = {};
-  var valueArray  = [];
+  var c0 = 0;
+  var c1 = 0;
 
-  var safe       = true;
-  var unique     = true;
-  var sequential = true;
+  do {
+    c0 = s.charCodeAt(i);
 
-  // The only member variable we use, everything else (except member functions)
-  // can be used as keys.
-  var $ = {
-    keyMap    : keyMap,    // Mapping of keys to values.
-    keyArray  : keyArray,  // Array containing all keys.
-    valueMap  : valueMap,  // Mapping of values to keys.
-    valueArray: valueArray,// Array containing all unique values, sorted.
-    valueSeq  : null,      // Keys in value order if all values are sequential.
+    // Validate characters at \u0000-001F range.
+    if (c0 < 32) {
+      if (((1 << c0) & mask0000_001F) === 0)
+        return false;
+      continue;
+    }
 
-    min       : null,      // Minimum value (can be used to start a loop).
-    max       : null,      // Maximum value (can be used to end a loop).
-    safe      : true,      // True if all values are safe integers.
-    unique    : true,      // True if all values are unique (ie don't overlap).
-    sequential: true       // True if all values form a sequence and don't overlap.
-  };
-
-  Object.defineProperty(this, "$", {
-    value       : $,
-    enumerable  : false,
-    configurable: false,
-    writable    : false
-  });
-
-  for (var key in keyMap) {
-    if (!hasOwn.call(keyMap, key))
+    if (c0 < 0x2000)
       continue;
 
-    if (Enum$IllegalKeys.indexOf(key) !== -1)
-      throwRuntimeError("exmodel.enum() - Key '" + key + "' is reserved and can't be used");
-
-    var val = keyMap[key];
-    var str = String(val);
-
-    if (!key || typeof val !== "number" || !isFinite(val))
-      throwRuntimeError("exmodel.enum() - Invalid key/value pair '" + key + "' -> '" + str + "'");
-
-    if (!hasOwn.call(valueMap, str)) {
-      valueMap[str] = key;
-      valueArray.push(val);
-    }
-    else {
-      unique = false;
+    // Validate characters at \u2000-203F range.
+    if (c0 < 0x2040) {
+      if (c0 < 0x2020) {
+        if (((1 << (c0 - 0x2000)) & mask2000_201F) === 0)
+          return false;
+      }
+      else {
+        if (((1 << (c0 - 0x2020)) & mask2020_203F) === 0)
+          return false;
+      }
     }
 
-    if (Math.floor(val) !== val || val < kSafeIntMin || val > kSafeIntMax)
-      safe = false;
+    if (c0 < 0xD800 || c0 > 0xDFFF)
+      continue;
 
-    keyArray.push(key);
-    this[key] = val;
-  }
+    // Validate a surrogate pair.
+    if (c0 > 0xDBFF || ++i === length)
+      return false;
 
-  // Compute `min`, `max`, and `sequential` properties.
-  if (valueArray.length) {
-    valueArray.sort(Enum$sortIntFn);
+    c1 = s.charCodeAt(i);
+    if (c1 < 0xDC00 || c1 > 0xDFFF)
+      return false;
+  } while (++i < length);
 
-    var a = valueArray[0];
-    var b = valueArray[valueArray.length - 1];
-    var i;
+  return true;
+}
 
-    $.min = a;
-    $.max = b;
+// ============================================================================
+// [xschema.enum]
+// ============================================================================
 
-    if (safe) {
-      for (i = 1; i < valueArray.length; i++) {
-        if (++a !== valueArray[i]) {
-          sequential = false;
-          break;
+const Enum$IllegalKeys = freeze([
+  // Enum methods.
+  "$", "hasKey", "hasValue", "keyToValue", "valueToKey",
+  // JavaScript keys we don't want to touch.
+  "__proto__", "prototype"
+]);
+
+/**
+ * Normalized enumeration, which maps string keys into numeric values.
+ *
+ * @alias xschema.Enum
+ */
+class Enum {
+  constructor(def) {
+    if (!def || typeof def !== "object")
+      throwRuntimeError("xschema.enum() - Invalid definition of type '" + typeOf(def) + "' passed");
+
+    var keyMap     = def;
+    var keyArray    = [];
+    var valueMap   = {};
+    var valueArray  = [];
+
+    var safe       = true;
+    var unique     = true;
+    var sequential = true;
+
+    // The only member variable we use, everything else (except member functions)
+    // can be used as keys.
+    var $ = {
+      keyMap    : keyMap,    // Mapping of keys to values.
+      keyArray  : keyArray,  // Array containing all keys.
+      valueMap  : valueMap,  // Mapping of values to keys.
+      valueArray: valueArray,// Array containing all unique values, sorted.
+      valueSeq  : null,      // Keys in value order if all values are sequential.
+
+      min       : null,      // Minimum value (can be used to start a loop).
+      max       : null,      // Maximum value (can be used to end a loop).
+      safe      : true,      // True if all values are safe integers.
+      unique    : true,      // True if all values are unique (ie don't overlap).
+      sequential: true       // True if all values form a sequence and don't overlap.
+    };
+
+    Object.defineProperty(this, "$", {
+      value       : $,
+      enumerable  : false,
+      configurable: false,
+      writable    : false
+    });
+
+    for (var key in keyMap) {
+      if (!hasOwn.call(keyMap, key))
+        continue;
+
+      if (Enum$IllegalKeys.indexOf(key) !== -1)
+        throwRuntimeError("xschema.enum() - Key '" + key + "' is reserved and can't be used");
+
+      var val = keyMap[key];
+      var str = String(val);
+
+      if (!key || typeof val !== "number" || !isFinite(val))
+        throwRuntimeError("xschema.enum() - Invalid key/value pair '" + key + "' -> '" + str + "'");
+
+      if (!hasOwn.call(valueMap, str)) {
+        valueMap[str] = key;
+        valueArray.push(val);
+      }
+      else {
+        unique = false;
+      }
+
+      if (Math.floor(val) !== val || val < kSafeIntMin || val > kSafeIntMax)
+        safe = false;
+
+      keyArray.push(key);
+      this[key] = val;
+    }
+
+    // Compute `min`, `max`, and `sequential` properties.
+    if (valueArray.length) {
+      valueArray.sort(function(a, b) { return a - b; });
+
+      var a = valueArray[0];
+      var b = valueArray[valueArray.length - 1];
+      var i;
+
+      $.min = a;
+      $.max = b;
+
+      if (safe) {
+        for (i = 1; i < valueArray.length; i++) {
+          if (++a !== valueArray[i]) {
+            sequential = false;
+            break;
+          }
+        }
+
+        // Create an array that is used for sequential value to key conversion.
+        if (sequential) {
+          var valueSeq = $.valueSeq = [];
+          for (i = 0; i < valueArray.length; i++)
+            valueSeq.push(valueMap[String(valueArray[i])]);
         }
       }
-
-      // Create an array that is used for sequential value to key conversion.
-      if (sequential) {
-        var valueSeq = $.valueSeq = [];
-        for (i = 0; i < valueArray.length; i++)
-          valueSeq.push(valueMap[String(valueArray[i])]);
-      }
     }
+
+    $.safe = safe;
+    $.unique = unique;
+    $.sequential = sequential;
+
+    // Make the whole object immutable.
+    freeze(keyMap);
+    freeze(keyArray);
+    freeze(valueMap);
+    freeze(valueArray);
+
+    freeze($);
+    freeze(this);
   }
 
-  $.safe = safe;
-  $.unique = unique;
-  $.sequential = sequential;
-
-  // Make the whole object immutable.
-  freeze(keyMap);
-  freeze(keyArray);
-  freeze(valueMap);
-  freeze(valueArray);
-
-  freeze($);
-  freeze(this);
-}
-exmodel.enum = exclass({
-  $construct: Enum,
-
-  // \function `Enum.hasKey(key)`
-  //
   // Get whether the enum has `key`.
-  hasKey: function(key) {
+  hasKey(key) {
     if (typeof key !== "string")
       return undefined;
 
     return hasOwn.call(this.$.keyMap, key);
-  },
+  }
 
-  // \function `Enum.hasValue(value)`
-  //
   // Get whether the enum has `value`.
-  hasValue: function(value) {
+  hasValue(value) {
     var $ = this.$;
     if (typeof value !== "number")
       return false;
@@ -834,23 +1109,19 @@ exmodel.enum = exclass({
       var str = String(value);
       return hasOwn.call(map, str);
     }
-  },
+  }
 
-  // \function `Enum.keyToValue(key)`
-  //
   // Get a value based on `key`.
-  keyToValue: function(key) {
+  keyToValue(key) {
     if (typeof key !== "string")
       return undefined;
 
     var map = this.$.keyMap;
     return hasOwn.call(map, key) ? map[key] : undefined;
-  },
+  }
 
-  // \function `Enum.valueToKey(value)`
-  //
   // Get a key based on `value`.
-  valueToKey: function(value) {
+  valueToKey(value) {
     var $ = this.$;
     if (typeof value !== "number")
       return undefined;
@@ -870,32 +1141,58 @@ exmodel.enum = exclass({
       return hasOwn.call(map, str) ? map[str] : undefined;
     }
   }
-});
+}
+xschema.Enum = Enum;
+
+/**
+ * Creates a xschema.Enum, which maps string keys into numberic values.
+ *
+ * The xschema library knows how to recognize common patterns in enums and adds
+ * some metadata to the instance that can be used to improve and simplify data
+ * validation.
+ *
+ * The instance returned is always immutable (frozen). This prevents from
+ * modifying an existing enumeration and thus breaking validators that have
+ * already been compiled and are cached.
+ *
+ * @param {object} def Enumeration definition.
+ * @return {Enum} Normalized enumeration object.
+ *
+ * @alias xschema.enum
+ */
+function enum_(def) {
+  return new Enum(def);
+}
+xschema.enum = enum_;
 
 // ============================================================================
 // [BitArray]
 // ============================================================================
 
-// \internal
-var kNumBits = 31;
+/**
+ * Number of bits to use per integer in `BitArray`.
+ *
+ * @private
+ */
+const kNumBits = 31;
 
-// \class `BitArray`
-//
-// \internal
-//
-// A simple bitarray implementation that uses integers having `kNumBits`. The
-// reason for such class is to avoid having integers with the highest bit set
-// as it can dramaticaly decrease possible optimizations by JavaScript VM (V8).
-var BitArray = exclass({
-  $construct: function(bits) {
+/**
+ * A simple bitarray implementation that uses integers having `kNumBits`. The
+ * reason for such class is to avoid having integers with the highest bit set
+ * as it can dramaticaly decrease possible optimizations by JavaScript VM (V8).
+ *
+ * @private
+ */
+class BitArray {
+  constructor(bits) {
     this.bits = bits || [];
-  },
+  }
 
-  clone: function() {
+  clone() {
     return new BitArray(this.bits.slice());
-  },
+  }
 
-  test: function(n) {
+  test(n) {
     var bits = this.bits;
 
     var idx = Math.floor(n / kNumBits);
@@ -905,9 +1202,9 @@ var BitArray = exclass({
       throwRuntimeError("BitArray.test() - Out of range (n=" + n + " len=" + (bits.length * kNumBits) + ")");
 
     return (bits[idx] & msk) !== 0;
-  },
+  }
 
-  equals: function(other) {
+  equals(other) {
     var a = this.bits;
     var b = other.bits;
 
@@ -920,9 +1217,9 @@ var BitArray = exclass({
         return false;
 
     return true;
-  },
+  }
 
-  combine: function(op, arg) {
+  combine(op, arg) {
     var bits = this.bits;
 
     if (typeof arg === "number") {
@@ -956,28 +1253,26 @@ var BitArray = exclass({
     }
 
     return this;
-  },
-
-  $statics: {
-    newEmpty: function(num) {
-      var bits = [];
-      for (var i = 0, n = Math.floor((num + (kNumBits - 1)) / kNumBits); i < n; i++)
-        bits.push(0);
-      return new BitArray(bits);
-    }
   }
-});
+
+  static newEmpty(num) {
+    var bits = [];
+    for (var i = 0, n = Math.floor((num + (kNumBits - 1)) / kNumBits); i < n; i++)
+      bits.push(0);
+    return new BitArray(bits);
+  }
+}
 
 // ============================================================================
 // [ValueRange]
 // ============================================================================
 
-var ValueRange = exclass({
-  $construct: function(min, max, minExclusive, maxExclusive) {
+class ValueRange {
+  constructor(min, max, minExclusive, maxExclusive) {
     this.init(min, max, minExclusive, maxExclusive);
-  },
+  }
 
-  init: function(min, max, minExclusive, maxExclusive) {
+  init(min, max, minExclusive, maxExclusive) {
     this.min = typeof min === "number" ? min : null;
     this.max = typeof max === "number" ? max : null;
 
@@ -985,9 +1280,9 @@ var ValueRange = exclass({
     this.maxExclusive = (this.max !== null && maxExclusive) ? true : false;
 
     return this;
-  },
+  }
 
-  mergeMin: function(min, exc) {
+  mergeMin(min, exc) {
     var tMin = this.min;
     var tExc = this.minExclusive;
 
@@ -1007,9 +1302,9 @@ var ValueRange = exclass({
     this.minExclusive = tExc;
 
     return this;
-  },
+  }
 
-  mergeMax: function(max, exc) {
+  mergeMax(max, exc) {
     var tMax = this.max;
     var tExc = this.maxExclusive;
 
@@ -1030,99 +1325,108 @@ var ValueRange = exclass({
 
     return this;
   }
-});
+}
 
 // ============================================================================
 // [CoreCompiler]
 // ============================================================================
 
-// \class `exmodel.CoreCompiler`
-//
-// Base class used for compiling JS code. The reason there is `CoreCompiler`
-// and not just `SchemaCompiler` is that `CoreCompiler` is used by other
-// functions to compile much simpler JS code, like code for date parsing.
-//
-// CoreCompiler has been designed as a lightweight class that can be used to
-// serialize JS code into one string, by providing an interface for indentation
-// and declaring local variables at the beginning of the function.
-//
-// The following snippet demonstrates the desired functionality:
-//
-// ```
-// var c = new CoreCompiler();
-//
-// c.arg("array");
-// c.declareVariable("i", "0");
-// c.declareVariable("len", "array.length");
-//
-// c.emit("while (i < len) {");
-// c.declareVariable("element");
-// c.emit("element = array[i]");
-// c.emit("...");
-// c.emit("i++;");
-// c.emit("}";
-//
-// c.toFunction();
-// ```
-//
-// The code above will generate and execute the following function:
-//
-// ```
-// "use strict";
-// function($$_data) {
-//   return function(array) {
-//     var i = 0, len = array.length, element;
-//     while (i < len) {
-//       element = array[i];
-//       ...
-//       i++;
-//     }
-//   }
-// }
-// ```
-//
-// The function above is a boilerplate that is needed to pass custom data to
-// the generated function and the function that contains the body constructed
-// by using `emit()` and others to emit JS code. Passing data is easy through
-// `data(data)` method or more high level `declareData(name, data)` method.
-function CoreCompiler() {
-  this._debug = false;        // Whether to output debug code and comments.
+/**
+ * Base class used for compiling JS code. The reason there is `CoreCompiler`
+ * and not just `SchemaCompiler` is that `CoreCompiler` is used by other
+ * functions to compile much simpler JS code, like code for date parsing.
+ *
+ * CoreCompiler has been designed as a lightweight class that can be used to
+ * serialize JS code into one string by providing an interface for indentation
+ * and declaring local variables at the beginning of the function. Indentation
+ * is provided for simpler debugging of the generated code.
+ *
+ * The following snippet demonstrates the desired functionality:
+ *
+ * ```
+ * var c = new CoreCompiler();
+ *
+ * c.arg("array");
+ * c.declareVariable("i", "0");
+ * c.declareVariable("len", "array.length");
+ *
+ * c.emit("while (i < len) {");
+ * c.declareVariable("element");
+ * c.emit("element = array[i]");
+ * c.emit("...");
+ * c.emit("i++;");
+ * c.emit("}";
+ *
+ * c.toFunction();
+ * ```
+ *
+ * The code above will generate and execute the following function:
+ *
+ * ```
+ * "use strict";
+ * function($$_data) {
+ *   return function(array) {
+ *     var i = 0, len = array.length, element;
+ *     while (i < len) {
+ *       element = array[i];
+ *       ...
+ *       i++;
+ *     }
+ *   }
+ * }
+ * ```
+ *
+ * The function above is a boilerplate that is needed to pass custom data to
+ * the generated function and the function that contains the body constructed
+ * by using `emit()` and others to emit JS code. Passing data is easy through
+ * `data(data)` method or more high level `declareData(name, data)` method.
+ *
+ * @alias xschema.CoreCompiler
+ */
+class CoreCompiler {
+  constructor() {
+    this._debug = false;        // Whether to output debug code and comments.
 
-  // Used by `nest()` and `denest()`.
-  this._scopeArray = [];      // Used to save data of the previous scope(s).
-  this._scopeIndex = 0;       // Scope index in `_scopeArray`.
-  this._indentation = "  ";   // Indentation.
-  this._ifElseCount = 0;      // Count if previous if/if else blocks.
+    // Used by `nest()` and `denest()`.
+    this._scopeArray = [];      // Used to save data of the previous scope(s).
+    this._scopeIndex = 0;       // Scope index in `_scopeArray`.
+    this._indentation = "  ";   // Indentation.
+    this._ifElseCount = 0;      // Count if previous if/if else blocks.
 
-  this._args = [];            // Function arguments;
-  this._body = "";            // Function body.
+    this._args = [];            // Function arguments;
+    this._body = "";            // Function body.
 
-  this._locals = {};          // Local variables and initialization code.
-  this._globals = {};         // Global variables and initialization code.
-  this._uniqueName = 0;       // Unique variable names generator.
+    this._locals = {};          // Local variables and initialization code.
+    this._globals = {};         // Global variables and initialization code.
+    this._uniqueName = 0;       // Unique variable names generator.
 
-  this._data = [];            // Data that is passed to outer function.
-  this._dataName = "$$_data"; // Reserved name for outer data argument.
-  this._dataToVar = {};       // Mapping of global data index and variables.
-}
-exclass({
-  $construct: CoreCompiler,
+    this._data = [];            // Data that is passed to outer function.
+    this._dataName = "$$_data"; // Reserved name for outer data argument.
+    this._dataToVar = {};       // Mapping of global data index and variables.
+  }
 
-  // \internal
-  _sanityIdentifierName: function(name) {
+  _sanityIdentifierName(name) {
     return isVariableName(name) ? name : this._makeUniqueName();
-  },
+  }
 
-  // Declare a new local variable and put the declaration at the beginning of
-  // the function.
-  //
-  // The function returns a variable name that is safe in case that the `name`
-  // parameter contained name that is forbidden by JS.
-  //
-  // NOTE: If the variable already exists it only validates that `exp` is the
-  // same as passed first time the variable has been declared. This makes it
-  // possible to share variable names, but prevents changing their init code.
-  declareVariable: function(name, exp) {
+  /**
+   * Declares a new local variable and puts the declaration at the beginning
+   * of the function.
+   *
+   * The function returns a variable name that is safe in case that the `name`
+   * parameter contained name that is forbidden by JS.
+   *
+   * NOTE: If the variable already exists it only validates that `exp` is the
+   * same as passed first time the variable has been declared. This makes it
+   * possible to share variable names, but prevents changing their init code.
+   *
+   * @param {string} name Name of the variable.
+   * @param {string=} exp Variable's initial value or expression.
+   *
+   * @return {string} The name of the variable to use (can be different than
+   *   the `name` requested).
+   */
+  declareVariable(name, exp) {
     var locals = this._locals;
 
     name = this._sanityIdentifierName(name);
@@ -1137,15 +1441,17 @@ exclass({
     }
 
     return name;
-  },
+  }
 
-  // Declare a new global variable and put the declaration outside of the
-  // generated function.
-  //
-  // Global variables can contain values that are constant to the function and
-  // that can reference objects outside. For example you can add `exmodel`
-  // global and reference it inside the generated function.
-  declareGlobal: function(name, exp) {
+  /**
+   * Declares a new global variable and puts the declaration outside of the
+   * generated function.
+   *
+   * Global variables can contain values that are constant to the function and
+   * that can reference objects outside. For example you can create `xschema`
+   * global and reference it inside the generated function.
+   */
+  declareGlobal(name, exp) {
     var globals = this._globals;
 
     name = this._sanityIdentifierName(name);
@@ -1160,9 +1466,9 @@ exclass({
     }
 
     return name;
-  },
+  }
 
-  declareData: function(name, data) {
+  declareData(name, data) {
     var exp = this.data(data);
     var map = this._dataToVar;
 
@@ -1175,20 +1481,31 @@ exclass({
 
     map[exp] = name;
     return this.declareGlobal(name, exp);
-  },
+  }
 
-  _makeUniqueName: function() {
+  _makeUniqueName() {
     return "_" + (++this._uniqueName);
-  },
+  }
 
-  // Add an argument to the function.
-  arg: function(name) {
+  /**
+   * Adds an argument to the function.
+   *
+   * @param {string} name Name of the argument.
+   * @return {this}
+   */
+  arg(name) {
     this._args.push(name);
     return this;
-  },
+  }
 
-  // Pass a data to the function, returns code that can be used to access it.
-  data: function(data) {
+  /**
+   * Adds data to the function.
+   *
+   * @param {*} data Data to be added
+   * @return {string} Code that can be used to access the `data`. The code
+   *   returned is currently something like `dataObject[index]`.
+   */
+  data(data) {
     var array = this._data;
     var i = array.indexOf(data);
 
@@ -1198,10 +1515,15 @@ exclass({
     }
 
     return this._dataName + "[" + i + "]";
-  },
+  }
 
-  // Emit JS `code` with current indentation applied.
-  emit: function(code) {
+  /**
+   * Emits JS `code` with the current indentation-level applied.
+   *
+   * @param {string} code Code to emit
+   * @return {this}
+   */
+  emit(code) {
     if (!code)
       return this;
 
@@ -1216,41 +1538,50 @@ exclass({
       this.nest();
 
     return this;
-  },
+  }
 
-  // Emit newline delimiter `\n`.
-  nl: function() {
+  /**
+   * Emits a newline delimiter `\n`.
+   *
+   * @return {this}
+   */
+  nl() {
     this._body += "\n";
     return this;
-  },
+  }
 
-  // Emit comment with current indentation applied if debugging is enabled.
-  comment: function(s) {
+  /**
+   * Emits a comment with current indentation applied (if debugging is enabled).
+   *
+   * @param {string} text Content of the comment (can be multi-line).
+   * @return {this}
+   */
+  comment(text) {
     if (this._debug)
-      this._body += this.applyIndentation("// " + s.replace("\n", "\n// "));
+      this._body += this.applyIndentation("// " + text.replace("\n", "\n// "));
     return this;
-  },
+  }
 
-  ifElseIf: function(cond) {
+  ifElseIf(cond) {
     var keyword = (++this._ifElseCount === 1) ? "if" : "else if";
     return this.emit(keyword + " (" + cond + ") {");
-  },
+  }
 
-  otherwise: function() {
+  otherwise() {
     var keyword = this._ifElseCount > 0 ? "else" : "if (1)";
     this._ifElseCount = 0;
     return this.emit(keyword + " {");
-  },
+  }
 
-  end: function() {
+  end() {
     return this.emit("}");
-  },
+  }
 
-  str: function(s) {
+  str(s) {
     return JSON.stringify(s);
-  },
+  }
 
-  nest: function() {
+  nest() {
     var array = this._scopeArray;
     var index = this._scopeIndex;
 
@@ -1275,9 +1606,9 @@ exclass({
     this._ifElseCount = 0;
 
     return this;
-  },
+  }
 
-  denest: function() {
+  denest() {
     var array = this._scopeArray;
     var index = this._scopeIndex;
 
@@ -1290,9 +1621,9 @@ exclass({
     this._ifElseCount = obj.ifElseCount;
 
     return this;
-  },
+  }
 
-  applyIndentation: function(s) {
+  applyIndentation(s) {
     if (!s)
       return s;
 
@@ -1301,9 +1632,9 @@ exclass({
 
     var indentation = this._indentation;
     return indentation + s.replace(reNewLine, "\n" + indentation) + "\n";
-  },
+  }
 
-  serialize: function() {
+  serialize() {
     var globals = this._globals;
     var locals = this._locals;
 
@@ -1312,7 +1643,7 @@ exclass({
     var name, value;
 
     for (name in globals) {
-      init += "var " + name + " = " + globals[name] + ";\n";
+      init += "const " + name + " = " + globals[name] + ";\n";
     }
 
     if (init)
@@ -1334,9 +1665,9 @@ exclass({
         vars +
         this._body +
       "}\n";
-  },
+  }
 
-  toFunction: function() {
+  toFunction() {
     var body = this.serialize();
     var fn;
 
@@ -1352,14 +1683,14 @@ exclass({
       });
     }
   }
-});
+}
 
 // ============================================================================
 // [SchemaCompiler]
 // ============================================================================
 
 // \internal
-function mergePath(a, b) {
+function compileStringConcat(a, b) {
   if (!b)
     return a;
 
@@ -1370,39 +1701,45 @@ function mergePath(a, b) {
     return a + " + " + b;
 }
 
-// \class `exmodel.SchemaCompiler`
-function SchemaCompiler(env, options) {
-  CoreCompiler.call(this);
-
-  this._env = env;            // Schema environment (`exmodel` or customized).
-  this._options = options;    // Schema validation options.
-  this._extract = false;      // Whether to extract properties from this level.
-  this._delta = false;        // Whether we are in delta-mode (at the moment).
-  this._path = "\"\"";        // Path to the current scope (code).
-
-  this._accessMap = null;     // Access rights map (key to index).
-  this._accessCount = 0;      // Count of access rights in the map.
-  this._accessGranted = null; // Granted access rights (at the time accessed).
-
-  // Cached ValueRange instance.
-  this._cachedRange = new ValueRange();
+// \internal
+//
+// Returns `"." + s` or `[s]` depending on the content of `s`. Basically used
+// to emit optimized Object's property accessor (the idea is just to make code
+// shorter, it doesn't matter for JavaScript VM in the end).
+function compilePropertyAccess(s) {
+  return isVariableName(s) ? "." + s : "[" + JSON.stringify(s) + "]";
 }
-exclass({
-  $extend: CoreCompiler,
-  $construct: SchemaCompiler,
 
-  compileFunc: function(def) {
+class SchemaCompiler extends CoreCompiler {
+  constructor(env, options) {
+    super();
+
+    this._env = env;            // Schema environment (`xschema` or customized).
+    this._options = options;    // Schema validation options.
+    this._extract = false;      // Whether to extract properties from this level.
+    this._delta = false;        // Whether we are in delta-mode (at the moment).
+    this._path = "\"\"";        // Path to the current scope (code).
+
+    this._accessMap = null;     // Access rights map (key to index).
+    this._accessCount = 0;      // Count of access rights in the map.
+    this._accessGranted = null; // Granted access rights (at the time accessed).
+
+    // Cached ValueRange instance.
+    this._cachedRange = new ValueRange();
+  }
+
+  compileFunc(def) {
     this.arg("errors");
     this.arg("input");
     this.arg("options");
     this.arg("access");
 
-    this.declareData("exmodel", this._env);
+    this.declareData("xschema", this._env);
     this.setExtract(this.hasOption(kExtractTop));
     this.setDelta(this.hasOption(kDeltaMode));
 
     if (this.hasOption(kTestAccess)) {
-      this._accessMap = def.$_exmData.wMap;
+      this._accessMap = def.$_xschemaData.wMap;
       this._prepareAccess("access");
     }
 
@@ -1417,9 +1754,9 @@ exclass({
       this.emit("return true;");
 
     return this.toFunction();
-  },
+  }
 
-  compileType: function(vIn, def) {
+  compileType(vIn, def) {
     var name = def.$type || "object";
     var type = this._env.getType(name);
 
@@ -1427,23 +1764,23 @@ exclass({
       throwRuntimeError("Can't find handler for type " + name);
 
     return type.compile(this, vIn, def);
-  },
+  }
 
-  hasOption: function(opt) {
+  hasOption(opt) {
     return (this._options & opt) !== 0;
-  },
+  }
 
-  addOption: function(opt) {
+  addOption(opt) {
     this._options |= opt;
     return this;
-  },
+  }
 
-  clearOption: function(opt) {
+  clearOption(opt) {
     this._options &= ~opt;
     return this;
-  },
+  }
 
-  _prepareAccess: function(accVar) {
+  _prepareAccess(accVar) {
     var map = this._accessMap;
     var count = 0;
     var didWork = false;
@@ -1469,7 +1806,7 @@ exclass({
       }
 
       this.declareVariable(v, "0");
-      this.emit("if (" + accVar + getObjectProperty(key) + " === true) " +
+      this.emit("if (" + accVar + compilePropertyAccess(key) + " === true) " +
         v + " |= " + "0x" + m.toString(16) + ";");
 
       count++;
@@ -1480,9 +1817,9 @@ exclass({
 
     this._accessCount = count;
     this._accessGranted = BitArray.newEmpty(count);
-  },
+  }
 
-  emitNumberCheck: function(v, range, isInt, isFinite) {
+  emitNumberCheck(v, range, isInt, finite) {
     var cond = [];
 
     var min = range.min;
@@ -1494,7 +1831,7 @@ exclass({
     // Finite check is only important if there is no range check. By default
     // all integer checks have range (because of the int type), however, doubles
     // have no range by default.
-    if (isFinite && (min === null || max === null)) {
+    if (finite && (min === null || max === null)) {
       cond.push("isFinite(" + v + ")");
     }
 
@@ -1526,14 +1863,14 @@ exclass({
         this.error(this.str("InvalidValue")));
 
     return this;
-  },
+  }
 
-  addLocal: function(name, mangledType) {
+  addLocal(name, mangledType) {
     return this.declareVariable(name + "$" + (mangledType || "") + this._scopeIndex);
-  },
+  }
 
   // Get a type-prefix of type defined by `def`.
-  mangledType: function(def) {
+  mangledType(def) {
     var env = this._env;
 
     // Default mangled type is an object.
@@ -1544,28 +1881,28 @@ exclass({
       mangled = MangledType[type.type] || "z";
 
     return mangled;
-  },
+  }
 
-  passIf: function(cond, vOut, vIn) {
+  passIf(cond, vOut, vIn) {
     return this.ifElseIf(cond).emit(vIn === vOut ? "// OK." : vOut + " = " + vIn + ";").end();
-  },
+  }
 
-  failIf: function(cond, err) {
+  failIf(cond, err) {
     this.ifElseIf(cond);
     this.fail(err);
     this.end();
     return this;
-  },
+  }
 
-  fail: function(err) {
+  fail(err) {
     if (this.hasOption(kTestOnly))
       this.emit("return false;");
     else
       this.emitError(err);
     return this;
-  },
+  }
 
-  emitError: function(err) {
+  emitError(err) {
     if (this.hasOption(kTestOnly)) {
       this.emit("return false;");
     }
@@ -1578,66 +1915,66 @@ exclass({
       this.emit("if (quick) return false;");
     }
     return this;
-  },
+  }
 
-  getPath: function() {
+  getPath() {
     return this._path;
-  },
+  }
 
-  setPath: function(path) {
+  setPath(path) {
     var prev = this._path;
     this._path = path;
     return prev;
-  },
+  }
 
-  addPath: function(sep, code) {
+  addPath(sep, code) {
     var p = this._path;
     if (p !== '""' && sep)
-      p = mergePath(p, sep);
-    return this.setPath(mergePath(p, code));
-  },
+      p = compileStringConcat(p, sep);
+    return this.setPath(compileStringConcat(p, code));
+  }
 
-  getExtract: function() {
+  getExtract() {
     return this._extract;
-  },
+  }
 
-  setExtract: function(value) {
+  setExtract(value) {
     var prev = this._extract;
     this._extract = value;
     return prev;
-  },
+  }
 
-  getDelta: function() {
+  getDelta() {
     return this._delta;
-  },
+  }
 
-  setDelta: function(value) {
+  setDelta(value) {
     var prev = this._delta;
     this._delta = value;
     return prev;
-  },
+  }
 
-  error: function(code, extra) {
+  error(code, extra) {
     var s = "{ code: " + code + ", path: " + this.getPath();
     if (extra)
       s += " ," + JSON.stringify(extra).substr(1);
     else
       s += " }";
     return s;
-  },
+  }
 
-  done: function() {
+  done() {
     this._ifElseCount = 0;
     return this;
   }
-});
+}
 
 // ============================================================================
 // [SchemaBuilder]
 // ============================================================================
 
-var SchemaAccess = exclass({
-  $construct: function(type, initial, inherit) {
+class SchemaAccess {
+  constructor(type, initial, inherit) {
     this.type = type;
     this.inherit = "";
 
@@ -1653,9 +1990,9 @@ var SchemaAccess = exclass({
     this.tmpArray = [];
 
     this.inherit = this.process(initial, inherit || "any");
-  },
+  }
 
-  add: function(name) {
+  add(name) {
     var map = this.map;
     var id;
 
@@ -1668,12 +2005,12 @@ var SchemaAccess = exclass({
     }
 
     return id;
-  },
+  }
 
   // Process a given access string `s` and return a normalized one that doesn't
   // contain virtual access rights like "inherit" (also handles null/empty
   // string as "inherit").
-  process: function(s, inherit) {
+  process(s, inherit) {
     if (!s || s === "inherit")
       s = inherit || this.inherit;
 
@@ -1733,12 +2070,12 @@ var SchemaAccess = exclass({
     }
     tmpArray.sort();
     return tmpArray.join("|");
-  },
+  }
 
   // \internal
   //
   // Normalize an access control string `s` (can contain only one name).
-  normalize: function(s, inherit) {
+  normalize(s, inherit) {
     // Normalize special cases.
     if (s === "*")
       s = "any";
@@ -1760,7 +2097,7 @@ var SchemaAccess = exclass({
     // Handle "@", which will be modified depending on `type` (usually "r" or "w").
     return s.replace("@", this.type);
   }
-});
+}
 
 function mergeBits(bits, map, s) {
   var names = s.split("|");
@@ -1799,7 +2136,7 @@ function extractDefData(def, data) {
   return dst;
 }
 
-function sanityNormalized(def) {
+function checkSchema(def) {
   for (var k in def) {
     if (!isDirectiveName(k))
       throwRuntimeError("Found a non-directive '" + k + "' in normalized schema");
@@ -1850,34 +2187,35 @@ function mergeInclude(src) {
   return dst;
 }
 
-// \internal
-//
-// Schema builder is responsible for translating a non-normalized schema into
-// a normalized schema that can be actually used by extractors and validators.
-function SchemaBuilder(env, options) {
-  if (!options)
-    options = NoObject;
+/**
+ * Schema builder is responsible for translating a non-normalized schema into
+ * a normalized schema that can be actually used by extractors and validators.
+ *
+ * @private
+ */
+class SchemaBuilder {
+  constructor(env, options) {
+    if (!options)
+      options = NoObject;
 
-  // The environment the schema is bound to (exmodel.js or inherited).
-  this.env = env;
-  this.options = options;
+    // The environment the schema is bound to (xschema or inherited).
+    this.env = env;
+    this.options = options;
 
-  // All user access control rights that appeared in all fields, nested inclusive.
-  this.rAccess = new SchemaAccess("r", options.$r || options.$a || null, "any");
-  this.wAccess = new SchemaAccess("w", options.$w || options.$a || null, "any");
-}
-exclass({
-  $construct: SchemaBuilder,
+    // All user access control rights that appeared in all fields, nested inclusive.
+    this.rAccess = new SchemaAccess("r", options.$r || options.$a || null, "any");
+    this.wAccess = new SchemaAccess("w", options.$w || options.$a || null, "any");
+  }
 
   // \internal
   //
   // Called once per schema, it adds the root field.
-  build: function(def) {
+  build(def) {
     def = this.field(def, null, null);
 
-    // The member `$_exmData` is considered private and used exclusively by
-    // the exmodel.js library. This is the only reserved key so far.
-    def.$_exmData = {
+    // The member `$_xschemaData` is considered private and used exclusively by
+    // the xschema library. This is the only reserved key so far.
+    def.$_xschemaData = {
       env  : this.env,
       rMap : this.rAccess.map,
       wMap : this.wAccess.map,
@@ -1885,14 +2223,14 @@ exclass({
     };
 
     return def;
-  },
+  }
 
   // \internal
   //
   // Translate the given schema definition into a normalized format that is used
-  // by exmodel.js library. This function is called for root type and all children
+  // by xschema library. This function is called for root type and all children
   // it contains, basically per recognized type.
-  field: function(def, override, parent) {
+  field(def, override, parent) {
     // If the `def` contains one or more include directive we create a new
     // merged definition.
     if (hasInclude(def)) {
@@ -1910,8 +2248,8 @@ exclass({
         throwRuntimeError("Directive '$extend' should never appear in normalized schema");
 
       // ERROR: Extend has to be an existing schema.
-      if (extend == null || typeof extend !== "object" || !hasOwn.call(extend, "$_exmData"))
-        throwRuntimeError("Directive '$extend' requires an existing exmodel.schema");
+      if (extend == null || typeof extend !== "object" || !hasOwn.call(extend, "$_xschemaData"))
+        throwRuntimeError("Directive '$extend' requires an existing schema");
 
       override = def;
       def = extend;
@@ -2043,7 +2381,7 @@ exclass({
       $w        : w,
       $rExp     : this.rAccess.process(r, parent ? parent.$rExp : null),
       $wExp     : this.wAccess.process(w, parent ? parent.$wExp : null),
-      $_exmData : null
+      $_xschemaData : null
     };
 
     if (m) {
@@ -2092,7 +2430,7 @@ exclass({
           for (k in def) {
             // Properties are stored in `obj` itself, however, object fields are
             // stored always in `obj.$data`. This is just a way to distinguish
-            // exmodel.js properties from object's properties.
+            // xschema's properties from object's properties.
             if (artificial[k] === true || !isDirectiveName(k) || hasOwn.call(obj, k))
               continue;
             obj[k] = def[k];
@@ -2109,7 +2447,7 @@ exclass({
           for (k in def) {
             // We don't have to worry about properties in the field vs $data,
             // as the schema has already been normalized. So here we expect
-            // exmodel.js directives only, not objects' fields.
+            // xschema's directives only, not objects' fields.
             if (artificial[k] === true || hasOwn.call(obj, k))
               continue;
 
@@ -2247,31 +2585,39 @@ exclass({
     if (typeof TypeObject.hook === "function")
       TypeObject.hook(obj, this.env, defArgs);
 
-    if (SANITY)
-      sanityNormalized(obj);
+    if (kCheckNormalizedSchemas)
+      checkSchema(obj);
 
     return obj;
   }
-});
+}
 
-// \function `exmodel.schema(def)`
-//
-// Processes the given definition `def` and creates a schema that can be used
-// and compiled by exmodel.js library. It basically normalizes the input object
-// and calls `type` and `rule` hooks on it.
+/**
+ * Processes the given definition `def` and creates a schema that can be used
+ * and compiled by xschema library. It basically normalizes the input object
+ * and calls `type` and `rule` hooks on it.
+ *
+ * @param {object} def Schema definition.
+ * @param {object=} options Schema options.
+ * @return {object} Normalized schema.
+ *
+ * @alias xschema.schema
+ */
 function schema(def, options) {
-  return (new SchemaBuilder(this || exmodel, options)).build(def);
+  return (new SchemaBuilder(this || xschema, options)).build(def);
 }
-exmodel.schema = schema;
+xschema.schema = schema;
 
-function isSchema(def) {
-  return def != null && typeof def === "object" && hasOwn.call(def, "$_exmData");
-}
-exmodel.isSchema = isSchema;
-
-// Serialize the given schema `def` into something that can be printed as JSON.
-// It basically removes some helper variables and data structures associated
-// with schema, that only confuse the output if printed as JSON.
+/**
+ * Serializes the given schema `def` into something that can be printed as JSON.
+ * It basically removes all helper variables and data structures associated
+ * with the schema, that only confuse the output if printed as JSON.
+ *
+ * @param {*} def Schema (either in normalized or source form).
+ * @return {*} Processed input.
+ *
+ * @alias xschema.misc.printableSchema
+ */
 function printableSchema(def) {
   if (def == null || typeof def !== "object")
     return def;
@@ -2291,7 +2637,7 @@ function printableSchema(def) {
     for (var k in srcObj) {
       var value = srcObj[k];
 
-      if (k === "$_exmData")
+      if (k === "$_xschemaData")
         dstObj[k] = value ? "<...>" : null;
       else
         dstObj[k] = printableSchema(value);
@@ -2299,73 +2645,96 @@ function printableSchema(def) {
     return dstObj;
   }
 }
-exmodel.printableSchema = printableSchema;
+misc.printableSchema = printableSchema;
 
 // ============================================================================
 // [Schema - Interface]
 // ============================================================================
 
-// \internal
-//
-// Global validation context, used as a cache to prevent creating the object
-// every time `process()`, `validate()`, and `test()` are called. It doesn't
-// prevent nested validation as the context is always set to `null` in case
-// it's acquired and set back when released, if another global context doesn't
-// exist.
+/**
+ * Global validation context, used as a cache to prevent creating the object
+ * every time `process()`, `validate()`, and `test()` are called. It doesn't
+ * prevent nested validation as the context is always set to `null` in case
+ * it's acquired and set back when released, if another global context doesn't
+ * exist.
+ *
+ * @private
+ */
 var _errorsGlobal = null;
 
-// \internal
-//
-// Compile and return a function that can be used to process data based on the
-// definition `def` and options given in `index` (options and processing mode).
+/**
+ * Compile and return a function that can be used to process data based on the
+ * definition `def` and options given in `index` (options and processing mode).
+ *
+ * @private
+ */
 function compile(env, def, index) {
-  var cache = def.$_exmData.cache;
+  var cache = def.$_xschemaData.cache;
   var fn = (new SchemaCompiler(env, index)).compileFunc(def);
 
   cache[index] = fn;
   return fn;
 }
 
-// \internal
-function precompile(func, def, options, hasAccess) {
+/**
+ * Precompile a given schema and cache the compiled function.
+ *
+ * @param {string} funcType Type of function to precompile ("process" or test").
+ * @param {object} def Schema definition.
+ * @param {number} _options Schema options.
+ * @param {boolean} hasAccess Whether the access control is enabled.
+ * @return {function} Compiled function
+ *
+ * @throws {TypeError} If precompile has been misused (invalid parameter, ...).
+ *
+ * @alias xschema.precompile
+ */
+function precompile(funcType, def, options, hasAccess) {
   var index = (options || 0) & kFuncCacheMask;
 
-  if (func === "process") {
-    // OK.
-  }
-  else if (func === "test") {
-    index |= kTestOnly;
-  }
-  else {
-    throwRuntimeError("exmodel.precompile() - 'func' parameter can be either 'process' or 'test'");
+  if (funcType !== "process") {
+    if (funcType === "test")
+      index |= kTestOnly;
+    else
+      throwTypeError("xschema.precompile() - 'func' parameter can be either 'process' or 'test'");
   }
 
   if (hasAccess)
     index |= kTestAccess;
 
-  return compile(this || exmodel, def, index);
+  return compile(this || xschema, def, index);
 }
-exmodel.precompile = precompile;
+xschema.precompile = precompile;
 
-// \function `exmodel.process(data, def, options, access)`
-//
-// Process the given `data` by using a definition `def`, `options` and `access`
-// rights. The function specific for the validation type and options is compiled
-// on demand and then cached.
-exmodel.process = function(data, def, _options, access) {
-  var options = typeof _options === "number" ? _options : 0;
+/**
+ * Process the given `data` by using a definition `def`, `options` and `access`
+ * rights. The function specific for the validation type and options is compiled
+ * on demand and then cached.
+ *
+ * @param {*} data Data to process.
+ * @param {object} def Schema definition.
+ * @param {number} options Schema options.
+ * @param {object} access Access control.
+ * @return {function} The processed and sanitized data.
+ *
+ * @throws {SchemaError} If schema processing (validation) has failed.
+ *
+ * @alias xschema.process
+ */
+xschema.process = function(data, def, options, access) {
+  var opt = typeof options === "number" ? options : 0;
 
-  var cache = def.$_exmData.cache;
-  var index = options & kFuncCacheMask;
+  var cache = def.$_xschemaData.cache;
+  var index = opt & kFuncCacheMask;
 
   if (access)
     index |= kTestAccess;
 
-  var fn = cache[index] || compile(this || exmodel, def, index);
+  var fn = cache[index] || compile(this || xschema, def, index);
   var errors = _errorsGlobal || [];
 
   _errorsGlobal = null;
-  var result = fn(errors, data, options, access);
+  var result = fn(errors, data, opt, access);
 
   if (errors.length)
     throwSchemaError(errors);
@@ -2374,110 +2743,136 @@ exmodel.process = function(data, def, _options, access) {
   return result;
 };
 
-// \function `exmodel.test(data, def, options, access)`
-//
-// Tests the given `data` by using a definition `def`, `options` and `access`
-// right.
-exmodel.test = function(data, def, _options, access) {
-  var options = typeof _options === "number" ? _options | kTestOnly : kTestOnly;
+/**
+ * Tests the given `data` by using a schema `def`, `options` and `access` control.
+ *
+ * @param {*} data Data to process.
+ * @param {object} def Schema definition.
+ * @param {number} options Schema options.
+ * @param {object} access Access control.
+ * @return {boolean} True if the given data is valid, false otherwise.
+ *
+ * @alias xschema.test
+ */
+xschema.test = function(data, def, options, access) {
+  var opt = typeof options === "number" ? options | kTestOnly : kTestOnly;
 
-  var cache = def.$_exmData.cache;
-  var index = options & kFuncCacheMask;
+  var cache = def.$_xschemaData.cache;
+  var index = opt & kFuncCacheMask;
 
   if (access)
     index |= kTestAccess;
 
-  var fn = cache[index] || compile(this || exmodel, def, index);
-  return fn(null, data, options, access);
+  var fn = cache[index] || compile(this || xschema, def, index);
+  return fn(null, data, opt, access);
 };
 
 // ============================================================================
-// [Schema - Customize]
+// [Schema - Customization]
 // ============================================================================
 
-// \object `exmodel.types`
-//
-// Types supported by `exmodel`. Mapping between a type names (or aliases) and
-// type objects.
-exmodel.types = {};
+/**
+ * Types supported by xschema. Mapping between type names (or aliases) and
+ * type objects.
+ *
+ * @alias xschema.types
+ */
+xschema.types = {};
 
-// \object `exmodel.rules`
-//
-// Rules supported by `exmodel`. Mapping between a rule names and rule objects.
-exmodel.rules = {};
+/**
+ * Rules supported by xschema. Mapping between a rule names and rule objects.
+ *
+ * @alias xschema.rules
+ */
+xschema.rules = {};
 
-// \object `exmodel.artificialDirectives`
-//
-// Directives, which are artificially generated by the schema post-processing
-// and will never be copied from one schema to another in case of extending.
-// exmodel.js rules can specify additional artificial directives that will be
-// added to the global map in the exmodel.js environment that defines such rule.
-exmodel.artificialDirectives = {
-  $_exmData   : true, // Private data used exclusively by exmodel.js.
-  $a          : true, // Shortcut to setup both `$r` and `$w` access information.
-  $extend     : true, // Extend directive.
-  $rExp       : true, // Expanded read access (expression).
-  $wExp       : true, // Expanded write access (expression).
-  $groupMap   : true, // Property groups map (key is a group, value is a list of property names).
-  $uniqueMap  : true, // Array of unique properties map  , like `[{ id:true }, { a:true, b:true }]`.
-  $uniqueArray: true, // Array of unique properties array, like `[["id"]     , ["a"    ,"b"     ]]`.
-  $pkMap      : true, // Primary key map (value is always `true`).
-  $pkArray    : true, // Primary key array.
-  $fkMap      : true, // Foreign key map (value is always a string pointing to an "entity.field").
-  $fkArray    : true, // Foreign key array.
-  $idMap      : true, // Primary and foreign key map (value is always `true`).
-  $idArray    : true  // Primary and foreign key array.
+/**
+ * Directives, which are artificially generated by the schema post-processing
+ * and will never be copied from one schema to another in case of extending.
+ * Rules can specify additional artificial directives that will be added to
+ * the global map in the xschema's environment that defines such rule.
+ *
+ * @alias xschema.artificialDirectives
+ */
+xschema.artificialDirectives = {
+  $_xschemaData: true, // Private data used exclusively by xschema library.
+  $a           : true, // Shortcut to setup both `$r` and `$w` access information.
+  $extend      : true, // Extend directive.
+  $rExp        : true, // Expanded read access (expression).
+  $wExp        : true, // Expanded write access (expression).
+  $groupMap    : true, // Property groups map (key is a group, value is a list of property names).
+  $uniqueMap   : true, // Array of unique properties map  , like `[{ id:true }, { a:true, b:true }]`.
+  $uniqueArray : true, // Array of unique properties array, like `[["id"]     , ["a"    ,"b"     ]]`.
+  $pkMap       : true, // Primary key map (value is always `true`).
+  $pkArray     : true, // Primary key array.
+  $fkMap       : true, // Foreign key map (value is always a string pointing to an "entity.field").
+  $fkArray     : true, // Foreign key array.
+  $idMap       : true, // Primary and foreign key map (value is always `true`).
+  $idArray     : true  // Primary and foreign key array.
 };
 
-// \object `exmodel.shortcutDirectives`
-//
-// List of directives that won't be moved into the child object in case of using
-// array shortcut in $type directive.
-exmodel.shortcutDirectives = {
-  $r          : true, // Read access.
-  $w          : true, // Write access,
-  $a          : true, // Read/write access.
-  $g          : true, // Group.
-  $unique     : true, // Unique specifier.
-  $artificial : true, // Artificial directive always apply to the root object.
-  $optional   : true  // Doesn't make sense, the array optional / not.
+/**
+ * List of directives that won't be moved into the child object in case of using
+ * array shortcut in $type directive.
+ *
+ * @alias xschema.shortcutDirectives
+ */
+xschema.shortcutDirectives = {
+  $r           : true, // Read access.
+  $w           : true, // Write access,
+  $a           : true, // Read/write access.
+  $g           : true, // Group.
+  $unique      : true, // Unique specifier.
+  $artificial  : true, // Artificial directive always apply to the root object.
+  $optional    : true  // Doesn't make sense, the array optional / not.
 };
 
-// \function `exmodel.getType(name)`
-//
-// Get a type by `name`.
-//
-// The function also matches type aliases.
-exmodel.getType = function(name) {
+/**
+ * Gets a type by `name`.
+ *
+ * The function also matches type aliases.
+ *
+ * @param {string} name Name of type to get.
+ * @return {object} Type object.
+ *
+ * @function
+ * @alias xschema.getType
+ */
+xschema.getType = function(name) {
   var types = this.types;
   return (hasOwn.call(types, name)) ? types[name] : null;
 };
 
-// \function `exmodel.addType(t)`
-//
-// Add a type or types to the exmodel.js environment.
-//
-// The type `t` can be an array of types or a single type. The type added
-// is a POD object having the following signature:
-//
-// ```
-// {
-//   // Type names/aliases, like `["int"]` or `["int", "integer", ...]`,
-//   name: String[]
-//
-//   // Javascript type of a given field.
-//   type: String
-//     "array"   - Array
-//     "boolean" - Boolean
-//     "number"  - Number (double or integer, doesn't matter)
-//     "object"  - Object
-//     "string"  - String (character or string, doesn't matter)
-//
-//   // Function that compiles a given type.
-//   compile: Function(c, v, def) { ... }
-// }
-// ```
-exmodel.addType = function(data) {
+/**
+ * Adds a type or types to the xschema environment.
+ *
+ * The type `data` can be an array of types or a single type. The type added
+ * is a POD object having the following signature:
+ *
+ * ```
+ * {
+ *   // Type names/aliases, like `["int"]` or `["int", "integer", ...]`,
+ *   name: String[]
+ *
+ *   // Javascript type of a given field.
+ *   type: String
+ *     "array"   - Array
+ *     "boolean" - Boolean
+ *     "number"  - Number (double or integer, doesn't matter)
+ *     "object"  - Object
+ *     "string"  - String (character or string, doesn't matter)
+ *
+ *   // Function that compiles a given type.
+ *   compile: Function(c, v, def) { ... }
+ * }
+ * ```
+ *
+ * @param {object|object[]) data A single type object or array of type objects.
+ * @return {this}
+ *
+ * @alias xschema.addType
+ */
+xschema.addType = function(data) {
   var types = this.types;
 
   if (!isArray(data))
@@ -2495,18 +2890,27 @@ exmodel.addType = function(data) {
   return this;
 };
 
-// \function `exmodel.getRule(name)`
-//
-// Get a rule by `name`.
-exmodel.getRule = function(name) {
+/**
+ * Gets a rule by `name`.
+ *
+ * @param {string} name Name of rule to get.
+ *
+ * @alias xschema.getRule
+ */
+xschema.getRule = function(name) {
   var rules = this.rules;
   return (hasOwn.call(rules, name)) ? rules[name] : null;
 };
 
-// \function `exmodel.addRule(rule)`
-//
-// Add a rule or rules to the exmodel.js environment.
-exmodel.addRule = function(data) {
+/**
+ * Adds a rule or rules to the xschema environment.
+ *
+ * @param {object|object[]) data A single rule object or array of rule objects.
+ * @return {this}
+ *
+ * @alias xschema.addRule
+ */
+xschema.addRule = function(data) {
   var rules = this.rules;
 
   if (!isArray(data))
@@ -2517,53 +2921,61 @@ exmodel.addRule = function(data) {
     rules[rule.name] = rule;
 
     if (rule.artificialDirectives)
-      mergeObject(this.artificialDirectives, rule.artificialDirectives);
+      Object.assign(this.artificialDirectives, rule.artificialDirectives);
   }
 
   return this;
 };
 
-// \function `exmodel.customize(opt)`
-//
-// Extend the exmodel.js library by custom types and rules. It returns a
-// completely new object that acts as exmodel.js itself. This is the recommended
-// way to extend the library (it's nonintrusive, won't break anybody's else code).
-//
-// For example let's say that you have your own type `CustomType` and you want
-// to extend the library. The recommended way is to extend exmodel.js and use
-// the extended library in your code base (node.js example):
-//
-// ```
-// var exmodel = require("exmodel");
-//
-// var CustomType = {
-//   ...
-// };
-//
-// var xmodel = exmodel.customize({
-//   types: [
-//     CustomType
-//   ]
-// });
-//
-// // Export the new interface and always use your library to load the custom
-// // version of exmodel.js.
-// module.exports = xmodel;
-// ```
-//
-// The advantage of this approach is that changes are not made globally and the
-// new types or rules can be accessed only through the new exmodel.js like
-// object returned.
-exmodel.customize = function(opt) {
+/**
+ * Extends the xschema environment by custom types and rules.
+ *
+ * It returns a completely new object that acts as xschema itself. This is
+ * the recommended way to extend the library (it's nonintrusive, won't break
+ * anybody's else code).
+ *
+ * For example let's say that you have your own type `CustomType` and you want
+ * to extend the library. The recommended way is to extend the xschema itself
+ * and use the extended environment in your code base (node.js example):
+ *
+ * ```
+ * var xschema = require("xschema");
+ *
+ * var CustomType = {
+ *   ... type customization ...
+ * };
+ *
+ * var myschema = xschema.customize({
+ *   types: [
+ *     CustomType
+ *   ]
+ * });
+ *
+ * // Export the new interface and always use your library to load the custom
+ * // version of xschema.
+ * module.exports = myschema;
+ * ```
+ *
+ * The advantage of this approach is that changes are not made globally and the
+ * new types or rules can be accessed only through the new xschema environment.
+ *
+ * @param {object=} opt Customization options.
+ * @return {object} New xschema environment.
+ *
+ * @throws {TypeError} If the given `opt` argument is neither object nor null.
+ *
+ * @alias xschema.customize
+ */
+xschema.customize = function(opt) {
   if (opt == null)
     opt = NoObject;
 
   if (typeOf(opt) !== "object")
     throwRuntimeError(
-      "exmodel.customize(opt) - The `opt` parameter has to be an object, received " + typeOf(opt));
+      "xschema.customize(opt) - The `opt` parameter has to be an object, received " + typeOf(opt));
 
-  // Create a new object extending exmodel.js.
-  var obj = cloneWeak(this || exmodel);
+  // Create a new object extending xschema.
+  var obj = cloneWeak(this || xschema);
   var tmp;
 
   // Clone members that can change.
@@ -2583,10 +2995,13 @@ exmodel.customize = function(opt) {
   return obj;
 };
 
-// \function `exmodel.freeze()`
-//
-// Freeze the object (deep) to prevent any future modifications.
-exmodel.freeze = function() {
+/**
+ * Deep freezes the xschema environment to prevent future modifications.
+ *
+ * @return {this}
+ * @alias xschema.schema
+ */
+xschema.freeze = function() {
   freeze(this.types);
   freeze(this.rules);
   freeze(this.artificialDirectives);
@@ -2630,33 +3045,51 @@ function compileAccessCheck(data, negate) {
   return s;
 }
 
-function BaseType() {}
-exmodel.BaseType = exclass({
-  $construct: BaseType,
-
-  // Field type name and aliases ("array", "date", "color", ...), not strictly
-  // a javascript type name.
+/**
+ * Type interface.
+ *
+ * @object
+ * @alias xschema.Type
+ */
+const Type = xschema.Type = freeze({
+  /**
+   * Field type name and aliases ("array", "date", "color", ...), not strictly
+   * a javascript type name.
+   */
   name: null,
 
-  // JavaScript type name:
-  //   - "any"
-  //   - "array"
-  //   - "boolean"
-  //   - "number"
-  //   - "object"
-  //   - "string"
+  /**
+   * JavaScript type name:
+   *   - "any"
+   *   - "array"
+   *   - "boolean"
+   *   - "number"
+   *   - "object"
+   *   - "string"
+   */
   type: null,
 
-  // Configure and verify the definition `def` and throw `RuntimeError` if it's
-  // not valid.
-  //
-  // The `args` parameter is a string containing type arguments specified in
-  // parenthesis `"type(args)"`.
+  /**
+   * Extend the type by `opt`.
+   */
+  extend: function(opt) {
+    return freeze(Object.assign({}, this, opt));
+  },
+
+  /**
+   * Configure and verify the definition `def` and throw `RuntimeError` if it's
+   * not valid.
+   *
+   * The `args` parameter is a string containing type arguments specified in
+   * parenthesis `"type(args)"`.
+   */
   configure: function(def, env, args) {
     // Nothing by default.
   },
 
-  // Compile the type definition `def`.
+  /**
+   * Compiles the type definition `def`.
+   */
   compile: function(c, v, def) {
     var type = this.type;
     var cond = null;
@@ -2775,20 +3208,19 @@ exmodel.BaseType = exclass({
   },
 
   compileType: function(c, vOut, v, def) {
-    throwRuntimeError("BaseType.compileType() has to be overridden");
+    throwTypeError("Abstract method called");
   }
 });
 
 // ============================================================================
-// [SchemaType - Custom]
+// [xschema.CustomType]
 // ============================================================================
 
-var CustomType = exclass({
-  $extend: BaseType,
-
-  // The most used type of all custom validators is "string". It can be omitted
+const CustomType = xschema.CustomType = Type.extend({
+  // The most used type of all custom validators is "string".
   type: "string",
 
+  /** @override */
   compileType: function(c, vOut, v, def) {
     var cond = this.fail
       .replace(/\$[\w]+/g, function(key) {
@@ -2821,24 +3253,12 @@ var CustomType = exclass({
   // Error code to be returned.
   error: "InvalidCustomType"
 });
-exmodel.CustomType = CustomType;
 
 // ============================================================================
-// [SchemaType - Any]
+// [xschema.types.any]
 // ============================================================================
 
-function hasObjectType(arr) {
-  for (var i = 0, len = arr.length; i < len; i++) {
-    var value = arr[i];
-    if (value !== null && typeof value === "object")
-      return true;
-  }
-  return false;
-}
-
-var AnyType = exclass({
-  $extend: BaseType,
-
+xschema.addType(Type.extend({
   name: ["any"],
   type: "any",
 
@@ -2849,7 +3269,7 @@ var AnyType = exclass({
       var allowedData = c.declareData(null, allowed);
 
       // Get whether the $allowed directive contains an object.
-      if (hasObjectType(allowed)) {
+      if (!isPrimitiveArray(allowed)) {
         c.failIf("!" + c.declareData(null, this.isAllowed) + "(" + v + ", " + allowedData + ")");
         if (!c.hasOption(kTestOnly)) {
           var cloneDeepFn = c.declareData("cloneDeep", cloneDeep);
@@ -2883,23 +3303,20 @@ var AnyType = exclass({
 
     for (var i = 0, len = allowed.length; i < len; i++) {
       var b = allowed[i];
-      if (typeof b === "object" && isEqual(a, b))
+      if (typeof b === "object" && equals(a, b))
         return true;
     }
 
     return false;
   }
-});
-exmodel.addType(new AnyType());
+}));
 
 // ============================================================================
-// [SchemaType - Bool]
+// [xschema.types.bool]
 // ============================================================================
 
-var BooleanType = exclass({
-  $extend: BaseType,
-
-  name: ["boolean", "bool"],
+xschema.addType(Type.extend({
+  name: ["bool", "boolean"],
   type: "boolean",
 
   compileType: function(c, vOut, v, def) {
@@ -2921,14 +3338,13 @@ var BooleanType = exclass({
         c.failIf(cond, c.error(c.str("NotAllowed")));
     }
   }
-});
-exmodel.addType(new BooleanType());
+}));
 
 // ============================================================================
-// [SchemaType - Number]
+// [xschema.types.number]
 // ============================================================================
 
-var NumberInfo = {
+const NumberInfo = {
   number   : { integer: 0, min: null        , nax: null        },
   double   : { integer: 0, min: null        , nax: null        },
   numeric  : { integer: 0, min: null        , nax: null        },
@@ -2938,8 +3354,8 @@ var NumberInfo = {
   lon      : { integer: 0, min: -180        , max: 180         },
   longitude: { integer: 0, min: -180        , max: 180         },
 
-  integer  : { integer: 1, min: kSafeIntMin , max: kSafeIntMax },
   int      : { integer: 1, min: kSafeIntMin , max: kSafeIntMax },
+  integer  : { integer: 1, min: kSafeIntMin , max: kSafeIntMax },
   uint     : { integer: 1, min: 0           , max: kSafeIntMax },
   int8     : { integer: 1, min: -128        , max: 127         },
   uint8    : { integer: 1, min: 0           , max: 255         },
@@ -2952,9 +3368,7 @@ var NumberInfo = {
 };
 
 // TODO: $scale not honored.
-var NumberType = exclass({
-  $extend: BaseType,
-
+xschema.addType(Type.extend({
   name: setToArray(NumberInfo),
   type: "number",
 
@@ -3018,9 +3432,9 @@ var NumberType = exclass({
       }
 
       var isInt = !!info.integer;
-      var isFinite = true;
+      var finite = true;
 
-      c.emitNumberCheck(v, range, isInt, isFinite);
+      c.emitNumberCheck(v, range, isInt, finite);
 
       // DivBy check.
       if (def.$divisibleBy != null)
@@ -3030,94 +3444,14 @@ var NumberType = exclass({
 
     return v;
   }
-});
-exmodel.addType(new NumberType());
+}));
 
 // ============================================================================
-// [SchemaType - String / Text]
+// [xschema.types.string]
 // ============================================================================
 
-// Special LO characters:
-//   x [0000] NUL Null.
-//   x [0001] SOH Start of Heading.
-//   x [0002] STX Start of Text.
-//   x [0003] ETX End of Text.
-//   x [0004] EOT End of Transmission.
-//   x [0005] ENQ Enquiry.
-//   x [0006] ACK Acknowledge.
-//   x [0007] BEL Bell.
-//   x [0008] BS  Back Space.
-//   o [0009] TAB Tab.
-//   o [000A] LF  Line feed.
-//   x [000B] VT  Vertical Tab.
-//   x [000C] FF  Form Feed.
-//   o [000D] CR  Carriage return.
-//   x [000E] SO  Shift Out.
-//   x [000F] SI  Shift In.
-//   x [0010] DLE Data Line Escape.
-//   x [0011] DC1 Device Control 1.
-//   x [0012] DC2 Device Control 2.
-//   x [0013] DC3 Device Control 3.
-//   x [0014] DC4 Device Control 4.
-//   x [0015] NAK Negative Acknowledge.
-//   x [0016] SYN Synchronous Idle.
-//   x [0017] ETB End of Transmit Block.
-//   x [0018] CAN Cancel.
-//   x [0019] EM  End of Medium.
-//   x [001A] SUB Substitute.
-//   x [001B] ESC Escape.
-//   x [001C] FS  File Separator.
-//   x [001D] GS  Group Separator.
-//   x [001E] RS  Record Separator.
-//   x [001F] US  Unit Separator.
-function isText(s, loMask, hiMask) {
-  var i = 0;
-  var length = s.length;
-
-  if (length === 0)
-    return true;
-
-  var c0 = 0;
-  var c1 = 0;
-
-  do {
-    c0 = s.charCodeAt(i);
-
-    // Lo-Mask check.
-    if (c0 < 32) {
-      if (((1 << c0) & loMask) === 0)
-        return false;
-      continue;
-    }
-
-    if (c0 < 0x2028)
-      continue;
-
-    // Hi-Mask check.
-    if (c0 < 0x2028 + 32) {
-      if (((1 << (c0 - 0x2028)) & hiMask) === 0)
-        return false;
-    }
-
-    if (c0 < 0xD800 || c0 > 0xDFFF)
-      continue;
-
-    // Validate the surrogate pair.
-    if (c0 > 0xDBFF || ++i === length)
-      return false;
-
-    c1 = s.charCodeAt(i);
-    if (c1 < 0xDC00 || c1 > 0xDFFF)
-      return false;
-  } while (++i < length);
-
-  return true;
-}
-
-var StringType = exclass({
-  $extend: BaseType,
-
-  name: ["string", "text", "textline", "text-line"],
+xschema.addType(Type.extend({
+  name: ["string", "text", "textline"],
   type: "string",
 
   masks: {
@@ -3126,8 +3460,9 @@ var StringType = exclass({
     //   [U000B-U000C]
     //   [U000E-U001F]
     text: {
-      lo: 0x00002600|0, // ((1 << 0x09) | (1 << 0x0A) | (1 << 0x0D))
-      hi: 0xFFFFFFFF|0  //~0
+      "0000_001F": 0x00002600|0, // ((1 << 0x09) | (1 << 0x0A) | (1 << 0x0D))
+      "2000_201F": 0xFFFFFFFF|0, //~0
+      "2020_203F": 0xFFFFFFFF|0  //~0
     },
 
     // Forbidden characters:
@@ -3135,8 +3470,9 @@ var StringType = exclass({
     //   [U000A-U001F]
     //   [U2028-U2029]
     textline: {
-      lo: 0x00000200|0, // ((1 << 0x09))
-      hi: 0xFFFFFFFC|0  //~((1 << 0x00) | (1 << 0x01))
+      "0000_001F": 0x00000200|0, // ((1 << 0x09))
+      "2000_201F": 0xFFFFFFFF|0, //~0
+      "2020_203F": 0xFFFFFCFF|0  //~((1 << 0x08) | (1 << 0x09))
     }
   },
 
@@ -3189,8 +3525,9 @@ var StringType = exclass({
         var masks = this.masks[type];
         c.failIf("!" + c.declareData(null, isText) +
           "(" + v +
-            ", " + masks.lo + "|0" +
-            ", " + masks.hi + "|0" +
+            ", " + masks["0000_001F"] + "|0" +
+            ", " + masks["2000_201F"] + "|0" +
+            ", " + masks["2020_203F"] + "|0" +
           ")",
           c.error(c.str("InvalidText")));
       }
@@ -3202,16 +3539,13 @@ var StringType = exclass({
 
     return v;
   }
-});
-exmodel.addType(new StringType());
+}));
 
 // ============================================================================
-// [SchemaType - Char]
+// [xschema.types.char]
 // ============================================================================
 
-var CharType = exclass({
-  $extend: BaseType,
-
+xschema.addType(Type.extend({
   name: ["char"],
   type: "string",
 
@@ -3233,15 +3567,11 @@ var CharType = exclass({
 
     return v;
   }
-});
-exmodel.addType(new CharType());
+}));
 
 // ============================================================================
-// [SchemaType - BigInt]
+// [xschema.types.bigint]
 // ============================================================================
-
-var kBigIntMin = "-9223372036854775808"; // Min BIGINT.
-var kBigIntMax = "9223372036854775807";  // Max BIGINT.
 
 function isBigInt(s, min, max) {
   var len = s.length;
@@ -3294,11 +3624,9 @@ function isBigInt(s, min, max) {
 
   return true;
 }
-qutil.isBigInt = isBigInt;
+misc.isBigInt = isBigInt;
 
-var BigIntType = exclass({
-  $extend: BaseType,
-
+xschema.addType(Type.extend({
   name: ["bigint"],
   type: "string",
 
@@ -3345,15 +3673,14 @@ var BigIntType = exclass({
 
     return v;
   }
-});
-exmodel.addType(new BigIntType());
+}));
 
 // ============================================================================
-// [SchemaType - Color]
+// [xschema.types.color]
 // ============================================================================
 
 // \internal
-var ColorNames = {
+const ColorNames = freeze({
   aliceblue           : "#f0f8ff", antiquewhite        : "#faebd7",
   aqua                : "#00ffff", aquamarine          : "#7fffd4",
   azure               : "#f0ffff",
@@ -3430,8 +3757,8 @@ var ColorNames = {
   wheat               : "#f5deb3", white               : "#ffffff",
   whitesmoke          : "#f5f5f5",
   yellow              : "#ffff00", yellowgreen         : "#9acd32"
-};
-qutil.ColorNames = ColorNames;
+});
+misc.ColorNames = ColorNames;
 
 function isColor(s, cssNames, extraNames) {
   var len = s.length;
@@ -3445,7 +3772,7 @@ function isColor(s, cssNames, extraNames) {
       return false;
 
     for (var i = 1; i < len; i++) {
-      var c0 = s.charCodeAt(i);
+      c0 = s.charCodeAt(i);
       if (c0 < 48 || (c0 > 57 && ((c0 |= 0x20) < 97 || c0 > 102)))
         return false;
     }
@@ -3469,11 +3796,9 @@ function isColor(s, cssNames, extraNames) {
 
   return false;
 }
-qutil.isColor = isColor;
+misc.isColor = isColor;
 
-var ColorType = exclass({
-  $extend: BaseType,
-
+xschema.addType(Type.extend({
   name: ["color"],
   type: "string",
 
@@ -3505,11 +3830,10 @@ var ColorType = exclass({
     c.failIf(cond, c.error(c.str("InvalidColor")));
     return v;
   }
-});
-exmodel.addType(new ColorType());
+}));
 
 // ============================================================================
-// [SchemaType - CreditCard]
+// [xschema.types.creditcard]
 // ============================================================================
 
 function isCreditCard(s) {
@@ -3545,21 +3869,17 @@ function isCreditCard(s) {
 
   return "OK";
 }
-qutil.isCreditCard = isCreditCard;
+misc.isCreditCard = isCreditCard;
 
-var CreditCardType = exclass({
-  $extend: CustomType,
+xschema.addType(CustomType.extend({
   name: ["creditcard"],
-
   func: isCreditCard,
   fail: "func(@) === \"\"",
-
   error: "InvalidCreditCard"
-});
-exmodel.addType(new CreditCardType());
+}));
 
 // ============================================================================
-// [SchemaType - ISBN]
+// [xschema.types.isbn]
 // ============================================================================
 
 function isISBN(s) {
@@ -3608,11 +3928,9 @@ function isISBN(s) {
 
   return 0;
 }
-qutil.isISBN = isISBN;
+misc.isISBN = isISBN;
 
-var ISBNType = exclass({
-  $extend: BaseType,
-
+xschema.addType(Type.extend({
   name: ["isbn"],
   type: "string",
 
@@ -3638,11 +3956,10 @@ var ISBNType = exclass({
     c.failIf(cond, c.error(c.str("InvalidISBN")));
     return v;
   }
-});
-exmodel.addType(new ISBNType());
+}));
 
 // ============================================================================
-// [SchemaType - MAC Address]
+// [xschema.types.mac]
 // ============================================================================
 
 function isMAC(s, sep) {
@@ -3670,10 +3987,10 @@ function isMAC(s, sep) {
       return false;
   }
 }
-qutil.isMAC = isMAC;
+misc.isMAC = isMAC;
 
-var MACType = exclass({
-  $extend: BaseType,
+xschema.addType(Type.extend({
+  $extend: Type,
 
   name: ["mac"],
   type: "string",
@@ -3695,17 +4012,16 @@ var MACType = exclass({
     c.failIf(cond, c.error(c.str("InvalidMAC")));
     return v;
   }
-});
-exmodel.addType(new MACType());
+}));
 
 // ============================================================================
-// [SchemaType - IPV4 / IPV6]
+// [xschema.types.ip]
 // ============================================================================
 
 function isIP(s, allowPort) {
   return isIPV4(s, allowPort) || isIPV6(s, allowPort);
 }
-qutil.isIP = isIP;
+misc.isIP = isIP;
 
 function isIPV4(s, allowPort) {
   // The shortest possible IPV4 address is "W.X.Y.Z", which is 7 characters long.
@@ -3787,7 +4103,7 @@ function isIPV4(s, allowPort) {
 
   return true;
 }
-qutil.isIPV4 = isIPV4;
+misc.isIPV4 = isIPV4;
 
 function isIPV6(s, allowPort) {
   // The shortest possible IPV6 address is "::", which is 2 characters long.
@@ -3913,11 +4229,9 @@ function isIPV6(s, allowPort) {
 
   return true;
 }
-qutil.isIPV6 = isIPV6;
+misc.isIPV6 = isIPV6;
 
-var IPType = exclass({
-  $extend: BaseType,
-
+xschema.addType(Type.extend({
   name: ["ip", "ipv4", "ipv6"],
   type: "string",
 
@@ -3931,15 +4245,15 @@ var IPType = exclass({
     switch (type) {
       case "ip":
         err = "InvalidIP";
-        fn = qutil.isIP;
+        fn = misc.isIP;
         break;
       case "ipv4":
         err = "InvalidIPV4";
-        fn = qutil.isIPV4;
+        fn = misc.isIPV4;
         break;
       case "ipv6":
         err = "InvalidIPV6";
-        fn = qutil.isIPV6;
+        fn = misc.isIPV6;
         break;
       default:
         throwRuntimeError("Invalid type '" + type + "'");
@@ -3952,11 +4266,10 @@ var IPType = exclass({
     c.failIf(cond, c.error(c.str(err)));
     return v;
   }
-});
-exmodel.addType(new IPType());
+}));
 
 // ============================================================================
-// [SchemaType - UUID]
+// [xschema.types.uuid]
 // ============================================================================
 
 // The `brackets` argument can be one of:
@@ -4031,11 +4344,9 @@ function isUUID(s, brackets) {
   // Well formed UUID string, but has incorrect version.
   return -1;
 }
-qutil.isUUID = isUUID;
+misc.isUUID = isUUID;
 
-var UUIDType = exclass({
-  $extend: BaseType,
-
+xschema.addType(Type.extend({
   name: ["uuid"],
   type: "string",
 
@@ -4073,22 +4384,21 @@ var UUIDType = exclass({
     c.failIf(cond, c.error(c.str("InvalidUUID")));
     return v;
   }
-});
-exmodel.addType(new UUIDType());
+}));
 
 // ============================================================================
-// [SchemaType - DateTime]
+// [xschema.types.datetime]
 // ============================================================================
 
 // Days in a month, leap years have to be handled separately.
-//                (JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC)
-var DaysInMonth = [ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+//                  (JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC)
+const DaysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 // Leap seconds data.
 //
 // Every year has it's own data that is stored in a single number in a form 0xXY,
 // where X represents a leap second in June-30 and Y represents Dec-31.
-var LeapSecondDates = {
+const LeapSecondDates = {
   start: 1972,
   array: [
     /* 1972: */ 0x11, /* 1973: */ 0x01, /* 1974: */ 0x01, /* 1975: */ 0x01,
@@ -4104,7 +4414,7 @@ var LeapSecondDates = {
     /* 2012: */ 0x10, /* 2013: */ 0x00, /* 2014: */ 0x00, /* 2015: */ 0x10
   ]
 };
-qutil.LeapSecondDates = LeapSecondDates;
+misc.LeapSecondDates = LeapSecondDates;
 
 // \internal
 //
@@ -4157,16 +4467,12 @@ function isDateComponent(c) {
          c === 0x53 ;  // 'S' - Fractions of second.
 }
 
-// \function `data.util.isLeapYear(year)`
-//
 // Get whether the `year` is a leap year (ie it has 29th February).
 function isLeapYear(year) {
   return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0) ? 1 : 0;
 }
-qutil.isLeapYear = isLeapYear;
+misc.isLeapYear = isLeapYear;
 
-// \function `data.util.hasLeapSecond(year, month, day)`
-//
 // Get whether a date defined by `year`, `month`, and `day` has a leap second.
 // Please note that it's impossible to guess leap second in the future. This
 // function is mainly included to validate whether a date that has already
@@ -4191,7 +4497,7 @@ function isLeapSecondDate(year, month, date) {
 
   return (array[index] & msk) !== 0;
 }
-qutil.isLeapSecondDate = isLeapSecondDate;
+misc.isLeapSecondDate = isLeapSecondDate;
 
 // \internal
 //
@@ -4489,9 +4795,7 @@ var DateFactory = {
   }
 };
 
-var DateTimeType = exclass({
-  $extend: BaseType,
-
+xschema.addType(Type.extend({
   name: setToArray(DateFormats),
   type: "string",
 
@@ -4533,11 +4837,10 @@ var DateTimeType = exclass({
     c.failIf(cond, vErr);
     return v;
   }
-});
-exmodel.addType(new DateTimeType());
+}));
 
 // ============================================================================
-// [SchemaType - Object]
+// [xschema.types.object]
 // ============================================================================
 
 function addKeyToGroup(map, group, k) {
@@ -4559,9 +4862,7 @@ function addKeyToGroup(map, group, k) {
   }
 }
 
-var ObjectType = exclass({
-  $extend: BaseType,
-
+xschema.addType(Type.extend({
   name: ["object"],
   type: "object",
 
@@ -4639,15 +4940,15 @@ var ObjectType = exclass({
       uniqueSignatures[signature] = true;
     }
 
-    def.$pkMap       = freezeOrNoObject(pkMap);
-    def.$pkArray     = freezeOrNoArray(setToArray(pkMap));
-    def.$fkMap       = freezeOrNoObject(fkMap);
-    def.$fkArray     = freezeOrNoArray(setToArray(fkMap));
-    def.$idMap       = freezeOrNoObject(idMap);
-    def.$idArray     = freezeOrNoArray(setToArray(idMap));
-    def.$groupMap    = freezeOrNoObject(groupMap);
-    def.$uniqueArray = freezeOrNoArray(uniqueArray);
-    def.$uniqueMap   = freezeOrNoObject(uniqueMap);
+    def.$pkMap       = freezeOrEmpty(pkMap);
+    def.$pkArray     = freezeOrEmpty(setToArray(pkMap));
+    def.$fkMap       = freezeOrEmpty(fkMap);
+    def.$fkArray     = freezeOrEmpty(setToArray(fkMap));
+    def.$idMap       = freezeOrEmpty(idMap);
+    def.$idArray     = freezeOrEmpty(setToArray(idMap));
+    def.$groupMap    = freezeOrEmpty(groupMap);
+    def.$uniqueArray = freezeOrEmpty(uniqueArray);
+    def.$uniqueMap   = freezeOrEmpty(uniqueMap);
   },
 
   compileType: function(c, vOut, v, def) {
@@ -4704,7 +5005,7 @@ var ObjectType = exclass({
       for (i = 0; i < mandatoryProperties.length; i++) {
         eKey = mandatoryProperties[i];
         eDef = properties[eKey];
-        prop = getObjectProperty(eKey);
+        prop = compilePropertyAccess(eKey);
 
         var isUnsafeProperty = UnsafeProperties.indexOf(eKey) !== -1;
         var isDefaultProperty = eDef.$default !== undefined;
@@ -4767,7 +5068,7 @@ var ObjectType = exclass({
       for (i = 0; i < optionalProperties.length; i++) {
         eKey = optionalProperties[i];
         eDef = properties[eKey];
-        prop = getObjectProperty(eKey);
+        prop = compilePropertyAccess(eKey);
 
         c.nl();
 
@@ -4797,7 +5098,7 @@ var ObjectType = exclass({
       c.declareVariable("dummy");
       c.nl();
 
-      if (kTuneUseObjectKeysAsCount) {
+      if (kOptimizeObjectKeysAsCount) {
         c.emit("if (Object.keys(" + v + ").length !== " + vLen + ") {");
       }
       else {
@@ -4839,16 +5140,13 @@ var ObjectType = exclass({
       keys: keys
     };
   }
-});
-exmodel.addType(new ObjectType());
+}));
 
 // ============================================================================
-// [SchemaType - Map]
+// [xschema.types.map]
 // ============================================================================
 
-var MapType = exclass({
-  $extend: BaseType,
-
+xschema.addType(Type.extend({
   name: ["map"],
   type: "object",
 
@@ -4882,16 +5180,13 @@ var MapType = exclass({
     c.end();
     return vOut;
   }
-});
-exmodel.addType(new MapType());
+}));
 
 // ============================================================================
-// [SchemaType - Array]
+// [xschema.types.array]
 // ============================================================================
 
-var ArrayType = exclass({
-  $extend: BaseType,
-
+xschema.addType(Type.extend({
   name: ["array"],
   type: "array",
 
@@ -4949,15 +5244,12 @@ var ArrayType = exclass({
     c.end();
     return vOut;
   }
-});
-exmodel.addType(new ArrayType());
+}));
 
 // ============================================================================
 // [Exports]
 // ============================================================================
 
-$export[$as] = exmodel.freeze();
+$export[$as] = xschema.freeze();
 
-}).apply(this, typeof module === "object"
-  ? [require("exclass"), module, "exports"]
-  : [this.exclass, this, "exmodel"]);
+}).apply(this, typeof module === "object" ? [module, "exports"] : [this, "xschema"]);
