@@ -1,6 +1,6 @@
 {
   "name": "xschema",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "license": "Unlicense",
 
   "description": "High performance and extensible data processing library, including schema builder, data validator, and sanitizer.",

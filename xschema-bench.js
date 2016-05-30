@@ -25,7 +25,7 @@ const Utils = {
     return {
       name: test.name,
       time: (time[0] * 10000000 + time[1]) / 1000000
-    }
+    };
   },
 
   testAll: function(tests, spec) {
@@ -76,6 +76,68 @@ const SimpleSpec = {
     int1: 0,
     int2: 1,
     int3: 2
+  }
+};
+
+const NestedSpec = {
+  name: "NestedSpec",
+
+  XSchema: xschema.schema({
+    a: {
+      b: {
+        c: {
+          d: {
+            e: { $type: "bool" }
+          }
+        }
+      }
+    }
+  }),
+
+  JSONSchema: {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "object",
+        "properties": {
+          "b": {
+            "type": "object",
+            "properties": {
+              "c": {
+                "type": "object",
+                "properties": {
+                  "d": {
+                    "type": "object",
+                    "properties": {
+                      "e": {
+                        "type": "boolean"
+                      },
+                    },
+                    "additionalProperties": false
+                  },
+                },
+                "additionalProperties": false
+              },
+            },
+            "additionalProperties": false
+          },
+        },
+        "additionalProperties": false
+      },
+    },
+    "additionalProperties": false
+  },
+
+  Data: {
+    a: {
+      b: {
+        c: {
+          d: {
+            e: true
+          }
+        }
+      }
+    }
   }
 };
 
@@ -242,5 +304,14 @@ Tests.push({
   }
 });
 
-Utils.testAll(Tests, SimpleSpec);
-Utils.testAll(Tests, PersonSpec);
+// ============================================================================
+// [Main]
+// ============================================================================
+
+function main() {
+  Utils.testAll(Tests, SimpleSpec);
+  Utils.testAll(Tests, NestedSpec);
+  Utils.testAll(Tests, PersonSpec);
+}
+
+main();

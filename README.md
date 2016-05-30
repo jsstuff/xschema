@@ -108,36 +108,50 @@ The following data types are built-in:
 Type and Aliases         | JS Type    | Description
 :----------------------- | :--------- | :---------------------------------------
 `any`                    | `any`      | Any type (variant)
-`bool`, `boolean`        | `boolean`  | Boolean
+`array`                  | `array`    | Array type
+`map`                    | `object`   | Map type
+`object`                 | `object`   | Object type (default)
+`boolean`, `bool`        | `boolean`  | Boolean
 `double`, `number`       | `number`   | Double precision floating point number
 `numeric`                | `number`   | Double precision, used to distinguish from `number` when specifying a DB columns
 `int8`                   | `number`   | 8-bit signed integer
 `uint8`                  | `number`   | 8-bit unsigned integer
 `int16`, `short`         | `number`   | 16-bit signed integer
 `uint16`, `ushort`       | `number`   | 16-bit unsigned integer
+`int24`                  | `number`   | 24-bit signed integer
+`uint24`                 | `number`   | 24-bit unsigned integer
 `int32`                  | `number`   | 32-bit signed integer
 `uint32`                 | `number`   | 32-bit unsigned integer
-`int`, `integer`         | `number`   | 53-bit signed integer (safe integer)
-`uint`                   | `number`   | 53-bit unsigned integer (safe integer)
+`int53`                  | `number`   | 53-bit signed integer (safe integer)
+`uint53`                 | `number`   | 53-bit unsigned integer (safe integer)
+`int`, `integer`         | `number`   | signed integer (unsafe integer)
+`uint`                   | `number`   | unsigned integer (unsafe integer)
 `lat`, `latitude`        | `number`   | Latitude value (-90...90)
 `lon`, `longitude`       | `number`   | Longitude value (-180...180)
 `char`                   | `string`   | String containing exactly 1 character
 `string`                 | `string`   | Any string
-`text`                   | `string`   | A restricted multi-line string
-`textline`               | `string`   | A restricted single-line string
-`bigint`                 | `string`   | A string that contains a 64-bit integer
-`color`                  | `string`   | A color values specified by hash `"#RRGGBB"` or a CSS name
-`mac`                    | `string`   | MAC address
-`ip`                     | `string`   | IPV4 or IPV6 address
-`ipv4`                   | `string`   | IPV4 address
-`ipv6`                   | `string`   | IPV6 address
+`text`                   | `string`   | Restricted multi-line string
+`textline`               | `string`   | Restricted single-line string
+`bigint`                 | `string`   | String that contains integer of unlimited precision
+`int64`                  | `string`   | Bigint limited to 64 bits (signed)
+`uint64`                 | `string`   | Bigint limited to 64-bits (unsigned)
+`time`                   | `string`   | Time without milliseconds
+`time-ms`                | `string`   | Time with milliseconds (ms)
+`time-us`                | `string`   | Time with microseconds (μs)
 `date`                   | `string`   | Date
 `datetime`               | `string`   | Date and time without milliseconds
 `datetime-ms`            | `string`   | Date and time with milliseconds (ms)
 `datetime-us`            | `string`   | Date and time with microseconds (μs)
-`map`                    | `object`   | Map type
-`object`                 | `object`   | Object type, default if `$type` is not specified
-`array`                  | `array`    | Array type
+`color`                  | `string`   | Color values specified by `"#RGB"`, `"#RRGGBB"`, or a CSS name
+`creditcard`             | `string`   | Credit-card number
+`mac`                    | `string`   | MAC address
+`ip`                     | `string`   | IPV4 or IPV6 address
+`ipv4`                   | `string`   | IPV4 address
+`ipv6`                   | `string`   | IPV6 address
+`isbn`                   | `string`   | ISBN identifier (either ISBN-10 or ISBN-13)
+`isbn10`                 | `string`   | ISBN-10 identifier
+`isbn13`                 | `string`   | ISBN-13 identifier
+`uuid`                   | `string`   | UUID or GUID
 
 
 Any
@@ -316,7 +330,7 @@ Directive Name           | Value      | Default | Description
 :----------------------- | :--------- | :------ | :-----------------------------
 `$null`                  | `bool`     | `false` | Specifies if the value can be `null`
 `$empty`                 | `bool`     | `false` | Specifies if the string can be an empty
-`$allowPort`             | `bool`     | `false` | Specifies id port is also allowed
+`$port`                  | `bool`     | `false` | Specifies if the IP address can contain a port number
 
 
 UUID

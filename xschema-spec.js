@@ -1,32 +1,30 @@
 // xschema.js <https://github.com/exjs/xschema>
 "use strict";
 
-var assert = require("assert");
-var xschema = require("./xschema");
+const assert = require("assert");
+const xschema = require("./xschema");
 
 // ============================================================================
 // [Helpers]
 // ============================================================================
 
-var cloneDeep = xschema.misc.cloneDeep;
-var equals = xschema.misc.equals;
-var printableSchema = xschema.misc.printableSchema;
+const cloneDeep = xschema.misc.cloneDeep;
+const equals = xschema.misc.equals;
+const printableSchema = xschema.misc.printableSchema;
 
 function sortedArrayOfArrays(arr) {
   arr = arr.slice();
-
   arr.sort(function(a, b) {
-    var aVal = a.join("|");
-    var bVal = b.join("|");
+    const aVal = a.join("|");
+    const bVal = b.join("|");
 
     return aVal < bVal ? -1 : aVal === bVal ? 0 : 1;
   });
-
   return arr;
 }
 
 function printableOptions(options) {
-  var arr = [];
+  const arr = [];
 
   if ((options & xschema.kExtractAll) === xschema.kExtractTop)
     arr.push("kExtractTop");
@@ -134,7 +132,7 @@ function assertThrow(fn) {
 // [Tests]
 // ============================================================================
 
-describe("exmodel", function() {
+describe("xschema", function() {
   // --------------------------------------------------------------------------
   // [Utilities]
   // --------------------------------------------------------------------------
@@ -279,6 +277,39 @@ describe("exmodel", function() {
     assert(xschema.misc.toCamelCase("THIS_IsSTRING")  === "thisIsString");
   });
 
+  it("should test xschema.misc.isBigInt", function() {
+    assert(xschema.misc.isBigInt("-99999999999999999999999") === true);
+    assert(xschema.misc.isBigInt("0"                       ) === true);
+    assert(xschema.misc.isBigInt("999999999999999999999999") === true);
+  });
+
+  it("should test xschema.misc.compareBigInt", function() {
+    assert(xschema.misc.compareBigInt("0", "0"             ) ===  0);
+    assert(xschema.misc.compareBigInt("1", "1"             ) ===  0);
+    assert(xschema.misc.compareBigInt("-1", "-1"           ) ===  0);
+
+    assert(xschema.misc.compareBigInt("-1", "1"            ) === -1);
+    assert(xschema.misc.compareBigInt("1", "-1"            ) ===  1);
+
+    assert(xschema.misc.compareBigInt("1", "99999999999999") === -1);
+    assert(xschema.misc.compareBigInt("1", "-9999999999999") ===  1);
+
+    assert(xschema.misc.compareBigInt("-9999999999999", "1") === -1);
+    assert(xschema.misc.compareBigInt("99999999999999", "1") ===  1);
+
+    assert(xschema.misc.compareBigInt("1", "2"             ) === -1);
+    assert(xschema.misc.compareBigInt("2", "1"             ) ===  1);
+
+    assert(xschema.misc.compareBigInt("1", "99"            ) === -1);
+    assert(xschema.misc.compareBigInt("99", "1"            ) ===  1);
+
+    assert(xschema.misc.compareBigInt("1", "99999999999999") === -1);
+    assert(xschema.misc.compareBigInt("99999999999999", "1") ===  1);
+
+    assert(xschema.misc.compareBigInt("-2", "-1"           ) === -1);
+    assert(xschema.misc.compareBigInt("-1", "-2"           ) ===  1);
+  });
+
   // --------------------------------------------------------------------------
   // [Enum]
   // --------------------------------------------------------------------------
@@ -414,8 +445,8 @@ describe("exmodel", function() {
     assert(xschema.enum({ A:-1.1                   }).$.safe === false);
     assert(xschema.enum({ A: 1.1                   }).$.safe === false);
     assert(xschema.enum({ A: 1234.1234             }).$.safe === false);
-    assert(xschema.enum({ A: xschema.kSafeIntMin - 2 }).$.safe === false);
-    assert(xschema.enum({ A: xschema.kSafeIntMax + 2 }).$.safe === false);
+    assert(xschema.enum({ A: xschema.kInt53Min - 2 }).$.safe === false);
+    assert(xschema.enum({ A: xschema.kInt53Max + 2 }).$.safe === false);
 
     // Enum - using reserved property names (Object.prototype properties).
     var ReservedDef = {
@@ -440,7 +471,7 @@ describe("exmodel", function() {
     assert(ReservedEnum.keyToValue("valueOf"             ) === 5);
     assert(ReservedEnum.keyToValue("propertyIsEnumerable") === undefined);
 
-    // Ban keys that collide with members exmodel.enum() provides.
+    // Ban keys that collide with members xschema.enum() provides.
     assertThrow(function() { xschema.enum({ $         : 0 }); });
     assertThrow(function() { xschema.enum({ hasKey    : 0 }); });
     assertThrow(function() { xschema.enum({ hasValue  : 0 }); });
@@ -467,8 +498,8 @@ describe("exmodel", function() {
 
   it("should validate null and fail if undefined", function() {
     ["bool", "int", "number", "string", "text", "date", "datetime", "object"].forEach(function(type) {
-      pass(null     , xschema.schema({ $type: type, $null: true      }));
-      fail(undefined, xschema.schema({ $type: type, $null: true      }));
+      pass(null     , xschema.schema({ $type: type, $nullable: true }));
+      fail(undefined, xschema.schema({ $type: type, $nullable: true }));
     });
   });
 
@@ -517,40 +548,68 @@ describe("exmodel", function() {
   it("should validate number - int", function() {
     var def = xschema.schema({ $type: "int" });
 
-    var passData = [0, 1, -1];
+    var passData = [0, 1, -1, 1152921504606847000, -1152921504606847000, 1.7976931348623157e+308, -1.7976931348623157e+308];
     var failData = [false, true, "", "0", "string", {}, [], 0.1, -0.23211, Infinity, -Infinity, NaN];
 
     passData.forEach(function(value) { pass(value, def); });
     failData.forEach(function(value) { fail(value, def); });
   });
 
+  it("should validate number - uint", function() {
+    var def = xschema.schema({ $type: "uint" });
+
+    var passData = [0, 1, 1152921504606847000, 1.7976931348623157e+308];
+    var failData = [false, true, "", "0", "string", {}, [], 0.1, -0.23211, -1152921504606847000, -1.7976931348623157e+308, Infinity, -Infinity, NaN];
+
+    passData.forEach(function(value) { pass(value, def); });
+    failData.forEach(function(value) { fail(value, def); });
+  });
+
   it("should validate number - intxx", function() {
-    pass(-128       , xschema.schema({ $type: "int8"  }));
-    pass( 127       , xschema.schema({ $type: "int8"  }));
-    pass( 255       , xschema.schema({ $type: "uint8" }));
+    pass(-128             , xschema.schema({ $type: "int8"   }));
+    pass( 127             , xschema.schema({ $type: "int8"   }));
+    pass( 255             , xschema.schema({ $type: "uint8"  }));
 
-    pass(-32768     , xschema.schema({ $type: "int16"  }));
-    pass( 32767     , xschema.schema({ $type: "int16"  }));
-    pass( 65535     , xschema.schema({ $type: "uint16" }));
+    pass(-32768           , xschema.schema({ $type: "int16"  }));
+    pass( 32767           , xschema.schema({ $type: "int16"  }));
+    pass( 65535           , xschema.schema({ $type: "uint16" }));
 
-    pass(-2147483648, xschema.schema({ $type: "int32"  }));
-    pass( 2147483647, xschema.schema({ $type: "int32"  }));
-    pass( 4294967295, xschema.schema({ $type: "uint32" }));
+    pass(-8388608         , xschema.schema({ $type: "int24"  }));
+    pass( 8388607         , xschema.schema({ $type: "int24"  }));
+    pass( 16777215        , xschema.schema({ $type: "uint24" }));
 
-    fail(-129       , xschema.schema({ $type: "int8"  }));
-    fail( 128       , xschema.schema({ $type: "int8"  }));
-    fail(-1         , xschema.schema({ $type: "uint8" }));
-    fail( 256       , xschema.schema({ $type: "uint8" }));
+    pass(-2147483648      , xschema.schema({ $type: "int32"  }));
+    pass( 2147483647      , xschema.schema({ $type: "int32"  }));
+    pass( 4294967295      , xschema.schema({ $type: "uint32" }));
 
-    fail(-32769     , xschema.schema({ $type: "int16"  }));
-    fail( 32768     , xschema.schema({ $type: "int16"  }));
-    fail(-1         , xschema.schema({ $type: "uint16" }));
-    fail( 65536     , xschema.schema({ $type: "uint16" }));
+    pass(-9007199254740991, xschema.schema({ $type: "int53"  }));
+    pass( 9007199254740991, xschema.schema({ $type: "int53"  }));
+    pass( 9007199254740991, xschema.schema({ $type: "uint53" }));
 
-    fail(-2147483649, xschema.schema({ $type: "int32"  }));
-    fail( 2147483648, xschema.schema({ $type: "int32"  }));
-    fail(-1         , xschema.schema({ $type: "uint32" }));
-    fail( 4294967296, xschema.schema({ $type: "uint32" }));
+    fail(-129             , xschema.schema({ $type: "int8"   }));
+    fail( 128             , xschema.schema({ $type: "int8"   }));
+    fail(-1               , xschema.schema({ $type: "uint8"  }));
+    fail( 256             , xschema.schema({ $type: "uint8"  }));
+
+    fail(-32769           , xschema.schema({ $type: "int16"  }));
+    fail( 32768           , xschema.schema({ $type: "int16"  }));
+    fail(-1               , xschema.schema({ $type: "uint16" }));
+    fail( 65536           , xschema.schema({ $type: "uint16" }));
+
+    fail(-8388609         , xschema.schema({ $type: "int24"  }));
+    fail( 8388608         , xschema.schema({ $type: "int24"  }));
+    fail(-1               , xschema.schema({ $type: "uint24" }));
+    fail( 16777216        , xschema.schema({ $type: "uint24" }));
+
+    fail(-2147483649      , xschema.schema({ $type: "int32"  }));
+    fail( 2147483648      , xschema.schema({ $type: "int32"  }));
+    fail(-1               , xschema.schema({ $type: "uint32" }));
+    fail( 4294967296      , xschema.schema({ $type: "uint32" }));
+
+    fail(-9007199254740992, xschema.schema({ $type: "int53"  }));
+    fail( 9007199254740992, xschema.schema({ $type: "int53"  }));
+    fail(-1               , xschema.schema({ $type: "uint53" }));
+    fail( 9007199254740992, xschema.schema({ $type: "uint53" }));
   });
 
   it("should validate number - double", function() {
@@ -563,7 +622,7 @@ describe("exmodel", function() {
     failData.forEach(function(value) { fail(value, def); });
   });
 
-  it("should validate number - lat/lon", function() {
+  it("should validate number - lat / lon", function() {
     var defLat = xschema.schema({ $type: "lat" });
     var defLon = xschema.schema({ $type: "lon" });
 
@@ -595,7 +654,7 @@ describe("exmodel", function() {
     });
   });
 
-  it("should validate number - $min/$max", function() {
+  it("should validate number - $min / $max", function() {
     var types = [
       "int", "int8", "int16", "int32", "double", "number", "numeric"
     ];
@@ -613,6 +672,21 @@ describe("exmodel", function() {
       fail( 0, xschema.schema({ $type: type, $min: 0, $minExclusive: true }));
       fail( 5, xschema.schema({ $type: type, $max: 0, $maxExclusive: true }));
     });
+  });
+
+  it("should validate number - $min / $max (invalid)", function() {
+    assertThrow(function() { xschema.schema({ $type: "int", $min: "1" }); });
+    assertThrow(function() { xschema.schema({ $type: "int", $max: "1" }); });
+    assertThrow(function() { xschema.schema({ $type: "int", $min: "x" }); });
+    assertThrow(function() { xschema.schema({ $type: "int", $max: "x" }); });
+  });
+
+  it("should validate number - $min / $max (exclusive)", function() {
+    pass(9, xschema.schema({ $type: "int", $min: 9, $minExclusive: false }));
+    fail(9, xschema.schema({ $type: "int", $min: 9, $minExclusive: true  }));
+
+    pass(9, xschema.schema({ $type: "int", $max: 9, $maxExclusive: false }));
+    fail(9, xschema.schema({ $type: "int", $max: 9, $maxExclusive: true  }));
   });
 
   it("should validate number - $divisibleBy", function() {
@@ -829,8 +903,8 @@ describe("exmodel", function() {
   // [SchemaType - BigInt]
   // --------------------------------------------------------------------------
 
-  it("should validate bigint", function() {
-    var def = xschema.schema({ $type: "bigint" });
+  it("should validate bigint - int64", function() {
+    var def = xschema.schema({ $type: "int64" });
 
     var passData = [
       "0",
@@ -910,6 +984,46 @@ describe("exmodel", function() {
     failData.forEach(function(data) {
       fail(data, def);
     });
+  });
+
+  it("should validate bigint - $min / $max", function() {
+    pass("1234" , xschema.schema({ $type: "bigint", $min: "-1"   , $max: "9999"  }));
+    pass("1234" , xschema.schema({ $type: "bigint", $min: "-1"   , $max: "1234"  }));
+    pass("1234" , xschema.schema({ $type: "bigint", $min: "1233" , $max: "1235"  }));
+    pass("1234" , xschema.schema({ $type: "bigint", $min: "1234" , $max: "1234"  }));
+
+    fail("1234" , xschema.schema({ $type: "bigint", $min: "-1234", $max: "1233"  }));
+    fail("1234" , xschema.schema({ $type: "bigint", $min: "-1"   , $max: "1233"  }));
+    fail("1234" , xschema.schema({ $type: "bigint", $min: "0"    , $max: "1233"  }));
+    fail("1234" , xschema.schema({ $type: "bigint", $min: "1235" , $max: "1235"  }));
+    fail("1234" , xschema.schema({ $type: "bigint", $min: "1235" , $max: "9999"  }));
+
+    pass("-1234", xschema.schema({ $type: "bigint", $min: "-1235", $max: "-1"    }));
+    pass("-1234", xschema.schema({ $type: "bigint", $min: "-1235", $max: "-1234" }));
+    pass("-1234", xschema.schema({ $type: "bigint", $min: "-1234", $max: "-1234" }));
+    pass("-1234", xschema.schema({ $type: "bigint", $min: "-1234", $max: "0"     }));
+    pass("-1234", xschema.schema({ $type: "bigint", $min: "-1234", $max: "1234"  }));
+
+    fail("-1234", xschema.schema({ $type: "bigint", $min: "-1233", $max: "-1231" }));
+    fail("-1234", xschema.schema({ $type: "bigint", $min: "-1233", $max: "-1"    }));
+    fail("-1234", xschema.schema({ $type: "bigint", $min: "-1233", $max: "0"     }));
+    fail("-1234", xschema.schema({ $type: "bigint", $min: "-1233", $max: "1234"  }));
+    fail("-1234", xschema.schema({ $type: "bigint", $min: "-9999", $max: "-1235" }));
+    fail("-1234", xschema.schema({ $type: "bigint", $min: "-1235", $max: "-1235" }));
+  });
+
+  it("should validate bigint - $min / $max (exclusive)", function() {
+    pass("1234" , xschema.schema({ $type: "bigint", $min: "1234" , $minExclusive: false }));
+    fail("1234" , xschema.schema({ $type: "bigint", $min: "1234" , $minExclusive: true  }));
+
+    pass("1234" , xschema.schema({ $type: "bigint", $max: "1234" , $maxExclusive: false }));
+    fail("1234" , xschema.schema({ $type: "bigint", $max: "1234" , $maxExclusive: true  }));
+
+    pass("-1234", xschema.schema({ $type: "bigint", $min: "-1234", $minExclusive: false }));
+    fail("-1234", xschema.schema({ $type: "bigint", $min: "-1234", $minExclusive: true  }));
+
+    pass("-1234", xschema.schema({ $type: "bigint", $max: "-1234", $maxExclusive: false }));
+    fail("-1234", xschema.schema({ $type: "bigint", $max: "-1234", $maxExclusive: true  }));
   });
 
   it("should validate bigint - $allowed", function() {
@@ -1159,8 +1273,8 @@ describe("exmodel", function() {
     ];
 
     passData.forEach(function(data) {
-      var correctFormat = String(data.length);
-      var invalidFormat = correctFormat === "10" ? "13" : "10";
+      var correctFormat = data.length === 10 ? "ISBN-10" : "ISBN-13";
+      var invalidFormat = data.length === 10 ? "ISBN-13" : "ISBN-10";
 
       pass(data, xschema.schema({ $type: "isbn" }));
       pass(data, xschema.schema({ $type: "isbn" }));
@@ -1171,8 +1285,8 @@ describe("exmodel", function() {
 
     failData.forEach(function(data) {
       fail(data, xschema.schema({ $type: "isbn" }));
-      fail(data, xschema.schema({ $type: "isbn", $format: "10" }));
-      fail(data, xschema.schema({ $type: "isbn", $format: "13" }));
+      fail(data, xschema.schema({ $type: "isbn", $format: "ISBN-10" }));
+      fail(data, xschema.schema({ $type: "isbn", $format: "ISBN-13" }));
     });
   });
 
@@ -1181,19 +1295,21 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate mac", function() {
-    var MAC  = xschema.schema({ $type: "mac" });
-    var MACd = xschema.schema({ $type: "mac", $separator: "-" });
+    const MAC        = xschema.schema({ $type: "mac" });
+    const MAC_hyphen = xschema.schema({ $type: "mac", $separator: "-" });
+    const MAC_none   = xschema.schema({ $type: "mac", $separator: ""  });
 
-    pass("00:00:00:00:00:00", MAC);
-    pass("01:02:03:04:05:06", MAC);
-    pass("a1:a2:a3:a4:a5:a6", MAC);
-    pass("F1:F2:F3:F4:F5:F6", MAC);
-    pass("ab:cd:ef:ab:cd:ef", MAC);
-    pass("aB:cD:eF:aB:cD:eF", MAC);
-    pass("Ab:Cd:Ef:Ab:Cd:Ef", MAC);
-    pass("AB:CD:EF:AB:CD:EF", MAC);
+    pass("00:00:00:00:00:00" , MAC);
+    pass("01:02:03:04:05:06" , MAC);
+    pass("a1:a2:a3:a4:a5:a6" , MAC);
+    pass("F1:F2:F3:F4:F5:F6" , MAC);
+    pass("ab:cd:ef:ab:cd:ef" , MAC);
+    pass("aB:cD:eF:aB:cD:eF" , MAC);
+    pass("Ab:Cd:Ef:Ab:Cd:Ef" , MAC);
+    pass("AB:CD:EF:AB:CD:EF" , MAC);
 
-    pass("ab-cd-ef-ab-cd-ef", MACd);
+    pass("ab-cd-ef-ab-cd-ef" , MAC_hyphen);
+    pass("abcdefabcdef"      , MAC_none);
 
     fail(true                , MAC);
     fail("invalid"           , MAC);
@@ -1235,14 +1351,8 @@ describe("exmodel", function() {
   // --------------------------------------------------------------------------
 
   it("should validate ip - ipv4", function() {
-    var IPV4 = xschema.schema({
-      $type: "ipv4"
-    });
-
-    var IPV4AllowPort = xschema.schema({
-      $type: "ipv4",
-      $allowPort: true
-    });
+    var IPV4 = xschema.schema({ $type: "ipv4" });
+    var IPV4AllowPort = xschema.schema({ $type: "ipv4", $port: true });
 
     var ipList = [
       "0.0.0.0",
@@ -1307,14 +1417,8 @@ describe("exmodel", function() {
   });
 
   it("should validate ip - ipv6", function() {
-    var IPV6 = xschema.schema({
-      $type: "ipv6"
-    });
-
-    var IPV6AllowPort = xschema.schema({
-      $type: "ipv6",
-      $allowPort: true
-    });
+    var IPV6 = xschema.schema({ $type: "ipv6" });
+    var IPV6AllowPort = xschema.schema({ $type: "ipv6", $port: true });
 
     var ipList = [
       "137F:F137:7F13:37F1:137F:F137:7F13:37F1",
@@ -1739,7 +1843,7 @@ describe("exmodel", function() {
       d: { $type: "string" },
       nested: {
         a: { $type: "int", $min: 5, $max: 10 },
-        b: { $type: "int", $null: true }
+        b: { $type: "int", $nullable: true }
       }
     });
 
@@ -1763,7 +1867,7 @@ describe("exmodel", function() {
       d: { $type: "string", $optional: true },
       nested: {
         a: { $type: "int", $min: 5, $max: 10, $optional: true },
-        b: { $type: "int", $null: true      , $optional: true }
+        b: { $type: "int", $nullable: true  , $optional: true }
       }
     });
 
@@ -1827,7 +1931,7 @@ describe("exmodel", function() {
       e: {}
     });
 
-    // exmodel.js should always copy all defaults.
+    // xschema should always copy all defaults.
     assert(xschema.process({}, def, 0, null).e !==
            xschema.process({}, def, 0, null).e);
   });
@@ -1929,7 +2033,7 @@ describe("exmodel", function() {
 
     var def1 = xschema.schema({
       $type: "map",
-      $null: true,
+      $nullable: true,
       $data: {
         $type: "any"
       }
@@ -1941,10 +2045,10 @@ describe("exmodel", function() {
 
     var def2 = xschema.schema({
       $type: "map",
-      $null: true,
+      $nullable: true,
       $data: {
         $type: "any",
-        $null: true
+        $nullable: true
       }
     });
 
@@ -2000,7 +2104,7 @@ describe("exmodel", function() {
           $type: "array",
           $data: {
             $type: type,
-            $null: canBeNull ? true : false
+            $nullable: canBeNull ? true : false
           }
         });
 
@@ -2019,11 +2123,11 @@ describe("exmodel", function() {
     var def = xschema.schema({
       $type: "array",
       $data: {
-        active: { $type: "bool", $null: true },
+        active: { $type: "bool", $nullable: true },
         nested: {
           position: { $type: "int" },
           nested: {
-            $null: true,
+            $nullable: true,
             text: { $type: "string" }
           }
         }
@@ -2113,11 +2217,11 @@ describe("exmodel", function() {
     pass({ a: [0] }, def1);
   });
 
-  it("should handle shortcut '[x..y]'", function() {
-    var Exact  = xschema.schema({ $type: "int[2]"    });
-    var Min    = xschema.schema({ $type: "int[2..]"  });
-    var Max    = xschema.schema({ $type: "int[..2]"  });
-    var MinMax = xschema.schema({ $type: "int[2..4]" });
+  it("should handle shortcut '[min:max]'", function() {
+    var Exact  = xschema.schema({ $type: "int[2]"   });
+    var Min    = xschema.schema({ $type: "int[2:]"  });
+    var Max    = xschema.schema({ $type: "int[:2]"  });
+    var MinMax = xschema.schema({ $type: "int[2:4]" });
 
     fail([]             , Exact);
     fail([0]            , Exact);
@@ -2150,9 +2254,9 @@ describe("exmodel", function() {
       b: { $type: "int[]?" }
     });
 
-    pass({ a: 0, b: []   }, def);
-    pass({ a: 0, b: [0]  }, def);
-    pass({ a: 0, b: null }, def);
+    pass({ a: 0, b: []        }, def);
+    pass({ a: 0, b: [0]       }, def);
+    pass({ a: 0, b: null      }, def);
 
     fail({ a: 0               }, def);
     fail({ a: null, b: []     }, def);
@@ -2179,6 +2283,62 @@ describe("exmodel", function() {
     fail({ a: 0, b: ["s"]     }, def);
   });
 
+  it("should handle shortcut '[][]'", function() {
+    var def = xschema.schema({
+      $type: "int[][]"
+    });
+
+    pass([], def);
+    pass([[1, 2], [3, 4, 5]], def);
+
+    fail(null, def);
+    fail([1, 2], def);
+    fail([[1, 2], [[]]], def);
+  });
+
+  it("should handle shortcut '[][x]'", function() {
+    var def = xschema.schema({
+      $type: "int[][2]"
+    });
+
+    pass([], def);
+    pass([[1, 2], [3, 4]], def);
+
+    fail(null, def);
+    fail([1, 2], def);
+    fail([[1, 2, 3]], def);
+  });
+
+  it("should handle shortcut '[x][]'", function() {
+    var def = xschema.schema({
+      $type: "int[2][]"
+    });
+
+    pass([[], []], def);
+    pass([[1], [2, 3, 4]], def);
+
+    fail(null, def);
+    fail([], def);
+    fail([[]], def);
+    fail([[1]], def);
+    fail([[1], [2], [3], [4]], def);
+  });
+
+  it("should handle shortcut '[x][y]'", function() {
+    var def = xschema.schema({
+      $type: "int[2][3]"
+    });
+
+    pass([[1, 2, 3], [4, 5, 6]], def);
+
+    fail(null, def);
+    fail([], def);
+    fail([[], []], def);
+    fail([[1], [2]], def);
+    fail([[1, 2, 3, 5], [5, 6, 7]], def);
+    fail([[1, 2, 3], [4, 5, 6, 7]], def);
+  });
+
   it("should handle shortcut (invalid)", function() {
     assertThrow(function() { xschema.schema({ $type: "int??"    }); });
     assertThrow(function() { xschema.schema({ $type: "int??[]"  }); });
@@ -2198,11 +2358,11 @@ describe("exmodel", function() {
     function fnStringBin(value) { return value === "aaa"; }
     function fnStringMsg(value) { return value === "aaa" ? true : "This has to be 'aaa'"; }
 
-    pass(42, xschema.schema({ $type: "int"   , $fn: fnIntBin }));
-    fail(43, xschema.schema({ $type: "int"   , $fn: fnIntBin }));
+    pass(42   , xschema.schema({ $type: "int"   , $fn: fnIntBin }));
+    fail(43   , xschema.schema({ $type: "int"   , $fn: fnIntBin }));
 
-    pass(42, xschema.schema({ $type: "int"   , $fn: fnIntMsg }));
-    fail(43, xschema.schema({ $type: "int"   , $fn: fnIntMsg }));
+    pass(42   , xschema.schema({ $type: "int"   , $fn: fnIntMsg }));
+    fail(43   , xschema.schema({ $type: "int"   , $fn: fnIntMsg }));
 
     pass("aaa", xschema.schema({ $type: "string", $fn: fnStringBin }));
     fail("aa" , xschema.schema({ $type: "string", $fn: fnStringBin }));
@@ -2462,7 +2622,7 @@ describe("exmodel", function() {
   // [Access]
   // --------------------------------------------------------------------------
 
-  it("should validate access rights - write one", function() {
+  it("should validate access control - write one", function() {
     var def = xschema.schema({
       a: { $type: "bool"     , $r: "*", $w: "basic" },
       b: { $type: "int"      , $r: "*", $w: "basic" },
@@ -2479,18 +2639,18 @@ describe("exmodel", function() {
       e: ["test"]
     };
 
-    // `null` disables access rights checking (the default).
+    // `null` disables access control checking (the default).
     pass(data, def, xschema.kNoOptions, null, data);
     pass(data, def, xschema.kNoOptions, { basic: true, extra: true }, data);
 
-    // Empty object means enabled access rights checks, but no access rights.
+    // Empty object means enabled access control checks, but no access control.
     fail(data, def, xschema.kNoOptions, {});
 
-    // Incomplete access rights.
+    // Incomplete access control.
     fail(data, def, xschema.kNoOptions, { basic: true });
     fail(data, def, xschema.kNoOptions, { extra: true });
 
-    // Delta mode cares only about access rights required by the fields specified.
+    // Delta mode cares only about access control required by the fields specified.
     pass({ a: true                        }, def, xschema.kDeltaMode, { basic: true });
     pass({ a: true, b: 0                  }, def, xschema.kDeltaMode, { basic: true });
     pass({ a: true, b: 0, c: "s"          }, def, xschema.kDeltaMode, { basic: true });
@@ -2507,7 +2667,7 @@ describe("exmodel", function() {
     fail({ a: true, b: 0, c: "s"          }, def, xschema.kDeltaMode, { extra: true });
   });
 
-  it("should validate access rights - write a|b", function() {
+  it("should validate access control - write a|b", function() {
     var def = xschema.schema({
       a: { $type: "int", $r: "*", $w: "a"   },
       b: { $type: "int", $r: "*", $w: "a|b" },
@@ -2522,7 +2682,7 @@ describe("exmodel", function() {
       d: 3
     };
 
-    // `null` disables access rights checking (the default).
+    // `null` disables access control checking (the default).
     pass(data, def, xschema.kNoOptions, null);
     pass(data, def, xschema.kNoOptions, { a: true, b: true });
     pass(data, def, xschema.kNoOptions, { a: true, c: true });
@@ -2542,7 +2702,7 @@ describe("exmodel", function() {
     fail({ d: 0 }, def, xschema.kDeltaMode, { a: true });
   });
 
- it("should validate access rights - write inherit", function() {
+  it("should validate access control - write inherit", function() {
     var def = xschema.schema({
       $r: "*", $w: "user|admin",
       nested: {
@@ -2624,7 +2784,7 @@ describe("exmodel", function() {
     fail(data4, def, xschema.kDeltaMode, { admin: true, user: true });
   });
 
-  it("should validate access rights - invalid expression ($r / $w)", function() {
+  it("should validate access control - invalid expression ($r / $w)", function() {
     var invalid = [
       "__proto__", "**",
       "|", " |", "| ", "||", " || ",
@@ -2652,7 +2812,7 @@ describe("exmodel", function() {
       d: { $type: "string" },
       nested: {
         a: { $type: "int", $min: 5, $max: 10 },
-        b: { $type: "int", $null: true }
+        b: { $type: "int", $nullable: true }
       }
     });
 
@@ -2668,8 +2828,6 @@ describe("exmodel", function() {
     };
 
     var out = null;
-    var err;
-
     try {
       out = xschema.process(data, def, xschema.kAccumulateErrors);
     }
@@ -2691,6 +2849,6 @@ describe("exmodel", function() {
 
   it("should refuse schema with some semantic errors", function() {
     assertThrow(function() { xschema.schema({ $type: "invalid"               }); });
-    assertThrow(function() { xschema.schema({ $type: "object", $null: 55     }); });
+    assertThrow(function() { xschema.schema({ $type: "object", $nullable: 55 }); });
   });
 });
