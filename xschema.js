@@ -154,7 +154,7 @@ const kTestOnly = 0x0008;
 
 /**
  * Procession option - Flag used internally to force code generator to emit
- * access rights checks.
+ * access control checks.
  *
  * @private
  */
@@ -407,21 +407,23 @@ const UnsafeProperties = Object.getOwnPropertyNames(Object.prototype);
  * @private
  */
 const MangledType = freeze({
-  any    : "x",
-  array  : "a",
-  bool   : "b",
-  number : "n",
-  object : "o",
-  string : "s"
+  any     : "x",
+  array   : "a",
+  bool    : "b",
+  function: "f",
+  number  : "n",
+  object  : "o",
+  string  : "s"
 });
 
 const TypeToJSTypeOf = freeze({
-  array  : "object",
-  bool   : "boolean",
-  int    : "number",
-  number : "number",
-  object : "object",
-  string : "string"
+  array   : "object",
+  bool    : "boolean",
+  function: "function",
+  int     : "number",
+  number  : "number",
+  object  : "object",
+  string  : "string"
 });
 
 const NumberInfo = Object.freeze({
@@ -431,9 +433,7 @@ const NumberInfo = Object.freeze({
   float    : { integer: 0, min: null        , max: null        },
   double   : { integer: 0, min: null        , max: null        },
 
-  lat      : { integer: 0, min: -90         , max: 90          },
   latitude : { integer: 0, min: -90         , max: 90          },
-  lon      : { integer: 0, min: -180        , max: 180         },
   longitude: { integer: 0, min: -180        , max: 180         },
 
   int      : { integer: 1, min: null        , max: null        },
@@ -670,7 +670,7 @@ function misc$isVariableName(s) {
 xschema$misc.isVariableName = misc$isVariableName;
 
 /**
- * Checks if the string `s` is a xschema's directive name (ie it starts with "$").
+ * Checks if the string `s` is a xschema's directive name (i.e. it starts with "$").
  *
  * @param {string} s Input string to check.
  * @return {boolean}
@@ -830,7 +830,7 @@ xschema$misc.arrayToSet = arrayToSet;
 
 // Convert an object into a set (i.e. return an array containing all object keys).
 function setToArray(set) {
-  return Object.keys(set).slice();
+  return Object.keys(set);
 }
 xschema$misc.setToArray = setToArray;
 
@@ -869,7 +869,7 @@ xschema$misc.joinSet = joinSet;
 
 function freezeOrEmpty(x) {
   if (x === null || typeof x !== "object")
-    throwTypeError("Invalid argument, freezeOrEmpty requires object or array");
+    throwTypeError(`Argument 'x' must be object or array, not '${misc$typeOf(x)}'`);
   return misc$isEmpty(x) ? (isArray(x) ? NoArray : NoObject) : freeze(x);
 }
 
@@ -916,7 +916,7 @@ function misc$_equals(a, b, buffer) {
     // Detect cyclic references.
     for (i = 0; i < buffer.length; i += 2)
       if (buffer[i] === a || buffer[i + 1] === b)
-        throwRuntimeError("Detected cyclic references");
+        throwRuntimeError(`Detected cyclic reference`);
 
     buffer.push(a, b);
 
@@ -941,7 +941,7 @@ function misc$_equals(a, b, buffer) {
     // Detect cyclic references.
     for (i = 0; i < buffer.length; i += 2) {
       if (buffer[i] === a || buffer[i + 1] === b)
-        throwRuntimeError("Detected cyclic references");
+        throwRuntimeError(`Detected cyclic reference`);
     }
 
     buffer.push(a, b);
@@ -1077,7 +1077,7 @@ xschema$misc.isSchema = misc$isSchema;
 function misc$verifySchema(schema) {
   for (var k in schema) {
     if (!misc$isDirectiveName(k))
-      throwRuntimeError("Found a non-directive '" + k + "' in a normalized schema");
+      throwRuntimeError(`Found a non-directive '${k}' in a normalized schema`);
   }
 }
 xschema.misc.verifySchema = misc$verifySchema;
@@ -1930,7 +1930,7 @@ const Enum$IllegalKeys = freeze([
 class Enum {
   constructor(def) {
     if (!def || typeof def !== "object")
-      throwRuntimeError("xschema.enum() - Invalid definition of type '" + misc$typeOf(def) + "' passed");
+      throwTypeError(`Enum() - Invalid argument type '${misc$typeOf(def)}'`);
 
     var keyMap     = def;
     var keyArray   = [];
@@ -1953,7 +1953,7 @@ class Enum {
       min       : null,      // Minimum value (can be used to start a loop).
       max       : null,      // Maximum value (can be used to end a loop).
       safe      : true,      // True if all values are safe integers.
-      unique    : true,      // True if all values are unique (ie don't overlap).
+      unique    : true,      // True if all values are unique (i.e. don't overlap).
       sequential: true       // True if all values form a sequence and don't overlap.
     };
 
@@ -1969,13 +1969,13 @@ class Enum {
         continue;
 
       if (Enum$IllegalKeys.indexOf(key) !== -1)
-        throwRuntimeError("xschema.enum() - Key '" + key + "' is reserved and can't be used");
+        throwRuntimeError(`Enum() - Key '${key}' is reserved and can't be used`);
 
       var val = keyMap[key];
       var str = String(val);
 
       if (!key || typeof val !== "number" || !isFinite(val))
-        throwRuntimeError("xschema.enum() - Invalid key/value pair '" + key + "' -> '" + str + "'");
+        throwRuntimeError(`Enum() - Invalid key/value pair '${key}' -> '${str}'`);
 
       if (!hasOwn.call(valueMap, str)) {
         valueMap[str] = key;
@@ -2140,7 +2140,7 @@ class BitArray {
     const msk = 1 << Math.floor(n % kNumBits);
 
     if (idx >= bits.length)
-      throwRuntimeError("BitArray.test() - Out of range (n=" + n + " len=" + (bits.length * kNumBits) + ")");
+      throwRuntimeError(`BitArray.test() - Out of range (n=${n} len=${bits.length * kNumBits})`);
 
     return (bits[idx] & msk) !== 0;
   }
@@ -2167,13 +2167,13 @@ class BitArray {
       const msk = 1 << Math.floor(arg % kNumBits);
 
       if (idx >= bits.length)
-        throwRuntimeError("BitArray.combine(" + arg + ") - Out of range (max=" + (bits.length * kNumBits) + ")");
+        throwRuntimeError(`BitArray.combine(${arg}) - Out of range (max=${bits.length * kNumBits})`);
 
       switch (op) {
         case "or"    : bits[idx] |= msk; break;
         case "and"   : bits[idx] &= msk; break;
         case "andnot": bits[idx] &=~msk; break;
-        default: throwRuntimeError("Invalid operator '" + op + "'");
+        default: throwRuntimeError(`Operator '${op}' is invalid`);
       }
     }
     else {
@@ -2181,14 +2181,14 @@ class BitArray {
       const len = bits.length;
 
       if (len !== src.length)
-        throwRuntimeError("BitArray.combine([...]) - Length mismatch (" + len + " vs " + src.length + ")");
+        throwRuntimeError(`BitArray.combine([...]) - Length mismatch (${len} vs ${src.length})`);
 
       var i = 0;
       switch (op) {
         case "or"    : for (; i < len; i++) bits[i] |= src[i]; break;
         case "and"   : for (; i < len; i++) bits[i] &= src[i]; break;
         case "andnot": for (; i < len; i++) bits[i] &=~src[i]; break;
-        default: throwRuntimeError("Invalid operator '" + op + "'");
+        default: throwRuntimeError(`Operator '${op}' is invalid`);
       }
     }
 
@@ -2374,7 +2374,7 @@ class CoreCompiler {
 
     if (hasOwn.call(locals, name)) {
       if (locals[name] !== exp)
-        throwRuntimeError("Couldn't redeclare local variable '" + name + "' with different initialization '" + exp + "'");
+        throwRuntimeError(`Local '${name}' already exists with different initialization '${exp}'`);
     }
     else {
       locals[name] = exp;
@@ -2399,7 +2399,7 @@ class CoreCompiler {
 
     if (hasOwn.call(globals, name)) {
       if (globals[name] !== exp)
-        throwRuntimeError("Couldn't redeclare global variable '" + name + "' with different initialization '" + exp + "'");
+        throwRuntimeError(`Global '${name}' already exists with different initialization '${exp}'`);
     }
     else {
       globals[name] = exp;
@@ -2504,17 +2504,17 @@ class CoreCompiler {
 
   ifElseIf(cond) {
     const keyword = (++this._ifElseCount === 1) ? "if" : "else if";
-    return this.emit(keyword + " (" + cond + ") {");
+    return this.emit(`${keyword} (${cond}) {`);
   }
 
   otherwise() {
     const keyword = this._ifElseCount > 0 ? "else" : "if (1)";
     this._ifElseCount = 0;
-    return this.emit(keyword + " {");
+    return this.emit(`${keyword} {`);
   }
 
   end() {
-    return this.emit("}");
+    return this.emit(`}`);
   }
 
   str(s) {
@@ -2553,7 +2553,7 @@ class CoreCompiler {
     const index = this._scopeIndex - 1;
 
     if (index === -1)
-      throwRuntimeError("Couldn't denest the root scope");
+      throwRuntimeError(`Couldn't denest the root scope`);
 
     const obj = array[index];
     this._scopeIndex = index;
@@ -2616,13 +2616,91 @@ class CoreCompiler {
       return fn(this._data);
     }
     catch (ex) {
-      throwRuntimeError("Invalid code generated", {
+      throwRuntimeError(`Invalid code generated`, {
         message: ex.message,
         body: body
       });
     }
   }
 }
+
+// ============================================================================
+// [SchemaHandler]
+// ============================================================================
+
+/**
+ * Error handler used by compiled schemas.
+ *
+ * Compiled schemas use `SchemaHandler` to handle and report basic errors. These
+ * errors are the most common error cases, so it's better to just share their
+ * handlers across all compiled schemas instead of duplicating it. The idea is
+ * that if anything fails it's better to delegate the creation of the error
+ * object into a separate function that can put enough information into it.
+ *
+ * Also, handling failures is often much more expensive than handling successful
+ * conditions, so the overhead of calling a function is negligible in our case.
+ *
+ * The `SchemaHandler` is referenced as `h` in a compiled code.
+ *
+ * @private
+ */
+const SchemaHandler = freeze({
+  /**
+   * Called from a compiled code in case of a generic validation error.
+   *
+   * @param {object[]} errors Error accumulator used by the validator.
+   * @param {integer} options Schema options.
+   * @param {object} error Error data (not JS Error).
+   * @return {boolean} True to stop procesing (kAccumulateErrors is not set).
+   *
+   * @private
+   */
+  onGenericError: function(errors, options, error) {
+    errors.push(error);
+
+    // Terminate if `kAccumulateErrors` is not set.
+    return (options & kAccumulateErrors) === 0;
+  },
+
+  /**
+   * Special error handler that handles errors related to number type.
+   */
+  onNumberError: function() {
+
+  },
+
+  /**
+   * Called from a compiled code in case that the number of processed properties
+   * is less than the number of properties of a valid data. The function checks
+   * all properties of the output object `output`, compares them with `input`,
+   * and generates an array of properties that are missing in `input`.
+   */
+  onPropertiesCheck: function(errors, options, path, output, input) {
+    var keys = null;
+
+    for (var k in input) {
+      if (!hasOwn.call(output, k)) {
+        if (keys === null)
+          keys = [k];
+        else
+          keys.push(k);
+      }
+    }
+
+    // Not an error.
+    if (keys === null) return false;
+
+    // Add error to the accumulator.
+    errors.push({
+      code: "InvalidProperties",
+      path: path,
+      keys: keys
+    });
+
+    // Terminate if `kAccumulateErrors` is not set.
+    return (options & kAccumulateErrors) === 0;
+  }
+});
 
 // ============================================================================
 // [SchemaCompiler]
@@ -2647,54 +2725,6 @@ function compileStringConcat(a, b) {
 // shorter, it doesn't matter for JavaScript VM in the end).
 function compilePropertyAccess(s) {
   return misc$isVariableName(s) ? "." + s : "[" + JSON.stringify(s) + "]";
-}
-
-/**
- * Called from a compiled code in case of a generic validation error.
- *
- * @param {array} errors Error accumulator (array) used by the validator.
- * @param {number} options Schema options.
- * @param {object} err Error description (not JS Error).
- * @return {boolean} True to stop procesing (kAccumulateErrors is not set).
- *
- * @private
- */
-function onSchemaError(errors, options, err) {
-  errors.push(err);
-
-  // Terminate if `kAccumulateErrors` is not set.
-  return (options & kAccumulateErrors) === 0;
-}
-
-/**
- * Called from a compiled code in case that the number of processed properties
- * is less than the number of properties of a valid data. The function will
- * generate a list of properties that are missing.
- */
-function onPropertiesCheck(errors, options, dst, src, path) {
-  var keys = null;
-
-  for (var k in src) {
-    if (!hasOwn.call(dst, k)) {
-      if (keys === null)
-        keys = [k];
-      else
-        keys.push(k);
-    }
-  }
-
-  // Not an error.
-  if (keys === null) return false;
-
-  // Add error to the accumulator.
-  errors.push({
-    code: "InvalidProperties",
-    path: path,
-    keys: keys
-  });
-
-  // Terminate if `kAccumulateErrors` is not set.
-  return (options & kAccumulateErrors) === 0;
 }
 
 class SchemaCompiler extends CoreCompiler {
@@ -2722,6 +2752,9 @@ class SchemaCompiler extends CoreCompiler {
     this.arg("access");
 
     this.declareData("xschema", this._env);
+    this.declareData("misc", xschema$misc);
+    this.declareData("h", SchemaHandler);
+
     this.setExtract(this.hasOption(kExtractTop));
     this.setDelta(this.hasOption(kDeltaMode));
 
@@ -2736,9 +2769,9 @@ class SchemaCompiler extends CoreCompiler {
     this.nl();
 
     if (!this.hasOption(kTestOnly))
-      this.emit("return " + vOut + ";");
+      this.emit(`return ${vOut};`);
     else
-      this.emit("return true;");
+      this.emit(`return true;`);
 
     return this.toFunction();
   }
@@ -2748,7 +2781,7 @@ class SchemaCompiler extends CoreCompiler {
     const type = this._env.getType(name);
 
     if (!type)
-      throwRuntimeError("Couldn't find handler for type " + name);
+      throwRuntimeError(`Type '${name}' doesn't exist`);
 
     return type.compile(this, vIn, def);
   }
@@ -2793,8 +2826,7 @@ class SchemaCompiler extends CoreCompiler {
       }
 
       this.declareVariable(v, "0");
-      this.emit("if (" + accVar + compilePropertyAccess(key) + " === true) " +
-        v + " |= " + "0x" + m.toString(16) + ";");
+      this.emit(`if (${accVar + compilePropertyAccess(key)} === true) ${v} |= 0x${m.toString(16)};`);
 
       count++;
     }
@@ -2856,7 +2888,7 @@ class SchemaCompiler extends CoreCompiler {
     if (max !== null) cond.push(v + (maxExclusive ? " < " : " <= ") + max);
 
     if (cond.length > 0)
-      this.failIf("!(" + cond.join(" && ") + ")",
+      this.failIf(`!(${cond.join(" && ")})`,
         this.error(this.str("InvalidValue")));
 
     return this;
@@ -2881,35 +2913,31 @@ class SchemaCompiler extends CoreCompiler {
   }
 
   passIf(cond, vOut, vIn) {
-    return this.ifElseIf(cond).emit(vIn === vOut ? "// OK." : vOut + " = " + vIn + ";").end();
+    return this
+      .ifElseIf(cond)
+        .emit(vIn === vOut ? `// Success.` : `${vOut} = ${vIn};`)
+      .end();
   }
 
   failIf(cond, err) {
-    this.ifElseIf(cond);
-    this.fail(err);
-    this.end();
-    return this;
+    return this
+      .ifElseIf(cond)
+        .fail(err)
+      .end();
   }
 
   fail(err) {
     if (this.hasOption(kTestOnly))
-      this.emit("return false;");
+      return this.emit(`return false;`);
     else
-      this.emitError(err);
-    return this;
+      return this.emitError(err);
   }
 
   emitError(err) {
-    if (this.hasOption(kTestOnly)) {
-      this.emit("return false;");
-    }
-    else {
-      // Better to preprocess `options & kAccumulateErrors) and just use bool
-      // to perform a quick check. It's much faster and generates less code.
-      const fn = this.declareData("onSchemaError", onSchemaError);
-      this.emit("if (" + fn + "(errors, options, " + err + ")) return;");
-    }
-    return this;
+    if (this.hasOption(kTestOnly))
+      return this.emit(`return false;`);
+    else
+      return this.emit(`if (h.onGenericError(errors, options, ${err})) return;`);
   }
 
   getPath() {
@@ -3024,11 +3052,11 @@ class SchemaAccess {
     while (i < names.length) {
       name = names[i].trim();
       if (!name)
-        throwRuntimeError("Invalid access string '" + s + "'");
+        throwRuntimeError(`Access control '${s}' is invalid`);
 
       var normalized = this.normalize(name, inherit);
       if (normalized === null)
-        throwRuntimeError("Invalid access string '" + s + "' (can't normalize '" + name + "')");
+        throwRuntimeError(`Access control '${s}' is invalid (can't normalize '${name}')`);
 
       if (normalized.indexOf("|") !== -1) {
         // Prevent recursion, add to `names` we are interating over.
@@ -3046,9 +3074,9 @@ class SchemaAccess {
       i++;
     }
 
-    // It's an error if both "none" and "any" have been specified.
+    // It's an error if both "none" and "any" are specified.
     if (tmpMap.any === tmpSig && tmpMap.none === tmpSig)
-      throwRuntimeError("Access string can't have both 'any' and 'none' specified");
+      throwRuntimeError(`Access control '${s}' cannot contain both 'any' and 'none'`);
 
     // If there is 'any' or 'none' at least once it cancels effect of all others.
     if (tmpMap.any  === tmpSig) return "any";
@@ -3118,11 +3146,11 @@ function extractDefData(def, data) {
     return dst;
 
   if (typeof data !== "object")
-    throwRuntimeError("Directive '$data' has to be an object, not '" + misc$typeOf(data) + "'");
+    throwRuntimeError(`Directive '$data' has to be an object, not '${misc$typeOf(data)}'`);
 
   for (k in data) {
     if (hasOwn.call(dst, k))
-      throwRuntimeError("Property '" + k + "' specified in both definition and $data directives");
+      throwRuntimeError(`Property '${k}' cannot be specified in both inline definition and '$data' directive`);
     dst[k] = data[k];
   }
 
@@ -3149,14 +3177,14 @@ function mergeInclude(src) {
         var incDef = v[i];
 
         if (incDef === null || typeof incDef !== "object")
-          throwRuntimeError("Invalid " + k + "[" + i + "] data of type " + misc$typeOf(incDef));
+          throwRuntimeError(`Invalid ${k}[${i}] data of type ${misc$typeOf(incDef)}`);
 
         for (var incKey in incDef) {
           if (misc$isDirectiveName(incKey))
-            throwRuntimeError("Invalid " + k + "[" + i + "] data, directive " + incKey + " is not allowed");
+            throwRuntimeError(`Invalid ${k}[${i}] data, directive '${incKey}' is not allowed`);
 
           if (hasOwn.call(dst, incKey))
-            throwRuntimeError("Invalid " + k + "[" + i + "] data, property " + incKey + " already exists");
+            throwRuntimeError(`Invalid ${k}[${i}] data, property '${incKey}' already exists`);
 
           dst[incKey] = incDef[incKey];
         }
@@ -3164,7 +3192,7 @@ function mergeInclude(src) {
     }
     else {
       if (hasOwn.call(dst, k))
-        throwRuntimeError("The " + k + " was already included");
+        throwRuntimeError(`The '${k}' was already included`);
 
       dst[k] = v;
     }
@@ -3181,7 +3209,7 @@ function processDirectiveValue(name, value, spec) {
     value = spec.process(value);
 
   function throwInvalidDirectiveValue(name, value, spec) {
-    throwRuntimeError("Directive '" + name + "' must contain a value of type '" + spec.type + "' ('" + typeof(value) + "' is invalid)");
+    throwRuntimeError(`Directive '${name}' must contain a value of type '${spec.type}', not '${typeof(value)}'`);
   }
 
   switch (spec.type) {
@@ -3215,7 +3243,7 @@ function processDirectiveValue(name, value, spec) {
         throwInvalidDirectiveValue(name, value, spec);
 
       if (spec.re && !spec.re.test(value))
-        throwRuntimeError("Directive '" + name + "' value doesn't match a regular expression " + String(spec.re));
+        throwRuntimeError(`Directive '${name}' value doesn't match ${String(spec.re)}`);
       break;
 
     case "array":
@@ -3236,7 +3264,7 @@ function processDirectiveValue(name, value, spec) {
 
   const allowed = spec.allowed;
   if (allowed && isArray(allowed) && allowed.indexOf(value) === -1)
-    throwRuntimeError("Directive '" + name + "' can only contain one of " + JSON.stringify(allowed) + " ('" + value + "' is invalid)");
+    throwRuntimeError(`Directive '${name}' can only contain one of ${JSON.stringify(allowed)} ('${value}' is invalid)`);
 
   return value;
 }
@@ -3294,13 +3322,13 @@ class SchemaBuilder {
     if (hasOwn.call(def, "$extend")) {
       const extend = def.$extend;
 
-      // ERROR: The `$extend` directive shouldn't be part of the existing schema.
+      // The `$extend` directive shouldn't be part of normalized schema.
       if (override !== null)
-        throwRuntimeError("Directive '$extend' should never appear in a normalized schema");
+        throwRuntimeError(`Directive '$extend' is forbidden in normalized schema`);
 
-      // ERROR: Extend has to be an existing schema.
+      // Extend has to be an existing schema.
       if (extend == null || typeof extend !== "object" || !hasOwn.call(extend, "$_xschemaData"))
-        throwRuntimeError("Directive '$extend' requires a schema created by xschema.schema(...)");
+        throwRuntimeError(`Directive '$extend' requires a schema created by xschema.schema(...)`);
 
       override = def;
       def = extend;
@@ -3352,7 +3380,7 @@ class SchemaBuilder {
           // Reject multiple question-marks.
           const mLen = mArray[0].length;
           if (defType.length > mLen && defType.charAt(mLen) === "?")
-            throwRuntimeError("Invalid type '" + def.$type + "' - multiple question-marks detected");
+            throwRuntimeError(`Type '${def.$type}' is invalid`);
         }
       }
       else {
@@ -3362,20 +3390,20 @@ class SchemaBuilder {
 
           // Prevent from having invalid type that contains for example "??" by mistake.
           if (reTypeNullable.test(defType))
-            throwRuntimeError("Invalid type '" + def.$type + "' - multiple question-marks detected");
+            throwRuntimeError(`Type '${def.$type}' is invalid`);
         }
 
         if (def.$nullable != null) {
           nullable = def.$nullable;
           if (typeof nullable !== "boolean")
-            throwRuntimeError("Directive '$nullable' must be boolean or null, not '" + def.$nullable + "'");
+            throwRuntimeError(`Directive '$nullable' must be boolean or null, not '${def.$nullable}'`);
         }
       }
 
       if (def.$optional != null) {
         optional = def.$optional;
         if (typeof optional !== "boolean")
-          throwRuntimeError("Directive '$optional' must be boolean or null, not '" + def.$optional + "'");
+          throwRuntimeError(`Directive '$optional' must be boolean or null, not '${def.$optional}'`);
       }
 
       // Handle "$r" and "$w".
@@ -3388,7 +3416,7 @@ class SchemaBuilder {
     else {
       // Handle the "override" basics here.
       if (hasOwn.call(override, "$type") && this.env.resolveTypeName(override.$type) !== defType)
-        throwRuntimeError("Couldn't override type '" + defType + "' to '" + override.$type + "'");
+        throwRuntimeError(`Type '${defType}' cannot be changed to '${override.$type}'`);
 
       // Override "$nullable".
       if (hasOwn.call(override, "$nullable")) {
@@ -3423,7 +3451,7 @@ class SchemaBuilder {
     // Create the field object.
     const resolvedTypeName = this.env.resolveTypeName(mArray ? "array" : defType);
     if (resolvedTypeName == null)
-      throwRuntimeError("Type '" + defType + "' doesn't exist");
+      throwRuntimeError(`Type '${defType}' doesn't exist`);
 
     const obj = {
       $_xschemaData: null,
@@ -3442,7 +3470,7 @@ class SchemaBuilder {
     // Handle `[x:y]?` (array) syntax.
     if (mArray) {
       // Never in override mode here.
-      if (override) throwRuntimeError("Internal error");
+      if (override) throwRuntimeError(`Internal error`);
 
       const omitted = this.env.shortcutDirectives;
       const nested = misc$omit(def, omitted);
@@ -3452,7 +3480,7 @@ class SchemaBuilder {
       var maxLen = mArray[4] ? parseInt(mArray[4], 10) : null;
 
       if (minLen !== null && maxLen !== null && minLen > maxLen)
-        throwRuntimeError("Invalid type '" + def.$type + "'");
+        throwRuntimeError(`Type '${def.$type}' is invalid`);
 
       // Copy directives that are omitted in the nested object.
       for (k in def)
@@ -3463,7 +3491,7 @@ class SchemaBuilder {
       if (mArray[3] === ":") {
         // "[min:]", "[:max]" or "[min:max]" syntax.
         if (minLen === null && maxLen === null)
-          throwRuntimeError("Invalid type '" + def.$type + "'");
+          throwRuntimeError(`Type '${def.$type}' is invalid`);
 
         if (minLen !== null) obj.$minLength = minLen;
         if (maxLen !== null) obj.$maxLength = maxLen;
@@ -3570,14 +3598,14 @@ class SchemaBuilder {
             if (artificial[k] === true || hasOwn.call(obj, k))
               continue;
             if (!misc$isDirectiveName(k))
-              throwRuntimeError("Property '" + k + "'can't be used by '" + defType + "' type");
+              throwRuntimeError(`Property '${k}' cannot be used with '${defType}' type`);
             obj[k] = def[k];
           }
 
           // Handle "any" properties.
           if (defData != null) {
             if (typeof defData !== "object")
-              throwRuntimeError("Directive '$data' has to be object, not '" + misc$typeOf(defData) + "'");
+              throwRuntimeError(`Directive '$data' has to be object, not '${misc$typeOf(defData)}'`);
 
             obj.$data = this.field(defData, null, obj);
           }
@@ -3617,7 +3645,7 @@ class SchemaBuilder {
           // Override "any" properties.
           if (defData != null) {
             if (typeof defData !== "object")
-              throwRuntimeError("Directive '$data' has to be object, not '" + misc$typeOf(defData) + "'");
+              throwRuntimeError(`Directive '$data' has to be object, not '${misc$typeOf(defData)}'`);
 
             obj.$data = this.field(defData, override.$data, obj);
           }
@@ -3711,7 +3739,7 @@ function precompile(funcType, def, options, hasAccess) {
     if (funcType === "test")
       index |= kTestOnly;
     else
-      throwTypeError("xschema.precompile() - 'funcType' can be either 'process' or 'test'");
+      throwTypeError(`Argument 'funcType' must be either 'process' or 'test'`);
   }
 
   if (hasAccess)
@@ -3900,7 +3928,7 @@ function xschema$addType(data) {
     for (var n = 0; n < names.length; n++) {
       const name = names[n];
       if (hasOwn.call(types, name))
-        throwRuntimeError("Couldn't add type '" + name + "' - alread exists");
+        throwRuntimeError(`Type '${name}' alread exists`);
       types[name] = type;
     }
 
@@ -3927,10 +3955,10 @@ function xschema$addAlias(newName, knownName) {
   const aliases = this.aliases;
 
   if (!hasOwn.call(types, knownName))
-    throwRuntimeError("Couldn't create type-alias - '" + knownName + "' doesn't exist");
+    throwRuntimeError(`Type '${knownName}' doesn't exist`);
 
   if (hasOwn.call(types, newName))
-    throwRuntimeError("Couldn't create type-alias - '" + newName + "' already exist");
+    throwRuntimeError(`Type '${newName}' already exists`);
 
   types[newName] = types[knownName];
   aliases[newName] = knownName;
@@ -3986,7 +4014,7 @@ function xschema$addRule(data) {
     const name = rule.name;
 
     if (hasOwn.call(rules, name))
-      throwRuntimeError("Couldn't add rule '" + name + "' - alread exists");
+      throwRuntimeError(`Rule '${name}' - alread exists`);
 
     rules[name] = rule;
     if (rule.artificialDirectives)
@@ -4041,8 +4069,7 @@ function xschema$customize(opt) {
     opt = NoObject;
 
   if (misc$typeOf(opt) !== "object")
-    throwRuntimeError(
-      "xschema.customize(opt) - The `opt` parameter has to be an object, received " + misc$typeOf(opt));
+    throwRuntimeError(`Argument 'opt' must be object, not '${misc$typeOf(opt)}'`);
 
   // Create a new object extending xschema.
   var obj = misc$cloneWeak(this || xschema);
@@ -4138,16 +4165,16 @@ const Type = xschema.Type = freeze({
   /**
    * Type names ("array", "date", "color", ...), not strictly a JS type-name.
    *
-   * Type-names are not inherited. The property is reset to `null` of a newly
-   * extended type.
+   * Type-names are not inherited. The property is reset to `null` on a newly
+   * created type.
    */
   name: null,
 
   /**
    * Map of type-aliases, for example `{ bool: "boolean" }`
    *
-   * Type-aliases are not inherited. The property is reset to `null` of a newly
-   * extended type.
+   * Type-aliases are not inherited. The property is reset to `null` on a newly
+   * created type.
    */
   alias: null,
 
@@ -4186,7 +4213,7 @@ const Type = xschema.Type = freeze({
   }),
 
   /**
-   * Extend the type by `opt`.
+   * Extend the type by `def`.
    */
   extend: function(def) {
     const out = Object.assign({}, this);
@@ -4240,7 +4267,7 @@ const Type = xschema.Type = freeze({
         vOut = c.declareVariable(inputVarToOutputVar(v));
     }
 
-    // Emit access rights check.
+    // Emit access control check.
     var prevAccess = c._accessGranted;
     var checkAccess = null;
 
@@ -4267,20 +4294,20 @@ const Type = xschema.Type = freeze({
       const toStringFn = c.declareGlobal("toString", "Object.prototype.toString");
       var cond = "";
 
-      c.emit(vOut + " = " + vIn + ";");
+      c.emit(`${vOut} = ${vIn};`);
 
       if (checkAccess)
         c.failIf(checkAccess, c.error(c.str("InvalidAccess")));
 
       if (nullable) {
-        c.passIf(vIn + " === null");
-        cond = vIn + " === undefined || ";
+        c.passIf(`${vIn} === null`);
+        cond = `${vIn} === undefined || `;
       }
       else {
-        cond = vIn + " == null || ";
+        cond = `${vIn} == null || `;
       }
 
-      cond += "(" + vIn + ".constructor !== Object && " + toStringFn + ".call(" + v + ") !== \"[object Object]\")";
+      cond += `(${vIn}.constructor !== Object && ${toStringFn}.call(${v}) !== "[object Object]")`;
       c.failIf(cond, c.error(c.str(typeError)));
 
       this.compileType(c, vOut, vIn, def);
@@ -4289,7 +4316,7 @@ const Type = xschema.Type = freeze({
       if (checkAccess)
         c.failIf(checkAccess, c.error(c.str("InvalidAccess")));
 
-      c.failIf(vIn + (!nullable ? " == null" : " === undefined"), c.error(c.str(typeError)));
+      c.failIf(`${vIn}${nullable ? " === undefined" : " == null"}`, c.error(c.str(typeError)));
       this.compileType(c, vOut, vIn, def);
     }
     else {
@@ -4297,9 +4324,9 @@ const Type = xschema.Type = freeze({
         c.failIf(checkAccess, c.error(c.str("InvalidAccess")));
 
       if (type === "array")
-        c.ifElseIf("!Array.isArray(" + vIn + ")");
+        c.ifElseIf(`!Array.isArray(${vIn})`);
       else
-        c.ifElseIf("typeof " + vIn + " !== \"" + TypeToJSTypeOf[type] + "\"");
+        c.ifElseIf(`typeof ${vIn} !== "${TypeToJSTypeOf[type]}"`);
 
       if (nullable)
         cond = vIn + " !== null";
@@ -4307,7 +4334,7 @@ const Type = xschema.Type = freeze({
         cond = null;
 
       if (cond && vOut !== vIn)
-        c.emit(vOut + " = " + vIn + ";");
+        c.emit(`${vOut} = ${vIn};`);
 
       const err = c.error(c.str(typeError));
       if (cond)
@@ -4325,9 +4352,8 @@ const Type = xschema.Type = freeze({
       const err = c.declareVariable("err");
       const vFunc = c.declareData(null, $fn);
 
-      c.failIf(
-        "(" + err + " = " + vFunc + "(" + vOut + ")) !== true && " + err + " !== \"\"",
-        "{ code: " + err + " || \"CustomFunctionError\", path: " + c.getPath() + " }");
+      c.failIf(`(${err} = ${vFunc}(${vOut})) !== true && ${err} !== ""`,
+               `{ code: ${err} || "CustomFunctionError", path: ${c.getPath()} }`);
     }
 
     if (prevAccess) {
@@ -4400,26 +4426,22 @@ xschema.addType(Type.extend({
 
       // Get whether the $allowed directive contains an object.
       if (!misc$isValueOnlyArray(allowed)) {
-        c.failIf("!" + c.declareData(null, this.isAllowed) + "(" + v + ", " + allowedData + ")");
+        c.failIf(`!${c.declareData(null, this.isAllowed)}(${v}, ${allowedData})`);
         if (!c.hasOption(kTestOnly)) {
-          const cloneDeepFn = c.declareData("cloneDeep", misc$cloneDeep);
-
           c.otherwise();
-          c.emit(vOut + " = " + cloneDeepFn + "(" + v + ");");
-          c.end("}");
+          c.emit(`${vOut} = misc.cloneDeep(${v});`);
+          c.end(`}`);
         }
       }
       else {
-        c.failIf(c.declareData(null, this.isAllowed) + ".indexOf(" + v + ") === -1",
-          c.error(c.str("NotAllowed")));
+        c.failIf(`${c.declareData(null, this.isAllowed)}.indexOf(${v}) === -1`,
+                 c.error(c.str("NotAllowed")));
       }
     }
     else {
       if (!c.hasOption(kTestOnly)) {
-        const cloneDeepFn = c.declareData("cloneDeep", misc$cloneDeep);
-
         c.otherwise();
-        c.emit(vOut + " = " + cloneDeepFn + "(" + v + ");");
+        c.emit(`${vOut} = misc.cloneDeep(${v});`);
         c.end();
       }
     }
@@ -4459,8 +4481,8 @@ xschema.addType(Type.extend({
       const isTrue  = allowed.indexOf(true ) !== -1;
       const isFalse = allowed.indexOf(false) !== -1;
 
-      if (isTrue && !isFalse) c.failIf(v + " !== true", c.error(c.str("NotAllowed")));
-      if (!isTrue && isFalse) c.failIf(v + " === true", c.error(c.str("NotAllowed")));
+      if (isTrue && !isFalse) c.failIf(`${v} !== true`, c.error(c.str("NotAllowed")));
+      if (!isTrue && isFalse) c.failIf(`${v} === true`, c.error(c.str("NotAllowed")));
     }
   }
 }));
@@ -4474,7 +4496,11 @@ xschema.addType(Type.extend({
   name: setToArray(NumberInfo),
   type: "number",
 
-  alias: { integer: "int" },
+  alias: {
+    integer: "int",
+    lat: "latitude",
+    lon: "longitude"
+  },
 
   directives: {
     $min: {
@@ -4526,10 +4552,10 @@ xschema.addType(Type.extend({
         scale = args.length > 1 ? parseInt(args[1], 10) : 0;
 
         if (!isFinite(precision))
-          throwRuntimeError("Invalid precision '" + args[0] + "'");
+          throwRuntimeError(`Invalid precision '${args[0]}'`);
 
         if (!isFinite(scale))
-          throwRuntimeError("Invalid scale '" + args[1] + "'");
+          throwRuntimeError(`Invalid scale '${args[1]}'`);
 
         def.$precision = precision;
         def.$scale = scale;
@@ -4540,48 +4566,42 @@ xschema.addType(Type.extend({
       }
 
       if (precision != null && (!isFinite(precision) || precision <= 0))
-        throwRuntimeError("Invalid precision '" + precision + "'");
+        throwRuntimeError(`Invalid precision '${precision}'`);
 
       if (scale != null && (!isFinite(scale) || scale < 0))
-        throwRuntimeError("Invalid scale '" + scale + "'");
+        throwRuntimeError(`Invalid scale '${scale}'`);
 
       if (precision != null && scale != null && precision <= scale) {
-        throwRuntimeError("Precision '" + precision + "' has to be greater than scale '" + scale);
+        throwRuntimeError(`Precision '${precision}' has to be greater than scale '${scale}'`);
       }
     }
   },
 
   compileType: function(c, vOut, v, def) {
-    var type = def.$type;
+    const type = def.$type;
     var info = NumberInfo[type];
 
     var allowed = def.$allowed;
     if (allowed) {
-      c.failIf(c.declareData(null, allowed) + ".indexOf(" + v + ") === -1",
-        c.error(c.str("NotAllowed")));
+      c.failIf(`${c.declareData(null, allowed)}.indexOf(${v}) === -1`, c.error(c.str("NotAllowed")));
     }
     else {
-      var range = c._cachedRange.init(info.min, info.max);
+      const range = c._cachedRange.init(info.min, info.max);
 
       range.mergeMin(def.$min, def.$minExclusive);
       range.mergeMax(def.$max, def.$maxExclusive);
 
       if (def.$precision) {
         var threshold = Math.pow(10, def.$precision - (def.$scale || 0));
-
         range.mergeMin(-threshold, true);
         range.mergeMax( threshold, true);
       }
 
-      var isInt = !!info.integer;
-      var finite = true;
-
-      c.emitNumberCheck(v, range, isInt, finite);
+      c.emitNumberCheck(v, range, !!info.integer, true);
 
       // DivBy check.
       if (def.$divisibleBy != null)
-        c.failIf(v + " % " + def.$divisibleBy + " !== 0",
-          c.error(c.str("DivisibleByError")));
+        c.failIf(`${v} % ${def.$divisibleBy} !== 0`, c.error(c.str("DivisibleByError")));
     }
 
     return v;
@@ -4668,7 +4688,7 @@ xschema.addType(Type.extend({
           if (min <= 1)
             min = null;
           else
-            c.passIf("!" + v);
+            c.passIf(`!${v}`);
         }
       }
       else {
@@ -4681,8 +4701,7 @@ xschema.addType(Type.extend({
     }
 
     if (isArray(allowed)) {
-      c.failIf(c.declareData(null, allowed) + ".indexOf(" + v + ") === -1",
-        c.error(c.str("NotAllowed")));
+      c.failIf(`${c.declareData(null, allowed)}.indexOf(${v}) === -1`, c.error(c.str("NotAllowed")));
     }
     else {
       var cond = [];
@@ -4692,23 +4711,15 @@ xschema.addType(Type.extend({
       if (max != null) cond.push(v + ".length > " + max);
 
       if (cond.length)
-        c.failIf(cond.join(" || "),
-          c.error(c.str("InvalidLength")));
+        c.failIf(cond.join(" || "), c.error(c.str("InvalidLength")));
 
       if (hasOwn.call(this.masks, type)) {
-        var masks = this.masks[type];
-        c.failIf("!" + c.declareData(null, misc$isText) +
-          "(" + v +
-            ", " + masks["0000_001F"] + "|0" +
-            ", " + masks["2000_201F"] + "|0" +
-            ", " + masks["2020_203F"] + "|0" +
-          ")",
-          c.error(c.str("InvalidText")));
+        const m = this.masks[type];
+        c.failIf(`!misc.isText(${v}, ${m["0000_001F"]}|0, ${m["2000_201F"]}|0, ${m["2020_203F"]}|0)`, c.error(c.str("InvalidText")));
       }
 
       if (def.$re != null)
-        c.failIf(c.declareData(null, def.$re) + ".test(" + v + ")",
-          c.error(c.str(def.$reError || "RegExpFailure")));
+        c.failIf(`${c.declareData(null, def.$re)}.test(${v})`, c.error(c.str(def.$reError || "RegExpFailure")));
     }
 
     return v;
@@ -4745,8 +4756,7 @@ xschema.addType(Type.extend({
     c.failIf(cond, c.error(c.str("InvalidChar")));
 
     if (allowed)
-      c.failIf(c.declareData(null, allowed) + ".indexOf(" + v + ") === -1",
-        c.error(c.str("NotAllowed")));
+      c.failIf(`${c.declareData(null, allowed)}.indexOf(${v}) === -1`, c.error(c.str("NotAllowed")));
 
     return v;
   }
@@ -4788,7 +4798,7 @@ xschema.addType(Type.extend({
           do {
             const v = values[i];
             if (typeof v !== "string" && (typeof v !== "number" || Math.floor(v) !== v))
-              throwRuntimeError("Directive '$allowed[" + i + "]' contains invalid value '" + v + "'");
+              throwRuntimeError(`Directive '$allowed' at [${i}] contains invalid value '${v}'`);
             values[i] = String(values[i]);
           } while (++i < len);
         }
@@ -4831,7 +4841,7 @@ xschema.addType(Type.extend({
     if (allowed) {
       cond = c.declareData(null, allowed) + ".indexOf(" + v + ") === -1";
       if (def.$empty === true)
-        cond = v + " && " + cond;
+        cond = `${v} && ${cond}`;
       c.failIf(cond, c.error(c.str("NotAllowed")));
     }
     else {
@@ -4843,10 +4853,9 @@ xschema.addType(Type.extend({
       const $minExclusive = def.$minExclusive ? 1 : 0;
       const $maxExclusive = def.$maxExclusive ? 1 : 0;
 
-      cond = "(" + err + " = " + c.declareData(null, misc$validateBigInt) +
-        "(" + v + ", " + c.str($min) + ", " + c.str($max) + ", " + $minExclusive + ", " + $maxExclusive + "))";
+      cond = `(${err} = ${c.declareData(null, misc$validateBigInt)}(${v}, ${c.str($min)}, ${c.str($max)}, ${$minExclusive}, ${$maxExclusive}))`;
       if (def.$empty === true)
-        cond = v + " && " + cond;
+        cond = `${v} && ${cond}`;
       c.failIf(cond, c.error(err));
     }
 
@@ -4880,9 +4889,9 @@ xschema.addType(Type.extend({
     const baseColors = def.$cssNames   != null ? c.declareData(null, CSSColorNames)   : null;
     const userColors = def.$extraNames != null ? c.declareData(null, def.$extraNames) : null;
 
-    var cond = "!" + c.declareData("isColor", misc$isColor) + "(" + v + ", " + baseColors + ", " + userColors + ")";
+    var cond = `!misc.isColor(${v}, ${baseColors}, ${userColors})`;
     if (def.$empty === true)
-      cond = v + " && " + cond;
+      cond = `${v} && ${cond}`;
 
     c.failIf(cond, c.error(c.str("InvalidColor")));
     return v;
@@ -4923,19 +4932,12 @@ xschema.addType(Type.extend({
     var fn = misc$isISBN;
     var fnName = "isISBN";
 
-    if (fmt === "ISBN-10") {
-      fn = misc$isISBN10;
-      fnName = "isISBN10";
-    }
+    if (fmt === "ISBN-10") { fn = misc$isISBN10; fnName = "isISBN10"; }
+    if (fmt === "ISBN-13") { fn = misc$isISBN13; fnName = "isISBN13"; }
 
-    if (fmt === "ISBN-13") {
-      fn = misc$isISBN13;
-      fnName = "isISBN13";
-    }
-
-    var cond = c.declareData(fnName, fn) + "(" + v + ") !== true";
+    var cond = `${c.declareData(fnName, fn)}(${v}) !== true`;
     if (def.$empty === true)
-      cond = v + " && " + cond;
+      cond = `${v} && ${cond}`;
     c.failIf(cond, c.error(c.str("InvalidISBN")));
     return v;
   }
@@ -4959,10 +4961,10 @@ xschema.addType(Type.extend({
 
   compileType: function(c, vOut, v, def) {
     var sep = typeof def.$separator === "string" ? def.$separator : ":";
-    var cond = "!" + c.declareData(null, misc$isMAC) + "(" + v + ", " + c.str(sep) + ")";
+    var cond = `!misc.isMAC(${v}, ${c.str(sep)})`;
 
     if (def.$empty === true)
-      cond = v + " && " + cond;
+      cond = `${v} && ${cond}`;
 
     c.failIf(cond, c.error(c.str("InvalidMAC")));
     return v;
@@ -4986,33 +4988,18 @@ xschema.addType(Type.extend({
   },
 
   compileType: function(c, vOut, v, def) {
-    var type = def.$type;
-    var err;
-    var fn;
+    var $type = def.$type;
+    var $port = def.$port ? true : false;
 
-    var allowPort = def.$port ? true : false;
-    switch (type) {
-      case "ip":
-        err = "InvalidIP";
-        fn = misc$isIP;
-        break;
-      case "ipv4":
-        err = "InvalidIPv4";
-        fn = misc$isIPv4;
-        break;
-      case "ipv6":
-        err = "InvalidIPv6";
-        fn = misc$isIPv6;
-        break;
-      default:
-        throwRuntimeError("Invalid type '" + type + "'");
-    }
+    var fn = "misc.isIP";
+    if ($type === "ipv4") fn = "misc.isIPv4";
+    if ($type === "ipv6") fn = "misc.isIPv6";
 
-    var cond = "!" + c.declareData(null, fn) + "(" + v + ", " + allowPort + ")";
+    var cond = `!${fn}(${v}, ${$port})`;
     if (def.$empty === true)
-      cond = v + " && " + cond;
+      cond = `${v} && ${cond}`;
 
-    c.failIf(cond, c.error(c.str(err)));
+    c.failIf(cond, c.error(c.str("InvalidIP")));
     return v;
   }
 }));
@@ -5050,7 +5037,7 @@ xschema.addType(Type.extend({
     if ($format === "any"    ) brackets = 1;
     if ($format === "windows") brackets = 2;
 
-    var cond = c.declareData("isUUID", misc$isUUID) + "(" + v + ", " + brackets + ")";
+    var cond = `misc.isUUID(${v}, ${brackets})`;
     var m;
 
     if ($version && (m = $version.match(/^([1-5])(\+?)$/)))
@@ -5059,7 +5046,7 @@ xschema.addType(Type.extend({
       cond += " === 0";
 
     if (def.$empty === true)
-      cond = v + " && " + cond;
+      cond = `${v} && ${cond}`;
 
     c.failIf(cond, c.error(c.str("InvalidUUID")));
     return v;
@@ -5135,9 +5122,9 @@ const DateComponents = freeze({
 
 // \internal
 //
-// Get whether the given charcode is a date component (ie it can be parsed as
-// year, month, date, etc...). Please note that not all alphanumeric characters
-// are considered as date components.
+// Get whether the given charcode is a date component (i.e. it can be parsed as
+// year, month, day, etc...). Please note that not all ascii characters are
+// considered to be date components.
 function isDateComponent(c) {
   return c === 0x59 || // 'Y' - Year.
          c === 0x4D || // 'M' - Month.
@@ -5148,7 +5135,7 @@ function isDateComponent(c) {
          c === 0x53 ;  // 'S' - Fractions of second.
 }
 
-// Get whether the `year` is a leap year (ie it has 29th February).
+// Get if the `year` is a leap year (i.e. it has 29th February).
 function isLeapYear(year) {
   return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0) ? 1 : 0;
 }
@@ -5263,7 +5250,7 @@ var DateFactory = {
         // Fail if one component appears multiple times or if the separator is
         // required at this point.
         if ((msk & data.msk) !== 0 || sep)
-          throwRuntimeError("Invalid date format '" + format + "'");
+          throwRuntimeError(`Date format '${format}' is invalid`);
         msk |= data.msk;
 
         // Store the information about this date component. We always use the
@@ -5299,7 +5286,7 @@ var DateFactory = {
         (msk & (0x04 | 0x02)) === (0x04) || // Cannot have 'D' without 'M'.
         (msk & (0x01 | 0x02)) === (0x01) || // Cannot have 'Y' without 'M'.
         (msk & (0x05 | 0x02)) === (0x02) )  // Cannot have 'M' without either 'D' or 'Y'.
-      throwRuntimeError("Invalid date format '" + format + "'");
+      throwRuntimeError(`Date format '${format}' is invalid`);
 
     inspected.parts = parts;
     inspected.fixed = fixed;
@@ -5331,9 +5318,9 @@ var DateFactory = {
     c.declareVariable("cp", 0);
 
     c.comment("Date validator of '" + format + "' format.");
-    c.emit("do {");
+    c.emit(`do {`);
 
-    c.emit("if (len " + (fixed ? "!==" : "<") + " " + detail.minLength + ") break;");
+    c.emit(`if (len ${fixed ? "!==" : "<"} ${detail.minLength}) break;`);
     c.nl();
 
     for (i = 0; i < parts.length; i++) {
@@ -5357,39 +5344,39 @@ var DateFactory = {
         if (jLen > 0) {
           if (index < 0) {
             if (jLen === 1)
-              c.emit("if (index >= len) break;");
+              c.emit(`if (index >= len) break;`);
             else
-              c.emit("if (index + " + String(jLen) + " > len) break;");
+              c.emit(`if (index + ${jLen} > len) break;`);
           }
 
           for (j = 0; j < jLen; j++) {
             var v = (j === 0) ? symb : "cp";
             var sIndex = (index >= 0) ? String(index + j) : "index + " + j;
 
-            c.emit("if ((" + v + " = input.charCodeAt(" + sIndex + ") - 48) < 0 || " + v + " >= 10) break;");
+            c.emit(`if ((${v} = input.charCodeAt(${sIndex}) - 48) < 0 || ${v} >= 10) break;`);
             if (j !== 0)
-              c.emit(symb + " = " + symb + " * 10 + " + v + ";");
+              c.emit(`${symb} = ${symb} * 10 + ${v};`);
           }
 
           if (index >= 0)
             index += jLen;
           else
-            c.emit("index += " + String(jLen) + ";");
+            c.emit(`index += ${jLen};`);
         }
         else {
           j = -jLen;
 
           c.declareVariable("limit");
 
-          c.emit("if (index >= len) break;");
-          c.emit("if ((" + symb + " = input.charCodeAt(index) - 48) < 0 || " + symb + " >= 10) break;");
+          c.emit(`if (index >= len) break;`);
+          c.emit(`if ((${symb} = input.charCodeAt(index) - 48) < 0 || ${symb} >= 10) break;`);
 
           c.nl();
-          c.emit("limit = Math.min(len, index + " + j + ");");
+          c.emit(`limit = Math.min(len, index + ${j});`);
 
-          c.emit("while (++index < limit && (cp = input.charCodeAt(index) - 48) >= 0 && cp < 10) {");
-          c.emit(symb += " = " + symb + " * 10 + cp;");
-          c.emit("}");
+          c.emit(`while (++index < limit && (cp = input.charCodeAt(index) - 48) >= 0 && cp < 10) {`);
+          c.emit(`${symb} = ${symb} * 10 + cp;`);
+          c.emit(`}`);
         }
       }
       else {
@@ -5414,18 +5401,18 @@ var DateFactory = {
           }
         }
 
-        c.emit("if (" + cond.join(" || ") + ") break;");
+        c.emit(`if (${cond.join(" || ")}) break;`);
       }
 
       c.nl();
     }
 
     if (Y) {
-      c.emit("if (Y < " + kYearMin + ") break;");
+      c.emit(`if (Y < ${kYearMin}) break;`);
     }
 
     if (M) {
-      c.emit("if (M < 1 || M > 12) break;");
+      c.emit(`if (M < 1 || M > 12) break;`);
       if (D) {
         c.declareData("DaysInMonth", DaysInMonth);
 
@@ -5434,17 +5421,14 @@ var DateFactory = {
         var leapYearCheck = "hasLeapYear";
         if (Y)
           leapYearCheck += " && ((Y % 4 === 0 && Y % 100 !== 0) || (Y % 400 === 0))";
-
-        c.emit("if (D < 1 || D > DaysInMonth[M - 1] +\n" +
-               "    ((M === 2 && D === 29 && " + leapYearCheck + ") ? 1 : 0))\n" +
-               "  break;");
+        c.emit(`if (D < 1 || D > DaysInMonth[M - 1] + ((M === 2 && D === 29 && ${leapYearCheck}) ? 1 : 0)) break;`);
       }
     }
 
     if (H) {
-      c.emit("if (H > 23) break;");
+      c.emit(`if (H > 23) break;`);
       if (m) {
-        c.emit("if (m > 59) break;");
+        c.emit(`if (m > 59) break;`);
         if (s) {
           var leapSecondCheck = "hasLeapSecond";
           if (M && D) {
@@ -5458,16 +5442,16 @@ var DateFactory = {
               leapSecondCheck += " && ((M === 6 && D == 30) || (M === 12 && D === 31))";
             }
           }
-          c.emit("if (s > 59 && !(s === 60 && " + leapSecondCheck + ")) break;");
+          c.emit(`if (s > 59 && !(s === 60 && ${leapSecondCheck})) break;`);
         }
       }
     }
 
-    c.emit("return null;");
-    c.emit("} while (false);");
+    c.emit(`return null;`);
+    c.emit(`} while (false);`);
 
     c.nl();
-    c.emit("return { code: \"InvalidDate\", format: this.format };");
+    c.emit(`return { code: "InvalidDate", format: this.format };`);
 
     return c.toFunction();
   }
@@ -5477,41 +5461,43 @@ xschema.addType(Type.extend({
   name: setToArray(DateFormats),
   type: "string",
 
+  directives: {
+    $format: {
+      type: "string",
+      default: null,
+      purpose: "Date format."
+    },
+
+    $leapYear: {
+      type: "bool",
+      default: true,
+      purpose: "Specifies if leap years are allowed and validated."
+    },
+
+    $leapSecond: {
+      type: "bool",
+      default: false,
+      purpose: "Specifies if leap seconds are allowed and validated."
+    },
+  },
+
   hook: function(def, env, args) {
-    var type = def.$type;
-    var format = def.$format || DateFormats[type];
+    const $type = def.$type;
+    const $format = def.$format || DateFormats[$type];
 
-    if (typeof format !== "string")
-      throwRuntimeError("Invalid date format '" + format + "'");
-
-    def.$validator = DateFactory.get(format);
+    def.$validator = DateFactory.get($format);
   },
 
   compileType: function(c, vOut, v, def) {
-    var err = c.declareVariable("err");
+    const err = c.declareVariable("err");
+    const validator = c.declareData(null, def.$validator);
 
-    var validator = c.declareData(null, def.$validator);
-    var hasLeapYear = true;
-    var hasLeapSecond = false;
+    const $leapYear   = def.$leapYear   != null ? def.$leapYear   : true;
+    const $leapSecond = def.$leapSecond != null ? def.$leapSecond : false;
 
-    // Default `$leapYear` value is `true`.
-    if (def.$leapYear === false)
-      hasLeapYear = false;
-
-    // Default `$leapSecond` value is `false`.
-    if (def.$leapSecond === true)
-      hasLeapSecond = true;
-
-    var cond = "(" +
-      err + " = " + validator + ".exec(" +
-        v + ", " +
-        hasLeapYear + ", " +
-        hasLeapSecond + ")" +
-      ")";
-
+    var cond = `(${err} = ${validator}.exec(${v}, ${$leapYear}, ${$leapSecond}))`;
     if (def.$empty === true)
-      cond = v + " && " + cond;
-
+      cond = `${v} && ${cond}`;
     c.failIf(cond, err);
     return v;
   }
@@ -5655,7 +5641,7 @@ xschema.addType(Type.extend({
       eDef = properties[eKey];
 
       if (eDef == null || typeof eDef !== "object")
-        throwRuntimeError("Invalid property, expected object, got " + misc$typeOf(eDef));
+        throwRuntimeError(`Property '${eKey}' must be object, not '${misc$typeOf(eDef)}'`);
 
       var optional = !!eDef.$optional;
 
@@ -5674,7 +5660,7 @@ xschema.addType(Type.extend({
     // properties in the source object that are not defined by the schema.
     if (!extract) {
       vLen = c.addLocal("nKeys");
-      c.emit(vLen + " = " + mandatoryProperties.length + ";");
+      c.emit(`${vLen} = ${mandatoryProperties.length$};`);
     }
 
     if (mandatoryProperties.length) {
@@ -5697,27 +5683,27 @@ xschema.addType(Type.extend({
         eIn = c.addLocal("in$" + eKey, eMangledType);
 
         if (isUnsafeProperty || isDefaultProperty)
-          c.emit("if (hasOwn.call(" + v + ", " + c.str(eKey) + ")) {");
+          c.emit(`if (hasOwn.call(${v}, ${c.str(eKey)})) {`);
 
-        c.emit(eIn + " = " + v + prop + ";");
+        c.emit(`${eIn} = ${v}${prop};`);
         eOut = c.compileType(eIn, eDef);
         mandatoryVars.push(eOut);
 
         if (isUnsafeProperty || isDefaultProperty) {
-          c.emit("}");
-          c.emit("else {");
+          c.emit(`}`);
+          c.emit(`else {`);
 
           if (isDefaultProperty) {
-            c.emit(eOut + " = " + JSON.stringify(eDef.$default) + ";");
+            c.emit(`${eOut} = ${JSON.stringify(eDef.$default)};`);
             // Default property doesn't count.
             if (!extract)
-              c.emit(vLen + "--;");
+              c.emit(`${vLen}--;`);
           }
           else {
             c.emitError(c.error(c.str("RequiredField")));
           }
 
-          c.emit("}");
+          c.emit(`}`);
         }
 
         c.nl();
@@ -5726,19 +5712,16 @@ xschema.addType(Type.extend({
       }
 
       if (!c.hasOption(kTestOnly)) {
-        c.emit(vOut + " = {");
-        for (i = 0; i < mandatoryProperties.length; i++) {
-          eKey = mandatoryProperties[i];
-          eOut = mandatoryVars[i];
-
-          c.emit(c.str(eKey) + ": " + eOut + (i + 1 < mandatoryProperties.length ? "," : ""));
-        }
-        c.emit("};");
+        const last = mandatoryProperties.length - 1;
+        c.emit(`${vOut} = {`);
+        for (i = 0; i <= last; i++)
+          c.emit(`${c.str(mandatoryProperties[i])}: ${mandatoryVars[i]}${i !== last ? "," : ""}`);
+        c.emit(`};`);
       }
     }
     else {
       if (!c.hasOption(kTestOnly)) {
-        c.emit(vOut + " = {};");
+        c.emit(`${vOut} = {};`);
       }
     }
 
@@ -5751,49 +5734,44 @@ xschema.addType(Type.extend({
         c.nl();
 
         c.declareGlobal("hasOwn", "Object.prototype.hasOwnProperty");
-        c.emit("if (hasOwn.call(" + v + ", " + c.str(eKey) + ")) {");
+        c.emit(`if (hasOwn.call(${v}, ${c.str(eKey)})) {`);
 
         eMangledType = c.mangledType(eDef);
         eIn = c.addLocal("in$" + eKey, eMangledType);
 
         if (!extract)
-          c.emit(vLen + "++;");
+          c.emit(`${vLen}++;`);
 
-        c.emit(eIn + " = " + v + prop + ";");
+        c.emit(`${eIn} = ${v}${prop};`);
         c.addPath('"."', c.str(eKey));
         eOut = c.compileType(eIn, eDef);
         c.setPath(path);
 
         if (!c.hasOption(kTestOnly))
-          c.emit(vOut + prop + " = " + eOut + ";");
+          c.emit(`${vOut}${prop} = ${eOut};`);
 
-        c.emit("}");
+        c.emit(`}`);
         c.done();
       }
     }
 
     if (!extract) {
       c.declareVariable("dummy");
-      c.nl();
 
       if (kConfigUseObjectKeysAsCount) {
-        c.emit("if (Object.keys(" + v + ").length !== " + vLen + ") {");
+        c.emit(`if (Object.keys(${v}).length !== ${vLen}) {`);
       }
       else {
-        c.emit("for (dummy in " + v + ") " + vLen + "--;");
-        c.nl();
-        c.emit("if (" + vLen + " !== 0) {");
+        c.emit(`for (dummy in ${v}) ${vLen}--;`);
+        c.emit(`if (${vLen} !== 0) {`);
       }
 
-      if (c.hasOption(kTestOnly)) {
-        c.emit("return false;");
-      }
-      else {
-        const fn = c.declareData("onPropertiesCheck", onPropertiesCheck);
-        c.emit("if (" + fn + "(errors, options, " + vOut + ", " + v + ", " + c.getPath() + ")) return;");
-      }
+      if (c.hasOption(kTestOnly))
+        c.emit(`return false;`);
+      else
+        c.emit(`if (h.onPropertiesCheck(errors, options, ${c.getPath()}, ${vOut}, ${v})) return;`);
 
-      c.emit("}");
+      c.emit(`}`);
     }
 
     c.end();
@@ -5818,7 +5796,7 @@ xschema.addType(Type.extend({
 
     var eDef = def.$data;
     if (eDef == null || typeof eDef !== "object")
-      throwRuntimeError("Invalid MapType.$data definition, expected object, got " + misc$typeOf(eDef));
+      throwRuntimeError(`Directive '$data' must be object, not '${misc$typeOf(eDef)}'`);
 
     var eMangledType = c.mangledType(eDef);
     var eIn = c.addLocal("element", eMangledType);
@@ -5826,18 +5804,18 @@ xschema.addType(Type.extend({
     c.otherwise();
 
     if (!c.hasOption(kTestOnly))
-      c.emit(vOut + " = {};");
+      c.emit(`${vOut} = {};`);
 
-    c.emit("for (" + vKey + " in " + v + ") {");
-    c.emit(eIn + " = " + v + "[" + vKey + "];");
+    c.emit(`for (${vKey} in ${v}) {`);
+    c.emit(`${eIn} = ${v}[${vKey}];`);
 
-    var prevPath = c.addPath("", '"[" + ' + vKey + ' + "]"');
+    var prevPath = c.addPath("", `"[" + ${vKey} + "]"`);
     var eOut = c.compileType(eIn, eDef);
 
     if (!c.hasOption(kTestOnly))
-      c.emit(vOut + "[" + vKey + "] = " + eOut + ";");
+      c.emit(`${vOut}[${vKey}] = ${eOut};`);
 
-    c.emit("}");
+    c.emit(`}`);
     c.setPath(prevPath);
 
     c.end();
@@ -5858,51 +5836,43 @@ xschema.addType(Type.extend({
     var vLen = c.addLocal("len", "x");
 
     c.otherwise();
-    c.emit(vLen + " = " + v + ".length;");
+    c.emit(`${vLen} = ${v}.length;`);
 
     if (!c.hasOption(kTestOnly))
-      c.emit(vOut + " = [];");
+      c.emit(`${vOut} = [];`);
 
-    var cond = [];
-    if (def.$length != null)
-      cond.push(vLen + " !== " + def.$length);
-
-    if (def.$minLength != null)
-      cond.push(vLen + " < " + def.$minLength);
-
-    if (def.$maxLength != null)
-      cond.push(vLen + " > " + def.$maxLength);
+    const cond = [];
+    if (def.$length    != null) cond.push(`${vLen} !== ${def.$length}`);
+    if (def.$minLength != null) cond.push(`${vLen} < ${def.$minLength}`);
+    if (def.$maxLength != null) cond.push(`${vLen} > ${def.$maxLength}`);
 
     if (cond.length) {
-      c.failIf(cond.join(" || "),
-        c.error(c.str("InvalidLength")));
+      c.failIf(cond.join(" || "), c.error(c.str("InvalidLength")));
       c.otherwise();
     }
 
-    c.nl();
-    c.emit("for (" + vIdx + " = 0; " + vIdx + " < " + vLen + "; " + vIdx + "++) {");
+    c.emit(`for (${vIdx} = 0; ${vIdx} < ${vLen}; ${vIdx}++) {`);
 
     var eDef = def.$data;
     if (eDef == null || typeof eDef !== "object")
-      throwRuntimeError("Invalid ArrayType.$data definition, expected object, got " + misc$typeOf(eDef));
+      throwRuntimeError(`Directive '$data' must be object, not '${misc$typeOf(eDef)}'`);
 
     var eMangledType = c.mangledType(eDef);
     var eIn = c.addLocal("element", eMangledType);
 
-    c.emit(eIn + " = " + v + "[" + vIdx + "];");
+    c.emit(`${eIn} = ${v}[${vIdx}];`);
 
-    var prevPath = c.addPath("", '"[" + ' + vIdx + ' + "]"');
+    var prevPath = c.addPath("", `"[" + ${vIdx} + "]"`);
     var eOut = c.compileType(eIn, eDef);
 
     if (!c.hasOption(kTestOnly))
-      c.emit(vOut + ".push(" + eOut + ");");
+      c.emit(`${vOut}.push(${eOut});`);
 
-    c.emit("}");
+    c.emit(`}`);
     c.setPath(prevPath);
 
-    if (cond.length) {
+    if (cond.length)
       c.end();
-    }
 
     c.end();
     return vOut;
