@@ -412,10 +412,19 @@ const UnsafeProperties = Object.getOwnPropertyNames(Object.prototype);
 const MangledType = freeze({
   any    : "x",
   array  : "a",
-  boolean: "b",
+  bool   : "b",
   number : "n",
   object : "o",
   string : "s"
+});
+
+const TypeToJSTypeOf = freeze({
+  array  : "object",
+  bool   : "boolean",
+  int    : "number",
+  number : "number",
+  object : "object",
+  string : "string"
 });
 
 const NumberInfo = Object.freeze({
@@ -431,7 +440,6 @@ const NumberInfo = Object.freeze({
   longitude: { integer: 0, min: -180        , max: 180         },
 
   int      : { integer: 1, min: null        , max: null        },
-  integer  : { integer: 1, min: null        , max: null        },
   uint     : { integer: 1, min: 0           , max: null        },
 
   int8     : { integer: 1, min: kInt8Min    , max: kInt8Max    },
@@ -2369,7 +2377,7 @@ class CoreCompiler {
 
     if (hasOwn.call(locals, name)) {
       if (locals[name] !== exp)
-        throwRuntimeError("Can't redeclare local variable '" + name + "' with different initialization '" + exp + "'");
+        throwRuntimeError("Couldn't redeclare local variable '" + name + "' with different initialization '" + exp + "'");
     }
     else {
       locals[name] = exp;
@@ -2394,7 +2402,7 @@ class CoreCompiler {
 
     if (hasOwn.call(globals, name)) {
       if (globals[name] !== exp)
-        throwRuntimeError("Can't redeclare global variable '" + name + "' with different initialization '" + exp + "'");
+        throwRuntimeError("Couldn't redeclare global variable '" + name + "' with different initialization '" + exp + "'");
     }
     else {
       globals[name] = exp;
@@ -2548,7 +2556,7 @@ class CoreCompiler {
     const index = this._scopeIndex - 1;
 
     if (index === -1)
-      throwRuntimeError("CoreCompiler.denest() - Can't denest the root scope");
+      throwRuntimeError("Couldn't denest the root scope");
 
     const obj = array[index];
     this._scopeIndex = index;
@@ -2645,17 +2653,50 @@ function compilePropertyAccess(s) {
 }
 
 /**
- * Called inside a compiled function in case of error.
+ * Called from a compiled code in case of a generic validation error.
  *
  * @param {array} acc Error accumulator (array) used by the validator.
- * @param {object} err Error description (not JS Error).
  * @param {number} options Schema options.
+ * @param {object} err Error description (not JS Error).
  * @return {boolean} True to stop procesing (kAccumulateErrors is not set).
  *
  * @private
  */
-function onSchemaError(acc, err, options) {
+function onSchemaError(acc, options, err) {
   acc.push(err);
+
+  // Terminate if `kAccumulateErrors` is not set.
+  return (options & kAccumulateErrors) === 0;
+}
+
+/**
+ * Called from a compiled code in case that the number of processed properties
+ * is less than the number of properties of a valid data. The function will
+ * generate a list of properties that are missing.
+ */
+function onPropertiesCheck(acc, options, dst, src, path) {
+  var keys = null;
+
+  for (var k in src) {
+    if (!hasOwn.call(dst, k)) {
+      if (keys === null)
+        keys = [k];
+      else
+        keys.push(k);
+    }
+  }
+
+  // Not an error.
+  if (keys === null) return false;
+
+  // Add error to the accumulator.
+  acc.push({
+    code: "InvalidProperties",
+    path: path,
+    keys: keys
+  });
+
+  // Terminate if `kAccumulateErrors` is not set.
   return (options & kAccumulateErrors) === 0;
 }
 
@@ -2710,7 +2751,7 @@ class SchemaCompiler extends CoreCompiler {
     var type = this._env.getType(name);
 
     if (!type)
-      throwRuntimeError("Can't find handler for type " + name);
+      throwRuntimeError("Couldn't find handler for type " + name);
 
     return type.compile(this, vIn, def);
   }
@@ -2869,7 +2910,7 @@ class SchemaCompiler extends CoreCompiler {
       // Better to preprocess `options & kAccumulateErrors) and just use bool
       // to perform a quick check. It's much faster and generates less code.
       const fn = this.declareData("onSchemaError", onSchemaError);
-      this.emit("if (" + fn + "(errors, " + err + ", options)) return;");
+      this.emit("if (" + fn + "(errors, options, " + err + ")) return;");
     }
     return this;
   }
@@ -3143,12 +3184,12 @@ function processDirectiveValue(name, value, spec) {
     value = spec.process(value);
 
   switch (spec.type) {
-    case "boolean":
+    case "bool":
       if (typeof value !== "boolean")
         throwInvalidDirectiveValue(name, value, spec);
       break;
 
-    case "integer":
+    case "int":
       if (typeof value !== "number" || !isFinite(value) || Math.floor(value) !== value)
         throwInvalidDirectiveValue(name, value, spec);
       break;
@@ -3256,7 +3297,7 @@ class SchemaBuilder {
     if (hasOwn.call(def, "$extend")) {
       const extend = def.$extend;
 
-      // ERROR: The `$extend` directive shouldn't be part of an existing schema.
+      // ERROR: The `$extend` directive shouldn't be part of the existing schema.
       if (override !== null)
         throwRuntimeError("Directive '$extend' should never appear in a normalized schema");
 
@@ -3348,9 +3389,9 @@ class SchemaBuilder {
       g = def.$g;
     }
     else {
-      // Handle the override basics here.
-      if (hasOwn.call(override, "$type") && override.$type !== defType)
-        throwRuntimeError("Can't override type '" + defType + "' to '" + override.$type + "'");
+      // Handle the "override" basics here.
+      if (hasOwn.call(override, "$type") && this.env.resolveTypeName(override.$type) !== defType)
+        throwRuntimeError("Couldn't override type '" + defType + "' to '" + override.$type + "'");
 
       // Override "$nullable".
       if (hasOwn.call(override, "$nullable")) {
@@ -3383,9 +3424,13 @@ class SchemaBuilder {
       g = "@default";
 
     // Create the field object.
+    const resolvedTypeName = this.env.resolveTypeName(mArray ? "array" : defType);
+    if (resolvedTypeName == null)
+      throwRuntimeError("Type '" + defType + "' doesn't exist");
+
     const obj = {
       $_xschemaData: null,
-      $type        : defType,
+      $type        : resolvedTypeName,
       $dbType      : "",
       $data        : null,
       $nullable    : nullable,
@@ -3412,8 +3457,7 @@ class SchemaBuilder {
       if (minLen !== null && maxLen !== null && minLen > maxLen)
         throwRuntimeError("Invalid type '" + def.$type + "'");
 
-      // Set to array and copy directives that are omitted in the nested object.
-      obj.$type = "array";
+      // Copy directives that are omitted in the nested object.
       for (k in def)
         if (!hasOwn.call(obj, k) && hasOwn.call(omitted, k))
           obj[k] = def[k];
@@ -3585,10 +3629,9 @@ class SchemaBuilder {
     }
 
     // Validate that the postprocessed object is valid and can be compiled.
-    const type = this.env.getType(obj.$type);
-    if (!type) throwRuntimeError("Unknown type '" + obj.$type + "'");
-
+    const type = this.env.types[obj.$type];
     const directives = type.directives;
+
     for (k in directives)
       if (hasOwn.call(obj, k))
         obj[k] = processDirectiveValue(k, obj[k], directives[k]);
@@ -3741,12 +3784,18 @@ xschema.test = function(data, def, options, access) {
 // ============================================================================
 
 /**
- * Types supported by xschema. Mapping between type names (or aliases) and
- * type objects.
+ * Mapping between type names (or aliases) and type objects.
  *
  * @alias xschema.types
  */
 xschema.types = {};
+
+/**
+ * Mapping between aliases and real type names.
+ *
+ * @alias xschema.aliases
+ */
+xschema.aliases = {};
 
 /**
  * Rules supported by xschema. Mapping between a rule names and rule objects.
@@ -3809,7 +3858,7 @@ xschema.shortcutDirectives = {
  */
 function xschema$getType(name) {
   const types = this.types;
-  return (hasOwn.call(types, name)) ? types[name] : null;
+  return hasOwn.call(types, name) ? types[name] : null;
 }
 xschema.getType = xschema$getType;
 
@@ -3822,12 +3871,12 @@ xschema.getType = xschema$getType;
  * ```
  * {
  *   // Type names/aliases, like `["int"]` or `["int", "integer", ...]`,
- *   name: String[]
+ *   name: {string[]}
  *
  *   // Javascript type of a given field.
- *   type: String
+ *   type: {string}
  *     "array"   - Array
- *     "boolean" - Boolean
+ *     "bool"    - Boolean
  *     "number"  - Number (double or integer, doesn't matter)
  *     "object"  - Object
  *     "string"  - String (character or string, doesn't matter)
@@ -3843,22 +3892,72 @@ xschema.getType = xschema$getType;
  * @alias xschema.addType
  */
 function xschema$addType(data) {
-  if (!isArray(data))
-    data = [data];
-
+  const array = isArray(data) ? data : [data];
   const types = this.types;
-  for (var i = 0; i < data.length; i++) {
-    const type = data[i];
-    const name = type.name;
 
-    for (var n = 0; n < name.length; n++) {
-      types[name[n]] = type;
+  for (var i = 0; i < array.length; i++) {
+    const type = array[i];
+    const names = type.name;
+    const alias = type.alias;
+
+    for (var n = 0; n < names.length; n++) {
+      const name = names[n];
+      if (hasOwn.call(types, name))
+        throwRuntimeError("Couldn't add type '" + name + "' - alread exists");
+      types[name] = type;
     }
+
+    if (alias)
+      for (var k in alias)
+        this.addAlias(k, alias[k]);
   }
 
   return this;
 }
 xschema.addType = xschema$addType;
+
+/**
+ * Adds a type-alias to the xschema environment.
+ *
+ * @param {string} newName New type-name.
+ * @param {string} knownName Original (known) type-name.
+ * @return {this}
+ *
+ * @alias xschema.addAlias
+ */
+function xschema$addAlias(newName, knownName) {
+  const types = this.types;
+  const aliases = this.aliases;
+
+  if (!hasOwn.call(types, knownName))
+    throwRuntimeError("Couldn't create type-alias - '" + knownName + "' doesn't exist");
+
+  if (hasOwn.call(types, newName))
+    throwRuntimeError("Couldn't create type-alias - '" + newName + "' already exist");
+
+  types[newName] = types[knownName];
+  aliases[newName] = knownName;
+
+  return this;
+}
+xschema.addAlias = xschema$addAlias;
+
+/**
+ * Resolves the given `typeName`.
+ *
+ * @param {string} typeName Type-name to resolve.
+ * @return {?string} Resolved type-name or `null` if type doesn't exist.
+ */
+function xschema$resolveTypeName(typeName) {
+  const types = this.types;
+  const aliases = this.aliases;
+
+  if (hasOwn.call(aliases, typeName))
+    typeName = aliases[typeName];
+
+  return hasOwn.call(types, typeName) ? typeName : null;
+}
+xschema.resolveTypeName = xschema$resolveTypeName;
 
 /**
  * Gets a rule by `name`.
@@ -3882,14 +3981,17 @@ xschema.getRule = xschema$getRule;
  * @alias xschema.addRule
  */
 function xschema$addRule(data) {
-  if (!isArray(data))
-    data = [data];
-
+  const array = isArray(data) ? data : [data];
   const rules = this.rules;
-  for (var i = 0; i < data.length; i++) {
-    const rule = data[i];
-    rules[rule.name] = rule;
 
+  for (var i = 0; i < array.length; i++) {
+    const rule = array[i];
+    const name = rule.name;
+
+    if (hasOwn.call(rules, name))
+      throwRuntimeError("Couldn't add rule '" + name + "' - alread exists");
+
+    rules[name] = rule;
     if (rule.artificialDirectives)
       Object.assign(this.artificialDirectives, rule.artificialDirectives);
   }
@@ -3989,7 +4091,7 @@ xschema.freeze = xschema$freeze;
 var TypeToError = {
   any    : "ExpectedAny",
   array  : "ExpectedArray",
-  boolean: "ExpectedBoolean",
+  bool   : "ExpectedBoolean",
   number : "ExpectedNumber",
   object : "ExpectedObject",
   string : "ExpectedString"
@@ -4038,16 +4140,26 @@ function extendDirectives(to, from) {
  */
 const Type = xschema.Type = freeze({
   /**
-   * Field type-name and aliases ("array", "date", "color", ...), not strictly
-   * a javascript type name.
+   * Type names ("array", "date", "color", ...), not strictly a JS type-name.
+   *
+   * Type-names are not inherited. The property is reset to `null` of a newly
+   * extended type.
    */
   name: null,
+
+  /**
+   * Map of type-aliases, for example `{ bool: "boolean" }`
+   *
+   * Type-aliases are not inherited. The property is reset to `null` of a newly
+   * extended type.
+   */
+  alias: null,
 
   /**
    * JavaScript type name:
    *   - "any"
    *   - "array"
-   *   - "boolean"
+   *   - "bool"
    *   - "number"
    *   - "object"
    *   - "string"
@@ -4059,7 +4171,7 @@ const Type = xschema.Type = freeze({
    */
   directives: freeze({
     $nullable: freeze({
-      type: "boolean",
+      type: "bool",
       default: false,
       purpose: "Specifies if the value can be null."
     }),
@@ -4082,6 +4194,9 @@ const Type = xschema.Type = freeze({
    */
   extend: function(def) {
     const out = Object.assign({}, this);
+
+    out.types = null;
+    out.alias = null;
 
     for (var k in def) {
       const v = def[k];
@@ -4188,7 +4303,7 @@ const Type = xschema.Type = freeze({
       if (type === "array")
         c.ifElseIf("!Array.isArray(" + vIn + ")");
       else
-        c.ifElseIf("typeof " + vIn + " !== \"" + type + "\"");
+        c.ifElseIf("typeof " + vIn + " !== \"" + TypeToJSTypeOf[type] + "\"");
 
       if (nullable)
         cond = vIn + " !== null";
@@ -4335,26 +4450,21 @@ xschema.addType(Type.extend({
 // ============================================================================
 
 xschema.addType(Type.extend({
-  name: ["bool", "boolean"],
-  type: "boolean",
+  name: ["bool"],
+  type: "bool",
+
+  alias: { boolean: "bool" },
 
   compileType: function(c, vOut, v, def) {
     const allowed = def.$allowed;
 
-    // This is a boolean specific.
+    // This is boolean specific.
     if (isArray(allowed) && allowed.length > 0) {
-      var isTrue  = allowed.indexOf(true ) !== -1;
-      var isFalse = allowed.indexOf(false) !== -1;
+      const isTrue  = allowed.indexOf(true ) !== -1;
+      const isFalse = allowed.indexOf(false) !== -1;
 
-      var cond = null;
-
-      if (isTrue && !isFalse)
-        cond = v + " !== true";
-      if (!isTrue && isFalse)
-        cond = v + " === true";
-
-      if (cond)
-        c.failIf(cond, c.error(c.str("NotAllowed")));
+      if (isTrue && !isFalse) c.failIf(v + " !== true", c.error(c.str("NotAllowed")));
+      if (!isTrue && isFalse) c.failIf(v + " === true", c.error(c.str("NotAllowed")));
     }
   }
 }));
@@ -4367,6 +4477,8 @@ xschema.addType(Type.extend({
 xschema.addType(Type.extend({
   name: setToArray(NumberInfo),
   type: "number",
+
+  alias: { integer: "int" },
 
   directives: {
     $min: {
@@ -4382,25 +4494,25 @@ xschema.addType(Type.extend({
     },
 
     $minExclusive: {
-      type: "boolean",
+      type: "bool",
       default: false,
       purpose: "Specifies if the minimum value should be exclusive."
     },
 
     $maxExclusive: {
-      type: "boolean",
+      type: "bool",
       default: false,
       purpose: "Specifies if the maximum value should be exclusive."
     },
 
     $precision: {
-      type: "integer",
+      type: "int",
       default: null,
       purpose: "Specifies a maximum precision of the value (total number of digits)"
     },
 
     $scale: {
-      type: "integer",
+      type: "int",
       default: null,
       purpose: "Specifies a scale of the value (number of digits after decimal point)"
     }
@@ -4490,25 +4602,25 @@ xschema.addType(Type.extend({
 
   directives: {
     $empty: {
-      type: "boolean",
+      type: "bool",
       default: null,
       purpose: "Specifies that the string can be empty."
     },
 
     $length: {
-      type: "integer",
+      type: "int",
       default: null,
       purpose: "Specifies an exact string length."
     },
 
     $minLength: {
-      type: "integer",
+      type: "int",
       default: null,
       purpose: "Specifies a minimum string length."
     },
 
     $maxLength: {
-      type: "integer",
+      type: "int",
       default: null,
       purpose: "Specifies a maximum string length."
     },
@@ -4617,7 +4729,7 @@ xschema.addType(Type.extend({
 
   directives: {
     $empty: {
-      type: "boolean",
+      type: "bool",
       default: false,
       purpose: "Specifies that the char can be empty.",
     },
@@ -4702,13 +4814,13 @@ xschema.addType(Type.extend({
     },
 
     $minExclusive: {
-      type: "boolean",
+      type: "bool",
       default: false,
       purpose: "Specifies if the minimum value should be exclusive."
     },
 
     $maxExclusive: {
-      type: "boolean",
+      type: "bool",
       default: false,
       purpose: "Specifies if the maximum value should be exclusive."
     },
@@ -4756,7 +4868,7 @@ xschema.addType(Type.extend({
 
   directives: {
     $cssNames: {
-      type: "boolean",
+      type: "bool",
       default: false,
       purpose: "If css color names should be used."
     },
@@ -4871,7 +4983,7 @@ xschema.addType(Type.extend({
 
   directives: {
     $port: {
-      type: "boolean",
+      type: "bool",
       default: false,
       purpose: "Specifies if IP address can contain a port number"
     }
@@ -5681,8 +5793,8 @@ xschema.addType(Type.extend({
         c.emit("return false;");
       }
       else {
-        var fn = c.declareData("extractionFailed", this.extractionFailed);
-        c.emitError(fn + "(" + vOut + ", " + v + ", " + c.getPath() + ")");
+        const fn = c.declareData("onPropertiesCheck", onPropertiesCheck);
+        c.emit("if (" + fn + "(errors, options, " + vOut + ", " + v + ", " + c.getPath() + ")) return;");
       }
 
       c.emit("}");
@@ -5694,21 +5806,6 @@ xschema.addType(Type.extend({
     c.setDelta(delta);
 
     return vOut;
-  },
-
-  // Called from compiled code to generate a list containing all invalid properties.
-  extractionFailed: function(dst, src, path) {
-    var keys = [];
-
-    for (var k in src)
-      if (!hasOwn.call(dst, k))
-        keys.push(k);
-
-    return {
-      code: "InvalidProperties",
-      path: path,
-      keys: keys
-    };
   }
 }));
 
