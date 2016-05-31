@@ -6,7 +6,7 @@ const isArray = Array.isArray;
 
 const freeze = Object.freeze;
 const hasOwn = Object.prototype.hasOwnProperty;
-const toString = Object.prototype.toString
+const toString = Object.prototype.toString;
 
 /**
  * The xschema namespace.
@@ -342,9 +342,6 @@ const kYearMin = xschema.kYearMin = 1;
 // ============================================================================
 // [xschema.regexp]
 // ============================================================================
-
-// int?[2]?[4]?
-// array[2]? of array[4]? of int?
 
 // Some useful regexps.
 const reNewLine = /\n/g;                         // Newline (test).
@@ -2655,15 +2652,15 @@ function compilePropertyAccess(s) {
 /**
  * Called from a compiled code in case of a generic validation error.
  *
- * @param {array} acc Error accumulator (array) used by the validator.
+ * @param {array} errors Error accumulator (array) used by the validator.
  * @param {number} options Schema options.
  * @param {object} err Error description (not JS Error).
  * @return {boolean} True to stop procesing (kAccumulateErrors is not set).
  *
  * @private
  */
-function onSchemaError(acc, options, err) {
-  acc.push(err);
+function onSchemaError(errors, options, err) {
+  errors.push(err);
 
   // Terminate if `kAccumulateErrors` is not set.
   return (options & kAccumulateErrors) === 0;
@@ -2674,7 +2671,7 @@ function onSchemaError(acc, options, err) {
  * is less than the number of properties of a valid data. The function will
  * generate a list of properties that are missing.
  */
-function onPropertiesCheck(acc, options, dst, src, path) {
+function onPropertiesCheck(errors, options, dst, src, path) {
   var keys = null;
 
   for (var k in src) {
@@ -2690,7 +2687,7 @@ function onPropertiesCheck(acc, options, dst, src, path) {
   if (keys === null) return false;
 
   // Add error to the accumulator.
-  acc.push({
+  errors.push({
     code: "InvalidProperties",
     path: path,
     keys: keys
@@ -2747,8 +2744,8 @@ class SchemaCompiler extends CoreCompiler {
   }
 
   compileType(vIn, def) {
-    var name = def.$type || "object";
-    var type = this._env.getType(name);
+    const name = def.$type || "object";
+    const type = this._env.getType(name);
 
     if (!type)
       throwRuntimeError("Couldn't find handler for type " + name);
@@ -3183,6 +3180,10 @@ function processDirectiveValue(name, value, spec) {
   if (typeof spec.process === "function")
     value = spec.process(value);
 
+  function throwInvalidDirectiveValue(name, value, spec) {
+    throwRuntimeError("Directive '" + name + "' must contain a value of type '" + spec.type + "' ('" + typeof(value) + "' is invalid)");
+  }
+
   switch (spec.type) {
     case "bool":
       if (typeof value !== "boolean")
@@ -3238,10 +3239,6 @@ function processDirectiveValue(name, value, spec) {
     throwRuntimeError("Directive '" + name + "' can only contain one of " + JSON.stringify(allowed) + " ('" + value + "' is invalid)");
 
   return value;
-}
-
-function throwInvalidDirectiveValue(name, value, spec) {
-  throwRuntimeError("Directive '" + name + "' must contain a value of type '" + spec.type + "' ('" + typeof(value) + "' is invalid)");
 }
 
 /**
@@ -4120,14 +4117,13 @@ function compileAccessCheck(data, negate) {
   return s;
 }
 
-function extendDirectives(to, from) {
-  // Extend `directives`.
-  const out = Object.assign({}, from);
-  for (var k in from) {
+function extendDirectives(base, dirs) {
+  const out = Object.assign({}, base);
+  for (var k in dirs) {
     if (hasOwn.call(out, k))
-      out[k] = freeze(Object.assign({}, out[k], from[k]));
+      out[k] = freeze(Object.assign({}, out[k], dirs[k]));
     else
-      out[k] = freeze(Object.assign({}, from[k]));
+      out[k] = freeze(Object.assign({}, dirs[k]));
   }
   return out;
 }
