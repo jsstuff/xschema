@@ -2,6 +2,7 @@
   "name": "xschema",
   "version": "1.1.0",
   "license": "Unlicense",
+  "engines": { "node": ">=4" },
 
   "description": "High performance and extensible data processing library, including schema builder, data validator, and sanitizer.",
   "keywords": [
@@ -16,9 +17,9 @@
     "validator"
   ],
 
-  "homepage": "https://github.com/exjs/xschema",
+  "homepage": "https://github.com/jsstuff/xschema",
   "bugs": {
-    "url": "https://github.com/exjs/xschema/issues"
+    "url": "https://github.com/jsstuff/xschema/issues"
   },
 
   "contributors": [
@@ -26,13 +27,11 @@
   ],
 
   "main": "xschema.js",
-
-  "engines": { "node": ">=4" },
-  "devDependencies": { "mocha": "*" },
+  "dependencies": { "xex": "*" },
 
   "repository" : {
     "type": "git",
-    "url": "https://github.com/exjs/xschema.git"
+    "url": "https://github.com/jsstuff/xschema.git"
   },
 
   "scripts": {

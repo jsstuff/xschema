@@ -1,4 +1,4 @@
-// xschema.js <https://github.com/exjs/xschema>
+// xschema.js <https://github.com/jsstuff/xschema>
 "use strict";
 
 const assert = require("assert");
@@ -674,13 +674,6 @@ describe("xschema", function() {
     });
   });
 
-  it("should validate number - $min / $max (invalid)", function() {
-    assertThrow(function() { xschema.schema({ $type: "int", $min: "1" }); });
-    assertThrow(function() { xschema.schema({ $type: "int", $max: "1" }); });
-    assertThrow(function() { xschema.schema({ $type: "int", $min: "x" }); });
-    assertThrow(function() { xschema.schema({ $type: "int", $max: "x" }); });
-  });
-
   it("should validate number - $min / $max (exclusive)", function() {
     pass(9, xschema.schema({ $type: "int", $min: 9, $minExclusive: false }));
     fail(9, xschema.schema({ $type: "int", $min: 9, $minExclusive: true  }));
@@ -689,18 +682,11 @@ describe("xschema", function() {
     fail(9, xschema.schema({ $type: "int", $max: 9, $maxExclusive: true  }));
   });
 
-  it("should validate number - $divisibleBy", function() {
-    ["int", "number"].forEach(function(type) {
-      pass(-9, xschema.schema({ $type: type, $divisibleBy: 9 }));
-      pass( 0, xschema.schema({ $type: type, $divisibleBy: 1 }));
-      pass( 1, xschema.schema({ $type: type, $divisibleBy: 1 }));
-      pass( 2, xschema.schema({ $type: type, $divisibleBy: 1 }));
-      pass( 4, xschema.schema({ $type: type, $divisibleBy: 2 }));
-      pass(10, xschema.schema({ $type: type, $divisibleBy: 5 }));
-
-      fail(-3, xschema.schema({ $type: type, $divisibleBy: 2 }));
-      fail( 3, xschema.schema({ $type: type, $divisibleBy: 6 }));
-    });
+  it("should validate number - $min / $max (invalid)", function() {
+    assertThrow(function() { xschema.schema({ $type: "int", $min: "1" }); });
+    assertThrow(function() { xschema.schema({ $type: "int", $max: "1" }); });
+    assertThrow(function() { xschema.schema({ $type: "int", $min: "x" }); });
+    assertThrow(function() { xschema.schema({ $type: "int", $max: "x" }); });
   });
 
   it("should validate numeric - precision and scale", function() {
@@ -734,13 +720,27 @@ describe("xschema", function() {
     });
   });
 
-  it("should validate numeric - invalid precision / scale", function() {
+  it("should validate numeric - precision / scale (invalid)", function() {
     assertThrow(function() { xschema.schema({ $type: "numeric(-2)"      }); });
     assertThrow(function() { xschema.schema({ $type: "numeric(2,-2)"    }); });
     assertThrow(function() { xschema.schema({ $type: "numeric(2,-2)"    }); });
     assertThrow(function() { xschema.schema({ $type: "numeric(2, 2)"    }); });
     assertThrow(function() { xschema.schema({ $type: "numeric(2, 4)"    }); });
     assertThrow(function() { xschema.schema({ $type: "numeric(invalid)" }); });
+  });
+
+  it("should validate number - $exp", function() {
+    pass(4 , xschema.schema({ $type: "number", $exp: "1"              }));
+    pass(4 , xschema.schema({ $type: "number", $exp: "(x % 3) == 1"   }));
+    fail(5 , xschema.schema({ $type: "number", $exp: "(x % 3) == 1"   }));
+    pass(32, xschema.schema({ $type: "number", $exp: "isint(log2(x))" }));
+    fail(33, xschema.schema({ $type: "number", $exp: "isint(log2(x))" }));
+  });
+
+  it("should validate number - $exp (invalid)", function() {
+    assertThrow(function() { xschema.schema({ $type: "number", $exp: "1_" }); });
+    assertThrow(function() { xschema.schema({ $type: "number", $exp: "1+" }); });
+    assertThrow(function() { xschema.schema({ $type: "number", $exp: "1a" }); });
   });
 
   // --------------------------------------------------------------------------
@@ -1273,8 +1273,8 @@ describe("xschema", function() {
     ];
 
     passData.forEach(function(data) {
-      var correctFormat = data.length === 10 ? "ISBN-10" : "ISBN-13";
-      var invalidFormat = data.length === 10 ? "ISBN-13" : "ISBN-10";
+      var correctFormat = data.length === 10 ? "isbn10" : "isbn13";
+      var invalidFormat = data.length === 10 ? "isbn13" : "isbn10";
 
       pass(data, xschema.schema({ $type: "isbn" }));
       pass(data, xschema.schema({ $type: "isbn" }));
@@ -1285,8 +1285,8 @@ describe("xschema", function() {
 
     failData.forEach(function(data) {
       fail(data, xschema.schema({ $type: "isbn" }));
-      fail(data, xschema.schema({ $type: "isbn", $format: "ISBN-10" }));
-      fail(data, xschema.schema({ $type: "isbn", $format: "ISBN-13" }));
+      fail(data, xschema.schema({ $type: "isbn", $format: "isbn10" }));
+      fail(data, xschema.schema({ $type: "isbn", $format: "isbn13" }));
     });
   });
 
@@ -1351,10 +1351,11 @@ describe("xschema", function() {
   // --------------------------------------------------------------------------
 
   it("should validate ip - ipv4", function() {
-    var IPV4 = xschema.schema({ $type: "ipv4" });
-    var IPV4AllowPort = xschema.schema({ $type: "ipv4", $port: true });
+    const IPAny = xschema.schema({ $type: "ip" });
+    const IPV4  = xschema.schema({ $type: "ip", $format: "ipv4" });
+    const IPV4p = xschema.schema({ $type: "ip", $format: "ipv4", $port: true });
 
-    var ipList = [
+    const ipList = [
       "0.0.0.0",
       "1.1.1.1",
       "1.1.1.10",
@@ -1370,15 +1371,16 @@ describe("xschema", function() {
     ];
 
     ipList.forEach(function(ip) {
+      pass(ip, IPAny);
       pass(ip, IPV4);
 
-      pass(ip + ":123"  , IPV4AllowPort);
-      fail(ip + ":65536", IPV4AllowPort);
+      pass(ip + ":123"  , IPV4p);
+      fail(ip + ":65536", IPV4p);
 
       fail(" " + ip, IPV4);
-      fail(" " + ip, IPV4AllowPort);
+      fail(" " + ip, IPV4p);
       fail(ip + " ", IPV4);
-      fail(ip + " ", IPV4AllowPort);
+      fail(ip + " ", IPV4p);
     });
 
     fail(true             , IPV4);
@@ -1417,10 +1419,11 @@ describe("xschema", function() {
   });
 
   it("should validate ip - ipv6", function() {
-    var IPV6 = xschema.schema({ $type: "ipv6" });
-    var IPV6AllowPort = xschema.schema({ $type: "ipv6", $port: true });
+    const IPAny = xschema.schema({ $type: "ip" });
+    const IPV6  = xschema.schema({ $type: "ip", $format: "ipv6" });
+    const IPV6p = xschema.schema({ $type: "ip", $format: "ipv6", $port: true });
 
-    var ipList = [
+    const ipList = [
       "137F:F137:7F13:37F1:137F:F137:7F13:37F1",
       "137F:137F:137F:137F:137F:137F:137F::",
       "137F:137F:137F:137F:137F:137F::",
@@ -1450,22 +1453,23 @@ describe("xschema", function() {
     ];
 
     ipList.forEach(function(ip) {
+      pass(ip, IPAny);
       pass(ip, IPV6);
 
-      pass("[" + ip + "]:123"  , IPV6AllowPort);
-      fail("[" + ip + "]:65536", IPV6AllowPort);
+      pass("[" + ip + "]:123"  , IPV6p);
+      fail("[" + ip + "]:65536", IPV6p);
 
       // Extra space is invalid.
       fail(" " + ip, IPV6);
-      fail(" " + ip, IPV6AllowPort);
+      fail(" " + ip, IPV6p);
       fail(ip + " ", IPV6);
-      fail(ip + " ", IPV6AllowPort);
+      fail(ip + " ", IPV6p);
 
       // Malformed, extra ":" is invalid.
       fail(":" + ip, IPV6);
-      fail(":" + ip, IPV6AllowPort);
+      fail(":" + ip, IPV6p);
       fail(ip + ":", IPV6);
-      fail(ip + ":", IPV6AllowPort);
+      fail(ip + ":", IPV6p);
     });
 
     // High level errors.

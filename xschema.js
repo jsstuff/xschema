@@ -1,9 +1,13 @@
-// xschema.js <https://github.com/exjs/xschema>
-(function($export, $as) {
+// xschema.js <https://github.com/jsstuff/xschema>
+(function($export, $as, $xex) {
 "use strict";
 
-const isArray = Array.isArray;
+function throwTypeError(msg) { throw new TypeError(msg); }
 
+const xex = $xex;
+if (!xex) throwTypeError("'xschema' requires 'xex' library");
+
+const isArray = Array.isArray;
 const freeze = Object.freeze;
 const hasOwn = Object.prototype.hasOwnProperty;
 const toString = Object.prototype.toString;
@@ -14,7 +18,7 @@ const toString = Object.prototype.toString;
  * @namespace
  * @alias xschema
  */
-const xschema = {};
+const xschema = $export[$as] = {};
 
 /**
  * Version information in a "major.minor.patch" form.
@@ -344,14 +348,15 @@ const kYearMin = xschema.kYearMin = 1;
 // ============================================================================
 
 // Some useful regexps.
-const reNewLine = /\n/g;                         // Newline (test).
-const reUnescapeFieldName = /\\(.)/g;            // Unescape field name (replace).
-const reInvalidIdentifier = /[^\w\$]/;           // Invalid identifier (test).
+const reNewLine = /\n/g;               // Matches a newline (test).
+const reUnescapeFieldName = /\\(.)/g;  // Unescape field name (replace).
+const reInvalidIdentifier = /[^\w\$]/; // Invalid identifier (test).
 
-const reTypeArgs = /^(\w+)\(([^\(]+)\)/;         // Type arguments "type(...)" (match).
-const reTypeArray = /^(\w+\??)\[(\d+)?(:)?(\d+)?\](\?)?/; // Array type "type?[x:y]" (match).
-const reTypeNullable = /\?$/;                    // Nullable type suffix "...?" (match).
-const reInclude = /^\$include/;                  // Test for $include directive.
+// Schema specific - type-name can be matched by '[A-Za-z_][\w-]*':
+const reTypeArgs = /^([A-Za-z_][\w-]*)\(([^\(]+)\)/;                  // Matches `type(args)`.
+const reTypeArray = /^([A-Za-z_][\w-]*\??)\[(\d+)?(:)?(\d+)?\](\?)?/; // Matches `type?[x:y]`.
+const reTypeNullable = /\?$/;          // Nullable type suffix "...?" (match).
+const reInclude = /^\$include/;        // Test for $include directive.
 
 // Test if the given access right is valid (forbid some characters that can
 // violate with future boolean algebra that can be applied to the AC system).
@@ -406,7 +411,7 @@ const UnsafeProperties = Object.getOwnPropertyNames(Object.prototype);
  *
  * @private
  */
-const MangledType = freeze({
+const TypeToChar = freeze({
   any     : "x",
   array   : "a",
   bool    : "b",
@@ -424,6 +429,15 @@ const TypeToJSTypeOf = freeze({
   number  : "number",
   object  : "object",
   string  : "string"
+});
+
+const TypeToErrorCode = freeze({
+  any     : "ExpectedAny",
+  array   : "ExpectedArray",
+  bool    : "ExpectedBoolean",
+  number  : "ExpectedNumber",
+  object  : "ExpectedObject",
+  string  : "ExpectedString"
 });
 
 const NumberInfo = Object.freeze({
@@ -553,6 +567,15 @@ class RuntimeError extends Error {
 }
 xschema.RuntimeError = RuntimeError;
 
+function throwRuntimeError(msg, params) {
+  const ex = new RuntimeError(msg);
+  if (params != null && typeof params === "object") {
+    for (var k in params)
+      ex[k] = params[k];
+  }
+  throw ex;
+}
+
 /**
  * Error thrown on validation failure. The `SchemaError` constructor
  * always accepts array of errors, where each element is an object (descriptor)
@@ -580,21 +603,8 @@ class SchemaError extends Error {
 }
 xschema.SchemaError = SchemaError;
 
-function throwRuntimeError(msg, params) {
-  const ex = new RuntimeError(msg);
-  if (params != null && typeof params === "object") {
-    for (var k in params)
-      ex[k] = params[k];
-  }
-  throw ex;
-}
-
 function throwSchemaError(errors) {
   throw new SchemaError(errors);
-}
-
-function throwTypeError(msg) {
-  throw new TypeError(msg);
 }
 
 // ============================================================================
@@ -1105,6 +1115,9 @@ function misc$printableSchema(def) {
     return dstArr;
   }
   else {
+    if (def instanceof xex.Expression)
+      return def.source;
+
     const dstObj = {};
     const srcObj = def;
 
@@ -1120,6 +1133,20 @@ function misc$printableSchema(def) {
   }
 }
 xschema$misc.printableSchema = misc$printableSchema;
+
+function misc$isInArray(x, arr) {
+  if (x === null || typeof x !== "object")
+    return arr.indexOf(x) !== -1;
+
+  for (var i = 0, len = arr.length; i < len; i++) {
+    const value = arr[i];
+    if (typeof value === "object" && misc$equals(x, value))
+      return true;
+  }
+
+  return false;
+}
+xschema$misc.isInArray = misc$isInArray;
 
 /**
  * Checks if the input string `s` can be considered a text.
@@ -1324,8 +1351,9 @@ xschema$misc.isBigInt = misc$isBigInt;
  * @alias xschema.misc.validateBigInt
  */
 function misc$validateBigInt(s, min, max, minExclusive, maxExclusive) {
+  const errorCode = "TypeConstraint[BigInt]";
   const len = s.length;
-  if (len === 0) return "InvalidValue";
+  if (len === 0) return errorCode;
 
   var i = 0;
   var c = s.charCodeAt(i);
@@ -1333,24 +1361,24 @@ function misc$validateBigInt(s, min, max, minExclusive, maxExclusive) {
   // Parse '-' sign.
   if (c === 45) {
     if (++i === len)
-      return "InvalidValue";
+      return errorCode;
     c = s.charCodeAt(i);
   }
 
   // "-0" or padded numbers like "-0XXX" and "0XXX" are not allowed.
   if (c < 48 || c > 57 || (c === 48 && len > 1))
-    return "InvalidValue";
+    return errorCode;
 
   // Check if the string only contains numbers, i.e. chars from 48..57.
   while (++i < len) {
     c = s.charCodeAt(i);
     if (c < 48 || c > 57)
-      return "InvalidValue";
+      return errorCode;
   }
 
   // Check if the input is within [min, max] range.
   return (min && misc$compareBigInt(s, min) < 0 + (minExclusive ? 1 : 0)) ||
-         (max && misc$compareBigInt(s, max) > 0 - (maxExclusive ? 1 : 0)) ? "InvalidRange" : "";
+         (max && misc$compareBigInt(s, max) > 0 - (maxExclusive ? 1 : 0)) ? "RangeConstraint" : "";
 }
 xschema$misc.validateBigInt = misc$validateBigInt;
 
@@ -2374,7 +2402,7 @@ class CoreCompiler {
 
     if (hasOwn.call(locals, name)) {
       if (locals[name] !== exp)
-        throwRuntimeError(`Local '${name}' already exists with different initialization '${exp}'`);
+        throwRuntimeError(`Local '${name}' already defined with different initialization '${exp}'`);
     }
     else {
       locals[name] = exp;
@@ -2399,7 +2427,7 @@ class CoreCompiler {
 
     if (hasOwn.call(globals, name)) {
       if (globals[name] !== exp)
-        throwRuntimeError(`Global '${name}' already exists with different initialization '${exp}'`);
+        throwRuntimeError(`Global '${name}' already defined with different initialization '${exp}'`);
     }
     else {
       globals[name] = exp;
@@ -2777,13 +2805,13 @@ class SchemaCompiler extends CoreCompiler {
   }
 
   compileType(vIn, def) {
-    const name = def.$type || "object";
-    const type = this._env.getType(name);
+    const typeName = def.$type;
+    const typeSpec = this._env.getType(typeName);
 
-    if (!type)
-      throwRuntimeError(`Type '${name}' doesn't exist`);
+    if (!typeSpec)
+      throwRuntimeError(`Type '${typeName}' not found`);
 
-    return type.compile(this, vIn, def);
+    return typeSpec.compile(this, vIn, def);
   }
 
   hasOption(opt) {
@@ -2889,7 +2917,7 @@ class SchemaCompiler extends CoreCompiler {
 
     if (cond.length > 0)
       this.failIf(`!(${cond.join(" && ")})`,
-        this.error(this.str("InvalidValue")));
+        this.error(this.str("ValueConstraint")));
 
     return this;
   }
@@ -2898,18 +2926,13 @@ class SchemaCompiler extends CoreCompiler {
     return this.declareVariable(name + "$" + (mangledType || "") + this._scopeIndex);
   }
 
-  // Get a type-prefix of type defined by `def`.
+  // Get a type-prefix of a type defined by `def`.
   mangledType(def) {
-    const env = this._env;
+    const typeName = def.$type;
+    const typeSpec = typeName ? this._env.getType(typeName) : null;
 
     // Default mangled type is an object.
-    var type;
-    var mangled = "o";
-
-    if (typeof def.$type === "string" && (type = env.getType(def.$type)) != null)
-      mangled = MangledType[type.type] || "z";
-
-    return mangled;
+    return typeSpec ? TypeToChar[typeSpec.type] || "z" : "o";
   }
 
   passIf(cond, vOut, vIn) {
@@ -3184,7 +3207,7 @@ function mergeInclude(src) {
             throwRuntimeError(`Invalid ${k}[${i}] data, directive '${incKey}' is not allowed`);
 
           if (hasOwn.call(dst, incKey))
-            throwRuntimeError(`Invalid ${k}[${i}] data, property '${incKey}' already exists`);
+            throwRuntimeError(`Invalid ${k}[${i}] data, property '${incKey}' already defined`);
 
           dst[incKey] = incDef[incKey];
         }
@@ -3260,6 +3283,25 @@ function processDirectiveValue(name, value, spec) {
       if (!(value instanceof RegExp))
         throwInvalidDirectiveValue(name, value, spec);
       break;
+
+    case "exp":
+      // Already `xex.Expression` instance?
+      if (typeof value === "object" && value instanceof xex.Expression)
+        return value;
+
+      if (typeof value !== "string")
+        throwInvalidDirectiveValue(name, value, spec);
+
+      if (value === "")
+        return value = null;
+
+      // Create the expression and validate if it has just a single parameter.
+      const exp = xex.exp(value);
+      if (Object.keys(exp.vars).length > 1)
+        throwRuntimeError(`Expression '${value}' must use exactly one variable`);
+
+      exp.source = value;
+      return exp;
   }
 
   const allowed = spec.allowed;
@@ -3451,7 +3493,7 @@ class SchemaBuilder {
     // Create the field object.
     const resolvedTypeName = this.env.resolveTypeName(mArray ? "array" : defType);
     if (resolvedTypeName == null)
-      throwRuntimeError(`Type '${defType}' doesn't exist`);
+      throwRuntimeError(`Type '${defType}' not found`);
 
     const obj = {
       $_xschemaData: null,
@@ -3480,7 +3522,7 @@ class SchemaBuilder {
       var maxLen = mArray[4] ? parseInt(mArray[4], 10) : null;
 
       if (minLen !== null && maxLen !== null && minLen > maxLen)
-        throwRuntimeError(`Type '${def.$type}' is invalid`);
+        throwRuntimeError(`Type '${def.$type}' has invalid [min:max] range`);
 
       // Copy directives that are omitted in the nested object.
       for (k in def)
@@ -3491,7 +3533,7 @@ class SchemaBuilder {
       if (mArray[3] === ":") {
         // "[min:]", "[:max]" or "[min:max]" syntax.
         if (minLen === null && maxLen === null)
-          throwRuntimeError(`Type '${def.$type}' is invalid`);
+          throwRuntimeError(`Type '${def.$type}' has invalid [min:max] range`);
 
         if (minLen !== null) obj.$minLength = minLen;
         if (maxLen !== null) obj.$maxLength = maxLen;
@@ -3715,8 +3757,7 @@ function compile(env, def, index) {
   const cache = def.$_xschemaData.cache;
   const fn = (new SchemaCompiler(env, index)).compileFunc(def);
 
-  cache[index] = fn;
-  return fn;
+  return (cache[index] = fn);
 }
 
 /**
@@ -3895,8 +3936,8 @@ xschema.getType = xschema$getType;
  *
  * ```
  * {
- *   // Type names/aliases, like `["int"]` or `["int", "integer", ...]`,
- *   name: {string[]}
+ *   // Type names like `"int"` or `["int", "uint", ...]`,
+ *   name: {string or string[]}
  *
  *   // Javascript type of a given field.
  *   type: {string}
@@ -3928,7 +3969,7 @@ function xschema$addType(data) {
     for (var n = 0; n < names.length; n++) {
       const name = names[n];
       if (hasOwn.call(types, name))
-        throwRuntimeError(`Type '${name}' alread exists`);
+        throwRuntimeError(`Type '${name}' already defined`);
       types[name] = type;
     }
 
@@ -3944,24 +3985,28 @@ xschema.addType = xschema$addType;
 /**
  * Adds a type-alias to the xschema environment.
  *
- * @param {string} newName New type-name.
- * @param {string} knownName Original (known) type-name.
+ * @param {string} aliasName Name of the alias.
+ * @param {string} refName Existing type-name.
  * @return {this}
+ *
+ * @throws {TypeError} When invalid argument is passed.
+ * @throws {RuntimeError} When alias-name or referenced type doesn't exist.
  *
  * @alias xschema.addAlias
  */
-function xschema$addAlias(newName, knownName) {
+function xschema$addAlias(aliasName, refName) {
   const types = this.types;
   const aliases = this.aliases;
 
-  if (!hasOwn.call(types, knownName))
-    throwRuntimeError(`Type '${knownName}' doesn't exist`);
+  if (typeof aliasName !== "string") throwTypeError(`Argument 'aliasName' must be string, not '${misc$typeOf(aliasName)}'`);
+  if (typeof refName   !== "string") throwTypeError(`Argument 'refName' must be string, not '${misc$typeOf(refName)}'`);
 
-  if (hasOwn.call(types, newName))
-    throwRuntimeError(`Type '${newName}' already exists`);
+  if (!hasOwn.call(types  , refName  )) throwRuntimeError(`Type '${refName}' not found`);
+  if ( hasOwn.call(types  , aliasName)) throwRuntimeError(`Alias '${aliasName}' name collides with type '${aliasName}'`);
+  if ( hasOwn.call(aliases, aliasName)) throwRuntimeError(`Alias '${aliasName}' already defined`);
 
-  types[newName] = types[knownName];
-  aliases[newName] = knownName;
+  types[aliasName] = types[refName];
+  aliases[aliasName] = refName;
 
   return this;
 }
@@ -4014,7 +4059,7 @@ function xschema$addRule(data) {
     const name = rule.name;
 
     if (hasOwn.call(rules, name))
-      throwRuntimeError(`Rule '${name}' - alread exists`);
+      throwRuntimeError(`Rule '${name}' - alread defined`);
 
     rules[name] = rule;
     if (rule.artificialDirectives)
@@ -4112,36 +4157,8 @@ xschema.freeze = xschema$freeze;
 // [SchemaType - Base]
 // ============================================================================
 
-var TypeToError = {
-  any    : "ExpectedAny",
-  array  : "ExpectedArray",
-  bool   : "ExpectedBoolean",
-  number : "ExpectedNumber",
-  object : "ExpectedObject",
-  string : "ExpectedString"
-};
-
 function inputVarToOutputVar(v) {
   return v.startsWith("in") ? "out" + v.substr(2) : null;
-}
-
-function compileAccessCheck(data, negate) {
-  var s = "";
-
-  const op = negate ? "&" : "|";
-  const eq = negate ? "===" : "!==";
-
-  for (var i = 0, len = data.length; i < len; i++) {
-    var msk = data[i];
-    if (!msk)
-      continue;
-
-    if (s)
-      s += " || ";
-    s += "(" + "ac" + String(i) + " " + op + " 0x" + msk.toString(16) + ") " + eq + " 0";
-  }
-
-  return s;
 }
 
 function extendDirectives(base, dirs) {
@@ -4153,6 +4170,31 @@ function extendDirectives(base, dirs) {
       out[k] = freeze(Object.assign({}, dirs[k]));
   }
   return out;
+}
+
+function compileAccessCheck(data, negate) {
+  var s = "";
+
+  const op = negate ? "&"   : "|";
+  const eq = negate ? "===" : "!==";
+
+  for (var i = 0, len = data.length; i < len; i++) {
+    const msk = data[i];
+    if (!msk) continue;
+
+    if (s) s += " || ";
+    s += `(ac${i} ${op} ${msk}) ${eq} 0`;
+  }
+
+  return s;
+}
+
+function compileExpressionConstraint(exp, vIn) {
+  const keys = Object.keys(exp.vars);
+  const vmap = Object.create(null);
+
+  if (keys.length) vmap[keys[0]] = vIn;
+  return `!(${exp.compileBody(vmap)})`;
 }
 
 /**
@@ -4171,7 +4213,7 @@ const Type = xschema.Type = freeze({
   name: null,
 
   /**
-   * Map of type-aliases, for example `{ bool: "boolean" }`
+   * Map of type-aliases.
    *
    * Type-aliases are not inherited. The property is reset to `null` on a newly
    * created type.
@@ -4179,7 +4221,7 @@ const Type = xschema.Type = freeze({
   alias: null,
 
   /**
-   * JavaScript type name:
+   * Valid JS type names:
    *   - "any"
    *   - "array"
    *   - "bool"
@@ -4222,12 +4264,13 @@ const Type = xschema.Type = freeze({
     out.alias = null;
 
     for (var k in def) {
-      const v = def[k];
+      var v = def[k];
 
       if (k === "directives")
-        out.directives = freeze(extendDirectives(out.directives, v));
-      else
-        out[k] = v;
+        v = freeze(extendDirectives(out.directives, v));
+      else if (k === "name" && v && !isArray(v))
+        v = [v];
+      out[k] = v;
     }
 
     return freeze(out);
@@ -4248,21 +4291,21 @@ const Type = xschema.Type = freeze({
    * Compiles the type definition `def`.
    */
   compile: function(c, v, def) {
-    var type = this.type;
+    var jsType = this.type;
     var cond = null;
 
     var vIn = v;
     var vOut = v;
 
-    var typeError = this.typeError || TypeToError[type];
+    var typeError = this.typeError || TypeToErrorCode[jsType];
     var nullable = def.$nullable;
-
     var allowed = def.$allowed;
+
     if (isArray(allowed) && allowed.indexOf(null) !== -1)
       nullable = true;
 
     // Object and Array types require `vOut` variable to be different than `vIn`.
-    if (type === "object" || type === "array") {
+    if (jsType === "object" || jsType === "array") {
       if (!c.hasOption(kTestOnly))
         vOut = c.declareVariable(inputVarToOutputVar(v));
     }
@@ -4275,7 +4318,7 @@ const Type = xschema.Type = freeze({
       var w = def.$wExp;
       if (w !== "any") {
         if (w === "none") {
-          c.fail(c.error(c.str("InvalidAccess")));
+          c.fail(c.error(c.str("AccessConstraint")));
         }
         else {
           var curAccess = mergeBits(prevAccess.clone(), c._accessMap, w);
@@ -4290,14 +4333,14 @@ const Type = xschema.Type = freeze({
     }
 
     // Emit type check that considers `null` and `undefined` values if specified.
-    if (type === "object") {
+    if (jsType === "object") {
       const toStringFn = c.declareGlobal("toString", "Object.prototype.toString");
       var cond = "";
 
       c.emit(`${vOut} = ${vIn};`);
 
       if (checkAccess)
-        c.failIf(checkAccess, c.error(c.str("InvalidAccess")));
+        c.failIf(checkAccess, c.error(c.str("AccessConstraint")));
 
       if (nullable) {
         c.passIf(`${vIn} === null`);
@@ -4312,21 +4355,21 @@ const Type = xschema.Type = freeze({
 
       this.compileType(c, vOut, vIn, def);
     }
-    else if (type === "any") {
+    else if (jsType === "any") {
       if (checkAccess)
-        c.failIf(checkAccess, c.error(c.str("InvalidAccess")));
+        c.failIf(checkAccess, c.error(c.str("AccessConstraint")));
 
       c.failIf(`${vIn}${nullable ? " === undefined" : " == null"}`, c.error(c.str(typeError)));
       this.compileType(c, vOut, vIn, def);
     }
     else {
       if (checkAccess)
-        c.failIf(checkAccess, c.error(c.str("InvalidAccess")));
+        c.failIf(checkAccess, c.error(c.str("AccessConstraint")));
 
-      if (type === "array")
+      if (jsType === "array")
         c.ifElseIf(`!Array.isArray(${vIn})`);
       else
-        c.ifElseIf(`typeof ${vIn} !== "${TypeToJSTypeOf[type]}"`);
+        c.ifElseIf(`typeof ${vIn} !== "${TypeToJSTypeOf[jsType]}"`);
 
       if (nullable)
         cond = vIn + " !== null";
@@ -4347,12 +4390,12 @@ const Type = xschema.Type = freeze({
     }
 
     // Emit `$fn` check if provided.
-    const $fn = def.$fn;
-    if (typeof $fn === "function") {
+    const fn = def.$fn;
+    if (typeof fn === "function") {
       const err = c.declareVariable("err");
-      const vFunc = c.declareData(null, $fn);
+      const vFn = c.declareData(null, fn);
 
-      c.failIf(`(${err} = ${vFunc}(${vOut})) !== true && ${err} !== ""`,
+      c.failIf(`(${err} = ${vFn}(${vOut})) !== true && ${err} !== ""`,
                `{ code: ${err} || "CustomFunctionError", path: ${c.getPath()} }`);
     }
 
@@ -4415,27 +4458,26 @@ const CustomType = xschema.CustomType = Type.extend({
 // ============================================================================
 
 xschema.addType(Type.extend({
-  name: ["any"],
+  name: "any",
   type: "any",
 
   compileType: function(c, vOut, v, def) {
-    var allowed = def.$allowed;
+    const allowed = def.$allowed;
 
     if (allowed) {
-      var allowedData = c.declareData(null, allowed);
+      const vAllowed = c.declareData(null, allowed);
 
-      // Get whether the $allowed directive contains an object.
-      if (!misc$isValueOnlyArray(allowed)) {
-        c.failIf(`!${c.declareData(null, this.isAllowed)}(${v}, ${allowedData})`);
+      if (misc$isValueOnlyArray(allowed)) {
+        // Use `Array.indexOf()` if the $allowed data contains only values.
+        c.failIf(`${vAllowed}.indexOf(${v}) === -1`, c.error(c.str("NotAllowed")));
+      }
+      else {
+        c.failIf(`!misc.isInAllowed(${v}, ${vAllowed})`, c.error(c.str("NotAllowed")));
         if (!c.hasOption(kTestOnly)) {
           c.otherwise();
           c.emit(`${vOut} = misc.cloneDeep(${v});`);
           c.end(`}`);
         }
-      }
-      else {
-        c.failIf(`${c.declareData(null, this.isAllowed)}.indexOf(${v}) === -1`,
-                 c.error(c.str("NotAllowed")));
       }
     }
     else {
@@ -4447,19 +4489,6 @@ xschema.addType(Type.extend({
     }
 
     return vOut;
-  },
-
-  isAllowed: function(a, allowed) {
-    if (a === null || typeof a !== "object")
-      return allowed.indexOf(a) !== -1;
-
-    for (var i = 0, len = allowed.length; i < len; i++) {
-      var b = allowed[i];
-      if (typeof b === "object" && misc$equals(a, b))
-        return true;
-    }
-
-    return false;
   }
 }));
 
@@ -4468,7 +4497,7 @@ xschema.addType(Type.extend({
 // ============================================================================
 
 xschema.addType(Type.extend({
-  name: ["bool"],
+  name: "bool",
   type: "bool",
 
   alias: { boolean: "bool" },
@@ -4476,7 +4505,7 @@ xschema.addType(Type.extend({
   compileType: function(c, vOut, v, def) {
     const allowed = def.$allowed;
 
-    // This is boolean specific.
+    // Boolean specific.
     if (isArray(allowed) && allowed.length > 0) {
       const isTrue  = allowed.indexOf(true ) !== -1;
       const isFalse = allowed.indexOf(false) !== -1;
@@ -4527,16 +4556,22 @@ xschema.addType(Type.extend({
       purpose: "Specifies if the maximum value should be exclusive."
     },
 
+    $exp: {
+      type: "exp",
+      default: null,
+      purpose: "Specifies a math expression to be used for value validation."
+    },
+
     $precision: {
       type: "int",
       default: null,
-      purpose: "Specifies a maximum precision of the value (total number of digits)"
+      purpose: "Specifies a maximum precision of the value (total number of digits)."
     },
 
     $scale: {
       type: "int",
       default: null,
-      purpose: "Specifies a scale of the value (number of digits after decimal point)"
+      purpose: "Specifies a scale of the value (number of digits after decimal point)."
     }
   },
 
@@ -4587,21 +4622,21 @@ xschema.addType(Type.extend({
     }
     else {
       const range = c._cachedRange.init(info.min, info.max);
-
       range.mergeMin(def.$min, def.$minExclusive);
       range.mergeMax(def.$max, def.$maxExclusive);
 
       if (def.$precision) {
-        var threshold = Math.pow(10, def.$precision - (def.$scale || 0));
+        const threshold = Math.pow(10, def.$precision - (def.$scale || 0));
         range.mergeMin(-threshold, true);
         range.mergeMax( threshold, true);
       }
-
       c.emitNumberCheck(v, range, !!info.integer, true);
 
-      // DivBy check.
-      if (def.$divisibleBy != null)
-        c.failIf(`${v} % ${def.$divisibleBy} !== 0`, c.error(c.str("DivisibleByError")));
+      const exp = def.$exp;
+      if (exp != null) {
+        c.declareData("$", xex.func);
+        c.failIf(compileExpressionConstraint(exp, v), c.error(c.str("ValueConstraint")));
+      }
     }
 
     return v;
@@ -4627,6 +4662,12 @@ xschema.addType(Type.extend({
       type: "int",
       default: null,
       purpose: "Specifies an exact string length."
+    },
+
+    $expLength: {
+      type: "exp",
+      default: null,
+      purpose: "Specifies a math expression to be used for length validation."
     },
 
     $minLength: {
@@ -4711,15 +4752,21 @@ xschema.addType(Type.extend({
       if (max != null) cond.push(v + ".length > " + max);
 
       if (cond.length)
-        c.failIf(cond.join(" || "), c.error(c.str("InvalidLength")));
+        c.failIf(cond.join(" || "), c.error(c.str("LengthConstraint")));
 
       if (hasOwn.call(this.masks, type)) {
         const m = this.masks[type];
         c.failIf(`!misc.isText(${v}, ${m["0000_001F"]}|0, ${m["2000_201F"]}|0, ${m["2020_203F"]}|0)`, c.error(c.str("InvalidText")));
       }
 
+      const exp = def.$expLength;
+      if (exp != null) {
+        c.declareData("$", xex.func);
+        c.failIf(compileExpressionConstraint(exp, v + ".length"), c.error(c.str("LengthConstraint")));
+      }
+
       if (def.$re != null)
-        c.failIf(`${c.declareData(null, def.$re)}.test(${v})`, c.error(c.str(def.$reError || "RegExpFailure")));
+        c.failIf(`${c.declareData(null, def.$re)}.test(${v})`, c.error(c.str(def.$reError || "RegExpConstraint")));
     }
 
     return v;
@@ -4731,7 +4778,7 @@ xschema.addType(Type.extend({
 // ============================================================================
 
 xschema.addType(Type.extend({
-  name: ["char"],
+  name: "char",
   type: "string",
 
   directives: {
@@ -4847,13 +4894,12 @@ xschema.addType(Type.extend({
     else {
       const err = c.declareVariable("err");
 
-      const $min = def.$min || BigIntLimits[type].min;
-      const $max = def.$max || BigIntLimits[type].max;
+      const min = def.$min || BigIntLimits[type].min;
+      const max = def.$max || BigIntLimits[type].max;
+      const minExclusive = def.$minExclusive ? 1 : 0;
+      const maxExclusive = def.$maxExclusive ? 1 : 0;
 
-      const $minExclusive = def.$minExclusive ? 1 : 0;
-      const $maxExclusive = def.$maxExclusive ? 1 : 0;
-
-      cond = `(${err} = ${c.declareData(null, misc$validateBigInt)}(${v}, ${c.str($min)}, ${c.str($max)}, ${$minExclusive}, ${$maxExclusive}))`;
+      cond = `(${err} = ${c.declareData(null, misc$validateBigInt)}(${v}, ${c.str(min)}, ${c.str(max)}, ${minExclusive}, ${maxExclusive}))`;
       if (def.$empty === true)
         cond = `${v} && ${cond}`;
       c.failIf(cond, c.error(err));
@@ -4868,7 +4914,7 @@ xschema.addType(Type.extend({
 // ============================================================================
 
 xschema.addType(Type.extend({
-  name: ["color"],
+  name: "color",
   type: "string",
 
   directives: {
@@ -4903,7 +4949,7 @@ xschema.addType(Type.extend({
 // ============================================================================
 
 xschema.addType(CustomType.extend({
-  name: ["creditcard"],
+  name: "creditcard",
   func: misc$isCreditCard,
   fail: "func(@) === \"\"",
   error: "InvalidCreditCard"
@@ -4914,28 +4960,25 @@ xschema.addType(CustomType.extend({
 // ============================================================================
 
 xschema.addType(Type.extend({
-  name: ["isbn"],
+  name: "isbn",
   type: "string",
 
   directives: {
     $format: {
       type: "string",
-      default: "",
-      purpose: "ISBN format",
-      allowed: ["", "ISBN-10", "ISBN-13"]
+      allowed: ["any", "isbn10", "isbn13"],
+      default: "any",
+      purpose: "ISBN format"
     }
   },
 
   compileType: function(c, vOut, v, def) {
-    const fmt = def.$format;
+    const format = def.$format || "any";
 
-    var fn = misc$isISBN;
-    var fnName = "isISBN";
+    const fn = format === "isbn10" ? "misc.isISBN10" :
+               format === "isbn13" ? "misc.isISBN13" : "misc.isISBN";
 
-    if (fmt === "ISBN-10") { fn = misc$isISBN10; fnName = "isISBN10"; }
-    if (fmt === "ISBN-13") { fn = misc$isISBN13; fnName = "isISBN13"; }
-
-    var cond = `${c.declareData(fnName, fn)}(${v}) !== true`;
+    var cond = `!${fn}(${v})`;
     if (def.$empty === true)
       cond = `${v} && ${cond}`;
     c.failIf(cond, c.error(c.str("InvalidISBN")));
@@ -4948,7 +4991,7 @@ xschema.addType(Type.extend({
 // ============================================================================
 
 xschema.addType(Type.extend({
-  name: ["mac"],
+  name: "mac",
   type: "string",
 
   directives: {
@@ -4976,7 +5019,7 @@ xschema.addType(Type.extend({
 // ============================================================================
 
 xschema.addType(Type.extend({
-  name: ["ip", "ipv4", "ipv6"],
+  name: "ip",
   type: "string",
 
   directives: {
@@ -4984,18 +5027,24 @@ xschema.addType(Type.extend({
       type: "bool",
       default: false,
       purpose: "Specifies if IP address can contain a port number"
+    },
+
+    $format: {
+      type: "string",
+      allowed: ["any", "ipv4", "ipv6"],
+      default: "any",
+      purpose: "Specifies IP address format"
     }
   },
 
   compileType: function(c, vOut, v, def) {
-    var $type = def.$type;
-    var $port = def.$port ? true : false;
+    const format = def.$format || "any";
+    const port = def.$port ? true : false;
 
-    var fn = "misc.isIP";
-    if ($type === "ipv4") fn = "misc.isIPv4";
-    if ($type === "ipv6") fn = "misc.isIPv6";
+    const fn = format === "ipv4" ? "misc.isIPv4" :
+               format === "ipv6" ? "misc.isIPv6" : "misc.isIP";
 
-    var cond = `!${fn}(${v}, ${$port})`;
+    var cond = `!${fn}(${v}, ${port})`;
     if (def.$empty === true)
       cond = `${v} && ${cond}`;
 
@@ -5009,7 +5058,7 @@ xschema.addType(Type.extend({
 // ============================================================================
 
 xschema.addType(Type.extend({
-  name: ["uuid"],
+  name: "uuid",
   type: "string",
 
   directives: {
@@ -5029,18 +5078,18 @@ xschema.addType(Type.extend({
   },
 
   compileType: function(c, vOut, v, def) {
-    const $format  = def.$format;
-    const $version = def.$version;
+    const format  = def.$format;
+    const version = def.$version;
 
     var brackets = 0;
 
-    if ($format === "any"    ) brackets = 1;
-    if ($format === "windows") brackets = 2;
+    if (format === "any"    ) brackets = 1;
+    if (format === "windows") brackets = 2;
 
     var cond = `misc.isUUID(${v}, ${brackets})`;
     var m;
 
-    if ($version && (m = $version.match(/^([1-5])(\+?)$/)))
+    if (version && (m = version.match(/^([1-5])(\+?)$/)))
       cond += (m[2] ? " < " : " !== ") + m[1];
     else
       cond += " === 0";
@@ -5079,7 +5128,7 @@ const LeapSecondDates = freeze({
     /* 2004: */ 0x00, /* 2005: */ 0x01, /* 2006: */ 0x00, /* 2007: */ 0x00,
     /* 2008: */ 0x01, /* 2009: */ 0x00, /* 2010: */ 0x00, /* 2011: */ 0x00,
     /* 2012: */ 0x10, /* 2013: */ 0x00, /* 2014: */ 0x00, /* 2015: */ 0x10,
-    /* 2016: */ 0x00
+    /* 2016: */ 0x01, /* 2017: */
   ]
 });
 xschema$misc.LeapSecondDates = LeapSecondDates;
@@ -5482,20 +5531,20 @@ xschema.addType(Type.extend({
   },
 
   hook: function(def, env, args) {
-    const $type = def.$type;
-    const $format = def.$format || DateFormats[$type];
+    const typeName = def.$type;
+    const format = def.$format || DateFormats[typeName];
 
-    def.$validator = DateFactory.get($format);
+    def.$validator = DateFactory.get(format);
   },
 
   compileType: function(c, vOut, v, def) {
     const err = c.declareVariable("err");
     const validator = c.declareData(null, def.$validator);
 
-    const $leapYear   = def.$leapYear   != null ? def.$leapYear   : true;
-    const $leapSecond = def.$leapSecond != null ? def.$leapSecond : false;
+    const leapYear   = def.$leapYear   != null ? def.$leapYear   : true;
+    const leapSecond = def.$leapSecond != null ? def.$leapSecond : false;
 
-    var cond = `(${err} = ${validator}.exec(${v}, ${$leapYear}, ${$leapSecond}))`;
+    var cond = `(${err} = ${validator}.exec(${v}, ${leapYear}, ${leapSecond}))`;
     if (def.$empty === true)
       cond = `${v} && ${cond}`;
     c.failIf(cond, err);
@@ -5527,7 +5576,7 @@ function addKeyToGroup(map, group, k) {
 }
 
 xschema.addType(Type.extend({
-  name: ["object"],
+  name: "object",
   type: "object",
 
   hook: function(def, env, args) {
@@ -5788,7 +5837,7 @@ xschema.addType(Type.extend({
 // ============================================================================
 
 xschema.addType(Type.extend({
-  name: ["map"],
+  name: "map",
   type: "object",
 
   compileType: function(c, vOut, v, def) {
@@ -5828,8 +5877,34 @@ xschema.addType(Type.extend({
 // ============================================================================
 
 xschema.addType(Type.extend({
-  name: ["array"],
+  name: "array",
   type: "array",
+
+  directives: {
+    $length: {
+      type: "int",
+      default: null,
+      purpose: "Specifies an exact array length."
+    },
+
+    $expLength: {
+      type: "exp",
+      default: null,
+      purpose: "Specifies a math expression to be used for length validation."
+    },
+
+    $minLength: {
+      type: "int",
+      default: null,
+      purpose: "Specifies a minimum array length."
+    },
+
+    $maxLength: {
+      type: "int",
+      default: null,
+      purpose: "Specifies a maximum array length."
+    }
+  },
 
   compileType: function(c, vOut, v, def) {
     var vIdx = c.addLocal("i", "x");
@@ -5846,8 +5921,14 @@ xschema.addType(Type.extend({
     if (def.$minLength != null) cond.push(`${vLen} < ${def.$minLength}`);
     if (def.$maxLength != null) cond.push(`${vLen} > ${def.$maxLength}`);
 
+    const exp = def.$expLength;
+    if (exp != null) {
+      c.declareData("$", xex.func);
+      cond.push(compileExpressionConstraint(exp, vLen));
+    }
+
     if (cond.length) {
-      c.failIf(cond.join(" || "), c.error(c.str("InvalidLength")));
+      c.failIf(cond.join(" || "), c.error(c.str("LengthConstraint")));
       c.otherwise();
     }
 
@@ -5879,10 +5960,5 @@ xschema.addType(Type.extend({
   }
 }));
 
-// ============================================================================
-// [Exports]
-// ============================================================================
-
-$export[$as] = xschema.freeze();
-
-}).apply(this, typeof module === "object" ? [module, "exports"] : [this, "xschema"]);
+}).apply(this, typeof module === "object" && module && module.exports
+  ? [module, "exports", require("xex")] : [this, "xschema", this.xex]);
